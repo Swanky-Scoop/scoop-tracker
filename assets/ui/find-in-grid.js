@@ -39,6 +39,8 @@ export default class FindInGrid {
   }
 
   setVisible(el, visible) {
+    const p = el.parentElement;
+    if( p.matches('tbody.collapsible') ) p.hidden = !visible;
     el.hidden = !visible;
   }
 
