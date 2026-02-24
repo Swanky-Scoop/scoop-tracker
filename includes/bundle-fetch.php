@@ -9,6 +9,15 @@ function scoop_field_type($desc): string {
   return 'string';
 }
 
+function scoop_text_out($v): string {
+  if (is_array($v) || is_object($v)) return '';
+  $s = (string) $v;
+  $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+  $s = str_replace(["\u{2018}", "\u{2019}"], ["'", "'"], $s);
+
+  return $s;
+}
+
 function scoop_cast($v, $desc) {
   $type = scoop_field_type($desc);
 
@@ -21,8 +30,7 @@ function scoop_cast($v, $desc) {
       return (float)$v;
 
     case 'string':
-      if (is_array($v) || is_object($v)) return '';
-      return (string)$v;
+      return scoop_text_out($v);
 
     case 'bool':
       return (bool)$v;
@@ -67,7 +75,7 @@ function scoop_fetch_entities(string $key, array $ctx = [], bool $fields_only = 
 
     $row = [ 'id' => (int)$id ];
 
-    if (!empty($spec['title'])) $row['_title'] = get_the_title($id);
+    if (!empty($spec['title'])) $row['_title'] = (string) get_post_field('post_title', $id, 'raw');
 
     foreach (($spec['fields'] ?? []) as $field => $desc) {
       $row[$field] = scoop_cast($pod->field($field), $desc);

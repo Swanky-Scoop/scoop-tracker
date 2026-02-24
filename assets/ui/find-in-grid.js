@@ -54,6 +54,14 @@ export default class FindInGrid {
     return { type: null, term: s };
   }
 
+  normSearch(s) {
+    return String(s ?? "")
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/[\u2018\u2019\u201B\u2032]/g, "'")
+      .trim();
+  }
+
   apply(q) {
     const { type, term } = this.parseQuery(q);
     const targets = this.targets();
@@ -62,14 +70,13 @@ export default class FindInGrid {
     // Use your static Find matcher (ranking optional; boolean match is enough)
     for (const el of targets) {
       const tOk = !impliedType || this.getType(el) === impliedType;
-      const hay = this.getText(el).toLowerCase();
+      const hay = this.normSearch( this.getText(el) );
       const hit = !term || hay.includes(term);
       this.setVisible(el, tOk ? hit : true);
     }
   }
 
   render() {
-
     const inp = document.createElement("input");
     inp.type = "text";
     inp.autocomplete = "off";
