@@ -32,6 +32,8 @@ scoop_require('includes/_write_fields.php');
  */
 scoop_require('includes/_pods_helpers.php');
 scoop_require('includes/_policy.php');
+scoop_require('includes/_auth.php');
+
 
 /**
  * Pods hooks / domain behavior
@@ -47,7 +49,7 @@ scoop_require('includes/hooks/closeout.php');
 scoop_require('includes/bundle-fetch.php');
 scoop_require('includes/bundle.php');
 scoop_require('includes/rest.php');
-
+scoop_require('includes/_routes.php');
 /**
  * UI glue (shortcode/admin/enqueue) last
  */

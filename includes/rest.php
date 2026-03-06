@@ -1,55 +1,7 @@
 <?php
-  
-  add_action('rest_api_init', function () {
-    error_log('🔍 TRACE: rest_api_init hook fired - registering routes');
-    
-    $routes = scoop_routes_config();
-    error_log('🔍 TRACE: Routes to register: ' . implode(', ', array_keys($routes)));
-
-    foreach ($routes as $key => $cfg) {
-      error_log("🔍 TRACE: Registering route: $key at path: {$cfg['path']}");
-      
-      register_rest_route('scoop/v1', $cfg['path'], [
-        'methods'  => $cfg['methods'],
-        'callback' => function(\WP_REST_Request $req) use ($cfg, $key) {
-          error_log("🔍 TRACE: [$key] REST callback fired - method: {$req->get_method()}");
-          return scoop_handle_request($req, $cfg, $key);
-        },
-        'permission_callback' => function(\WP_REST_Request $req) use ($key) {
-          error_log("🔍 TRACE: [$key] Permission callback fired");
-          
-          if (!is_user_logged_in()) {
-            error_log("🔍 TRACE: [$key] User not logged in - DENIED");
-            return false;
-          }
-          
-          $user = wp_get_current_user();
-          $method = $req->get_method();
-          
-          error_log("🔍 TRACE: [$key] Checking permission for user: {$user->user_login}, method: $method");
-          
-          $allowed = scoop_user_can_route($user, $key, $method);
-          
-          error_log(sprintf(
-            '🔍 TRACE: %s %s: user=%s role=%s allowed=%s',
-            $method,
-            $key,
-            $user->user_login,
-            implode(',', $user->roles),
-            $allowed ? 'YES' : 'NO'
-          ));
-          
-          return $allowed;
-        },
-      ]);
-      
-      error_log("🔍 TRACE: Route $key registered successfully");
-    }
-    
-    error_log('🔍 TRACE: All routes registered');
-  });
-
   /**
+   * includes/rest/php
+   * 
    * Combined handler for GET/POST.
    */
   function scoop_handle_request(\WP_REST_Request $req, array $cfg, string $route_key) {

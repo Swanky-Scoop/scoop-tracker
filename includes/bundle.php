@@ -1,23 +1,5 @@
 <?php
-
-add_action('rest_api_init', function () {
-  register_rest_route('scoop/v1', '/bundle', [
-    'methods'  => ['GET'],
-    'callback' => function(\WP_REST_Request $req) {
-      return scoop_bundle_get($req);
-    },
-    'permission_callback' => function(\WP_REST_Request $req) {
-      $u = wp_get_current_user();
-      error_log('SCOOP whoami: user_id=' . ($u->ID ?? 0)
-        . ' roles=' . json_encode($u->roles ?? [])
-        . ' can_edit_posts=' . (current_user_can('edit_posts') ? 'yes' : 'no')
-        . ' can_manage_options=' . (current_user_can('manage_options') ? 'yes' : 'no')
-      );
-
-      return is_user_logged_in();
-    },
-  ]);
-});
+// includes/bundle.php
 
 function scoop_parse_types_param($raw): array {
   if (is_array($raw)) return array_values(array_filter(array_map('trim', $raw)));
@@ -63,7 +45,7 @@ function scoop_bundle_get(\WP_REST_Request $req) {
 
   $data = [];
   foreach ($needTypes as $needType) {
-      $data[$needType] = scoop_bundle_fetch_type($needType, $req, ['requesting_types' => $types]);  // ← Make sure this 3rd param is there
+      $data[$needType] = scoop_bundle_fetch_type($needType, $req, ['requesting_types' => $types]);
   }
 
   return new \WP_REST_Response([

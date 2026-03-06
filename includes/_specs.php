@@ -127,6 +127,7 @@ function scoop_entity_specs(string $key = ''): array {
       'titleMap'  => 'flavor',
       'title'     => 'Flavors',
       'fields'    => [
+        'web_id' => ['data_type' => 'int']
         // add fields as needed; you can omit tub if you'll compute from tub list
       ],
       'writeable' => []

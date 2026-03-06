@@ -8,9 +8,7 @@
 add_filter('pods_api_pre_save_pod_item_tub', 'scoop_auto_set_tub_created_on', 5, 2);
 function scoop_auto_set_tub_created_on($pieces, $is_new_item) {
   // Only run on new items
-  if (!$is_new_item) {
-    return $pieces;
-  }
+  if (!$is_new_item) return $pieces;
   
   error_log('scoop_auto_set_tub_created_on: Setting created_on and changed_on for new tub');
   
@@ -39,15 +37,45 @@ function scoop_auto_set_tub_created_on($pieces, $is_new_item) {
 }
 
 /**
+ * Ensure WP post_modified updates on every tub edit saved via Pods API.
+ * Runs on edits only.
+ */
+add_filter('pods_api_pre_save_pod_item_tub', 'scoop_touch_tub_post_modified', 9, 2);
+function scoop_touch_tub_post_modified($pieces, $is_new_item) {
+  if ($is_new_item) return $pieces;
+
+  $now_local = current_time('mysql');
+  $now_gmt   = current_time('mysql', true);
+
+  if (!isset($pieces['object_fields']) || !is_array($pieces['object_fields'])) {
+    $pieces['object_fields'] = [];
+  }
+
+  $pieces['object_fields']['post_modified']['value']     = $now_local;
+  $pieces['object_fields']['post_modified_gmt']['value'] = $now_gmt;
+
+  if (!isset($pieces['fields_active']) || !is_array($pieces['fields_active'])) {
+    $pieces['fields_active'] = [];
+  }
+  if (!in_array('post_modified', $pieces['fields_active'], true)) {
+    $pieces['fields_active'][] = 'post_modified';
+  }
+  if (!in_array('post_modified_gmt', $pieces['fields_active'], true)) {
+    $pieces['fields_active'][] = 'post_modified_gmt';
+  }
+
+  return $pieces;
+}
+
+/**
  * Auto-update changed_on field whenever tub is edited
  * Priority 8 - runs before state rules
  */
-add_filter('pods_api_pre_save_pod_item_tub', 'scoop_auto_update_tub_changed_on', 8, 2);
+// add_filter('pods_api_pre_save_pod_item_tub', 'scoop_auto_update_tub_changed_on', 8, 2);
+
 function scoop_auto_update_tub_changed_on($pieces, $is_new_item) {
   // Only run on edits, not new items
-  if ($is_new_item) {
-    return $pieces;
-  }
+  if ($is_new_item) return $pieces;
   
   error_log('scoop_auto_update_tub_changed_on: Updating changed_on for edited tub');
   
