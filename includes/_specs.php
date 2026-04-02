@@ -1,7 +1,6 @@
 <?php
 
 function scoop_bundle_specs(): array {
-  error_log('🔍 TRACE: scoop_bundle_specs() called');
   
   $specs = [
     'Cabinet'   => ['needs' => ['cabinet','slot','flavor']],
@@ -11,13 +10,10 @@ function scoop_bundle_specs(): array {
     'DateActivity' => ['needs' => ['tub','flavor','use','location']],
   ];
   
-  error_log('🔍 TRACE: Bundle specs available: ' . implode(', ', array_keys($specs)));
-  
   return $specs;
 }
 
 function scoop_get_entity_spec_keys(string $bundle_key): array {
-  error_log("🔍 TRACE: scoop_get_entity_spec_keys() called for: $bundle_key");
   
   $specs = scoop_bundle_specs();
   
@@ -27,13 +23,11 @@ function scoop_get_entity_spec_keys(string $bundle_key): array {
   }
   
   $needs = $specs[$bundle_key]['needs'];
-  error_log("🔍 TRACE: Entity specs for $bundle_key: " . implode(', ', $needs));
   
   return $needs;
 }
 
 function scoop_entity_specs(string $key = ''): array {
-  error_log('🔍 TRACE: scoop_entity_specs() called with key: ' . ($key ?: '(empty)'));
   
   $spc = [
     'tub' => [
@@ -42,7 +36,7 @@ function scoop_entity_specs(string $key = ''): array {
       'title'     => true,
       'fields'    => [
         'state'         => ['data_type' => 'string',  'control' => 'enum'  ],
-        'use'           => ['data_type' => 'int',     'control' => 'find',  'titleMap' => 'use'],
+        'use'           => ['data_type' => 'int',     'control' => 'find', 'titleMap' => 'use'],
         'flavor'        => ['data_type' => 'int',     'control' => 'find', 'titleMap' => 'flavor'],
         'amount'        => ['data_type' => 'float',   'control' => 'text'  ],
         'author_name'   => ['data_type' => 'string',  'label'   => 'Author'],
@@ -127,7 +121,8 @@ function scoop_entity_specs(string $key = ''): array {
       'titleMap'  => 'flavor',
       'title'     => 'Flavors',
       'fields'    => [
-        'web_id' => ['data_type' => 'int']
+        'web_id'    => ['data_type' => 'int'],
+        'allergens' => ['data_type' => 'post_names'],
         // add fields as needed; you can omit tub if you'll compute from tub list
       ],
       'writeable' => []

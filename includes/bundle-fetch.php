@@ -18,10 +18,21 @@ function scoop_text_out($v): string {
   return $s;
 }
 
+function scoop_post_names_out($v): array{
+  $a = [];
+  if (is_array($v)) foreach($v as $p){
+    if (!empty($p['post_name'])) $a[] = $p['post_name'];
+  }
+  return $a;
+}
+
 function scoop_cast($v, $desc) {
   $type = scoop_field_type($desc);
 
   switch ($type) {
+    case 'post_names':
+      return scoop_post_names_out($v);
+
     case 'int':
       return scoop_rel_id($v);
 
@@ -41,7 +52,7 @@ function scoop_cast($v, $desc) {
 }
 
 function scoop_fetch_entities(string $key, array $ctx = [], bool $fields_only = false ): array {
-  // error_log('-----------scoop_fetch_entities');
+  error_log('-----------scoop_fetch_entities');
   $specs = scoop_entity_specs();
   if (empty($specs[$key])) return [];
 
