@@ -10,7 +10,6 @@ function scoop_auto_set_tub_created_on($pieces, $is_new_item) {
   // Only run on new items
   if (!$is_new_item) return $pieces;
   
-  error_log('scoop_auto_set_tub_created_on: Setting created_on and changed_on for new tub');
   
   // Set both created_on and changed_on to current time (matches what WP uses for post_date)
   $now = current_time('mysql');
@@ -30,8 +29,6 @@ function scoop_auto_set_tub_created_on($pieces, $is_new_item) {
   if (!in_array('changed_on', $pieces['fields_active'], true)) {
     $pieces['fields_active'][] = 'changed_on';
   }
-  
-  error_log('scoop_auto_set_tub_created_on: created_on and changed_on both set to ' . $now);
   
   return $pieces;
 }
@@ -77,8 +74,6 @@ function scoop_auto_update_tub_changed_on($pieces, $is_new_item) {
   // Only run on edits, not new items
   if ($is_new_item) return $pieces;
   
-  error_log('scoop_auto_update_tub_changed_on: Updating changed_on for edited tub');
-  
   // Check if user is explicitly setting changed_on themselves
   $user_setting_changed_on = isset($pieces['fields']['changed_on']) 
     && array_key_exists('value', (array)$pieces['fields']['changed_on']);
@@ -97,11 +92,7 @@ function scoop_auto_update_tub_changed_on($pieces, $is_new_item) {
     if (!in_array('changed_on', $pieces['fields_active'], true)) {
       $pieces['fields_active'][] = 'changed_on';
     }
-    
-    error_log('scoop_auto_update_tub_changed_on: changed_on auto-updated to ' . $now);
-  } else {
-    error_log('scoop_auto_update_tub_changed_on: User is explicitly setting changed_on, skipping auto-update');
-  }
+  } 
   
   return $pieces;
 }
@@ -112,9 +103,7 @@ function scoop_auto_update_tub_changed_on($pieces, $is_new_item) {
  */
 add_filter('pods_api_pre_save_pod_item_tub', 'scoop_enforce_tub_rules', 10, 3);
 function scoop_enforce_tub_rules( $pieces, $is_new_item, $id = 0 ) {
-  error_log('-----------------------------------------');
-  error_log('scoop_enforce_tub_rules');
-
+  
   // Resolve tub ID robustly
   $tub_id = 0;
 
@@ -130,11 +119,6 @@ function scoop_enforce_tub_rules( $pieces, $is_new_item, $id = 0 ) {
     }
   }
 
-  error_log('');
-  
-  error_log('');
-  error_log('scoop_enforce_tub_rules tub_id=' . $tub_id);
-  error_log('');
   
   // Only apply to edits, not new items.
   if ($is_new_item || $tub_id <= 0) return $pieces;
@@ -174,14 +158,12 @@ function scoop_enforce_tub_rules( $pieces, $is_new_item, $id = 0 ) {
 
     // Revert manual timestamp edits (only if request tried to change them)
     if ($req_changes_field('opened_on') && $new_opened_on !== $old_opened_on) {
-      error_log('Revert opened_on for tub ' . $tub_id);
       $pieces['fields']['opened_on']['value'] = $old_opened_on;
       $activate('opened_on');
       $new_opened_on = $old_opened_on;
     }
 
     if ($req_changes_field('emptied_at') && $new_emptied_at !== $old_emptied_at) {
-      error_log('Revert emptied_at for tub ' . $tub_id);
       $pieces['fields']['emptied_at']['value'] = $old_emptied_at;
       $activate('emptied_at');
       $new_emptied_at = $old_emptied_at;
@@ -192,16 +174,14 @@ function scoop_enforce_tub_rules( $pieces, $is_new_item, $id = 0 ) {
     if ($state_changed) {
 
       if ($old_state === 'Emptied') {
-        error_log('Blocked state change from Emptied for tub ' . $tub_id);
-
+        
         // Revert just the state field (do not return $old_all)
         $pieces['fields']['state']['value'] = $old_state;
         $activate('state');
         $new_state = $old_state;
 
       } elseif ($old_state === 'Opened' && !in_array($new_state, ['Opened', 'Emptied'], true)) {
-        error_log('Blocked invalid Opened transition for tub ' . $tub_id);
-
+        
         $pieces['fields']['state']['value'] = $old_state;
         $activate('state');
         $new_state = $old_state;
@@ -214,7 +194,6 @@ function scoop_enforce_tub_rules( $pieces, $is_new_item, $id = 0 ) {
     if ($new_state === 'Opened' && scoop_nodate($old_opened_on) && scoop_nodate($new_opened_on)) {
       $pieces['fields']['opened_on']['value'] = $now;
       $activate('opened_on');
-      error_log('auto-set opened_on for tub ' . $tub_id);
     }
 
     if ($new_state === 'Emptied' && scoop_nodate($old_emptied_at) && scoop_nodate($new_emptied_at)) {
@@ -222,8 +201,6 @@ function scoop_enforce_tub_rules( $pieces, $is_new_item, $id = 0 ) {
       $activate('emptied_at');
       $pieces['object_fields']['post_status']['value'] = 'draft';
       $activate('post_status');
-
-      error_log('auto-set emptied_at for tub ' . $tub_id);
     }
   }
 

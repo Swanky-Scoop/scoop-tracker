@@ -1,8 +1,7 @@
 <?php
 
 function scoop_routes_config(string $batch_key = ''): array {
-  error_log('🔍 TRACE: scoop_routes_config() called with batch_key: ' . ($batch_key ?: '(empty)'));
-
+  
   $cfg = [
 
     'Cabinet' => [
@@ -62,6 +61,5 @@ function scoop_routes_config(string $batch_key = ''): array {
     return [];
   }
   
-  error_log('🔍 TRACE: Returning config for: ' . $batch_key);
   return $cfg[$batch_key];
 }

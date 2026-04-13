@@ -58,32 +58,20 @@ function scoop_entity_specs(string $key = ''): array {
         $state = $row['state'] ?? '';
         $requesting_types = $ctx['requesting_types'] ?? [];
         
-        // DEBUG
-        error_log("TUB FILTER - Tub {$row['id']}: state={$state}, requesting_types=" . json_encode($requesting_types));
-        
         $has_date_activity = in_array('DateActivity', $requesting_types, true);
         $has_other_grids = !empty(array_diff($requesting_types, ['DateActivity']));
-        
-        error_log("  has_date_activity={$has_date_activity}, has_other_grids={$has_other_grids}");
         
         // DateActivity needs: recent tubs (any state)
         if ($has_date_activity) {
             $modified = strtotime($row['post_modified'] ?? '');
             $fortyEightHoursAgo = time() - (48 * 60 * 60);
             
-            if ($modified && $modified >= $fortyEightHoursAgo) {
-                error_log("  KEEP: Recent tub for DateActivity");
-                return true;
-            }
+            if ($modified && $modified >= $fortyEightHoursAgo) return true;
         }
         
         // Other grids need: active tubs (not Emptied)
-        if ($has_other_grids && $state !== 'Emptied') {
-            error_log("  KEEP: Active tub for other grids");
-            return true;
-        }
+        if ($has_other_grids && $state !== 'Emptied')return true;
         
-        error_log("  REJECT: Doesn't match any grid needs");
         return false;
       },
       
@@ -152,16 +140,9 @@ function scoop_entity_specs(string $key = ''): array {
     ]
   ];
   
-  if ($key === '') {
-    error_log('🔍 TRACE: Returning all entity specs, count: ' . count($spc));
-    return $spc;
-  }
+  if ($key === '') return $spc;
   
-  if (!isset($spc[$key])) {
-    error_log("🔍 TRACE: WARNING - Entity spec key not found: $key");
-    return [];
-  }
+  if (!isset($spc[$key])) return [];
   
-  error_log("🔍 TRACE: Returning entity spec for: $key");
   return $spc[$key];
 }

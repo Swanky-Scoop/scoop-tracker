@@ -53,7 +53,6 @@ function scoop_require_authenticated_user_read_only(\WP_REST_Request $req) {
     $basic_user = scoop_validate_basic_auth();
     if ($basic_user) {
         wp_set_current_user($basic_user->ID);
-        error_log('SCOOP Basic Auth allowed for read-only: user_id=' . $basic_user->ID);
         return true;
     }
     

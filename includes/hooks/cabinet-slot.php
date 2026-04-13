@@ -118,8 +118,6 @@ function scoop_cabinet_pre_save_title($pieces, $is_new_item) {
   if (!isset($pieces['object_fields']['post_name']) || !is_array($pieces['object_fields']['post_name'])) $pieces['object_fields']['post_name'] = [];
   $pieces['object_fields']['post_name']['value'] = sanitize_title($title);
 
-  error_log('scoop_cabinet_pre_save_title: ' . $title);
-
   return $pieces;
 }
 
@@ -158,10 +156,8 @@ function scoop_cabinet_post_save_create_slots($pieces, $is_new_item, $id) {
     $cabinet_title = get_the_title($cabinet_id);
     if (!$cabinet_title) $cabinet_title = 'Cabinet ' . $cabinet_id;
 
-    if (!function_exists('pods_api') || !is_object(pods_api())) {
-      error_log('scoop_cabinet_post_save_create_slots: pods_api unavailable');
+    if (!function_exists('pods_api') || !is_object(pods_api())) 
       return $pieces;
-    }
 
     $created = 0;
 
@@ -182,14 +178,10 @@ function scoop_cabinet_post_save_create_slots($pieces, $is_new_item, $id) {
         'data' => $data,
       ]);
 
-      if (is_wp_error($new_slot_id)) {
-        error_log('slot create failed: ' . $new_slot_id->get_error_message());
-        continue;
-      }
+      if (is_wp_error($new_slot_id)) continue;
       if ($new_slot_id) $created++;
     }
 
-    error_log("scoop_cabinet_post_save_create_slots: cabinet={$cabinet_id} created={$created} slot (max_tubs={$max_tubs})");
     return $pieces;
 
   } finally {

@@ -186,8 +186,6 @@ function scoop_pods_api_save( string $pod_name, $id, array $data ) {
     $clean[$field] = scoop_coerce_value($field, $value);
   }
 
-  error_log("scoop_pods_api_save pod={$pod_name} id={$id} data=" . json_encode($clean));
-
   return pods_api()->save_pod_item([
     'pod'  => $pod_name,
     'id'   => $id,

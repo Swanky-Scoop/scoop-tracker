@@ -142,21 +142,13 @@ add_filter('script_loader_tag', function($tag, $handle, $src) {
 // admin-page.php (or wherever you have your wp_enqueue_scripts hook)
 
 add_action('wp_enqueue_scripts', function () {
-    error_log("wp_enqueue_scripts hook fired");
-    error_log("is_singular: " . (is_singular() ? 'YES' : 'NO'));
     
     if (!is_singular()) return;
 
     global $post;
-    error_log("post exists: " . ($post ? 'YES' : 'NO'));
-    
     if (!$post) return;
-    
-    error_log("post_content: " . substr($post->post_content, 0, 200));
-    error_log("has shortcode: " . (has_shortcode($post->post_content, 'scoop_grid') ? 'YES' : 'NO'));
     
     if (!has_shortcode($post->post_content, 'scoop_grid')) return;
 
-    error_log("CALLING scoop_enqueue_assets()");
     scoop_enqueue_assets();
 });

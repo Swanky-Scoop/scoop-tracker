@@ -1,177 +1,293 @@
 <?php
 
-function scoop_field_type($desc): string {
-  if (is_string($desc)) return $desc; // backward compat
-  if (is_array($desc)) {
+/**
+ * bundle-fetch.php
+ *
+ * Hybrid fetch strategy:
+ * - Bulk fetch each entity type with pods()->find() — one query per entity type
+ * - Read known scalar columns (string, float, bool, datetime) from $pod->row
+ * - Read int, post_names, and any unknown-typed fields via $pod->field()
+ *   because in this schema almost all ints are relationship IDs that Pods
+ *   needs to resolve correctly
+ * - Cabinet enrichment for slots uses a single bulk find() instead of N calls
+ */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function scoop_field_type( $desc ): string {
+  if ( is_string( $desc ) ) return $desc;
+  if ( is_array( $desc ) ) {
     $t = $desc['data_type'] ?? $desc['type'] ?? 'string';
-    return is_string($t) ? $t : 'string';
+    return is_string( $t ) ? $t : 'string';
   }
   return 'string';
 }
 
-function scoop_text_out($v): string {
-  if (is_array($v) || is_object($v)) return '';
+function scoop_text_out( $v ): string {
+  if ( is_array( $v ) || is_object( $v ) ) return '';
   $s = (string) $v;
-  $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-  $s = str_replace(["\u{2018}", "\u{2019}"], ["'", "'"], $s);
-
+  $s = html_entity_decode( $s, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+  $s = str_replace( [ "\u{2018}", "\u{2019}" ], [ "'", "'" ], $s );
   return $s;
 }
 
-function scoop_post_names_out($v): array{
+function scoop_post_names_out( $v ): array {
   $a = [];
-  if (is_array($v)) foreach($v as $p){
-    if (!empty($p['post_name'])) $a[] = $p['post_name'];
+  if ( is_array( $v ) ) {
+    foreach ( $v as $p ) {
+      if ( ! empty( $p['post_name'] ) ) $a[] = $p['post_name'];
+    }
   }
   return $a;
 }
 
-function scoop_cast($v, $desc) {
-  $type = scoop_field_type($desc);
-
-  switch ($type) {
-    case 'post_names':
-      return scoop_post_names_out($v);
-
-    case 'int':
-      return scoop_rel_id($v);
-
-    case 'float':
-      if (is_array($v) || is_object($v)) return 0.0;
-      return (float)$v;
-
-    case 'string':
-      return scoop_text_out($v);
-
-    case 'bool':
-      return (bool)$v;
-
-    default:
-      return $v;
+function scoop_cast( $v, $desc ) {
+  $type = scoop_field_type( $desc );
+  switch ( $type ) {
+    case 'post_names': return scoop_post_names_out( $v );
+    case 'int':        return scoop_rel_id( $v );
+    case 'float':      return ( is_array( $v ) || is_object( $v ) ) ? 0.0 : (float) $v;
+    case 'string':     return scoop_text_out( $v );
+    case 'bool':       return (bool) $v;
+    default:           return $v;
   }
 }
 
-function scoop_fetch_entities(string $key, array $ctx = [], bool $fields_only = false ): array {
-  error_log('-----------scoop_fetch_entities');
-  $specs = scoop_entity_specs();
-  if (empty($specs[$key])) return [];
+/**
+ * Classify spec fields into two buckets:
+ *
+ * $row_fields  — known safe scalars: string, float, bool, datetime.
+ *                Read directly from $pod->row after find(). Zero extra queries.
+ *
+ * $needs_field — everything else: int, post_names, or any unknown type
+ *                (e.g. 'use', 'flavor' from a loose spec entry).
+ *                Resolved via $pod->field() so Pods can handle relationship
+ *                resolution, multi-value fields, and aliased columns correctly.
+ *
+ * Why the whitelist rather than a blacklist:
+ *   A blacklist of int+post_names misses unknown types like the 'titleMap'
+ *   entry in the use spec, which has no matching column in wp_pods_use and
+ *   would silently return null from $pod->row instead of the expected [].
+ */
+function scoop_classify_fetch_fields( array $spec_fields ): array {
+  $scalar_types = [ 'string', 'float', 'bool', 'datetime' ];
 
-  $spec = $specs[$key];
-  if (!function_exists('pods')) return [];
+  $row_fields  = [];
+  $needs_field = [];
 
-  if( $fields_only ) return $spec['fields'];
-
-  $post_type = $spec['post_type'];
-  $pod_name  = $spec['pod'];
-  $pod_write = $spec['writeable'] ?? [];
-  if (is_callable($pod_write)) {
-    $pod_write = (array) $pod_write(wp_get_current_user());
+  foreach ( $spec_fields as $field => $desc ) {
+    $type = scoop_field_type( $desc );
+    if ( in_array( $type, $scalar_types, true ) ) {
+      $row_fields[ $field ] = $desc;
+    } else {
+      $needs_field[ $field ] = $desc;
+    }
   }
 
-  // Keep this big to avoid paging; we'll filter in PHP for now.
-  // If you later confirm fields are stored in postmeta, you can add meta_query here.
-  $ids = get_posts([
-    'post_type'      => $post_type,
-    'post_status'    => 'any',
-    'posts_per_page' => 2000,
-    'fields'         => 'ids',
-    //'writeable'      => $pod_write,
-    'no_found_rows'  => true,
-  ]);
+  return [ $row_fields, $needs_field ];
+}
 
-  $out = [];
-  foreach ($ids as $id) {
-    $pod = pods($pod_name, $id);
-    if (!$pod || !$pod->exists()) continue;
+// ─────────────────────────────────────────────────────────────────────────────
+// Core fetch
+// ─────────────────────────────────────────────────────────────────────────────
 
-    $row = [ 'id' => (int)$id ];
+function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only = false ): array {
 
-    if (!empty($spec['title'])) $row['_title'] = (string) get_post_field('post_title', $id, 'raw');
+  $specs = scoop_entity_specs();
+  if ( empty( $specs[ $key ] ) ) return [];
 
-    foreach (($spec['fields'] ?? []) as $field => $desc) {
-      $row[$field] = scoop_cast($pod->field($field), $desc);
+  $spec = $specs[ $key ];
+  if ( ! function_exists( 'pods' ) ) return [];
+
+  if ( $fields_only ) return $spec['fields'] ?? [];
+
+  $pod_name    = $spec['pod'];
+  $spec_fields = $spec['fields']      ?? [];
+  $post_fields = $spec['post_fields'] ?? [];
+
+  [ $row_fields, $needs_field ] = scoop_classify_fetch_fields( $spec_fields );
+
+  $loc_id = ! empty( $ctx['location'] ) ? (int) $ctx['location'] : 0;
+
+  // NOT IN trash/auto-draft matches the original get_posts( 'post_status'=>'any' )
+  // which excluded only those two. An explicit IN list risks silently dropping
+  // records saved with custom or unexpected statuses (pending, future, etc).
+  $where_clauses = [
+    "t.post_status NOT IN ('trash', 'auto-draft')",
+  ];
+
+  $db_loc_applied = false;
+
+  if ( $key === 'tub' ) {
+    // Exclude emptied tubs at the DB level unless the caller explicitly wants them.
+    // This is the biggest single filter on the tub table and saves the most work.
+    $include_empty = ! empty( $ctx['include_empty_tubs'] );
+    if ( ! $include_empty ) {
+      $where_clauses[] = "state != 'Emptied'";
     }
 
-    // Handle post_fields
-    $p = get_post($id);
-    foreach (($spec['post_fields'] ?? []) as $field => $type) {
-      if ($field === 'author_name') {
-        $row['author_name'] = scoop_cast(
-          get_the_author_meta('display_name', $p?->post_author ?? 0),
-          'string'
+    // Push location into SQL for tubs — location is a plain int column here.
+    if ( $loc_id > 0 && array_key_exists( 'location', $spec_fields ) ) {
+      $where_clauses[] = "location = {$loc_id}";
+      $db_loc_applied  = true;
+    }
+  }
+
+  $find_params = [
+    'limit'   => -1,
+    'orderby' => 'post_date',
+    'order'   => 'ASC',
+    'where'   => implode( ' AND ', $where_clauses ),
+  ];
+
+  $pod = pods( $pod_name );
+  if ( ! $pod ) return [];
+
+  $pod->find( $find_params );
+
+  $out = [];
+
+  while ( $pod->fetch() ) {
+    $id  = (int) $pod->id();
+    $row = [ 'id' => $id ];
+
+    // Title from the wp_posts columns already in $pod->row — no extra query
+    if ( ! empty( $spec['title'] ) ) {
+      $row['_title'] = (string) ( $pod->row['post_title'] ?? '' );
+    }
+
+    // Scalar fields — plain columns in $pod->row, zero extra DB hits
+    foreach ( $row_fields as $field => $desc ) {
+      $row[ $field ] = scoop_cast( $pod->row[ $field ] ?? null, $desc );
+    }
+
+    // Relationship + unknown-typed fields — resolved by Pods
+    foreach ( $needs_field as $field => $desc ) {
+      $row[ $field ] = scoop_cast( $pod->field( $field ), $desc );
+    }
+
+    // Post fields from wp_posts columns already in $pod->row
+    foreach ( $post_fields as $field => $type ) {
+      if ( $field === 'author_name' ) {
+        // get_the_author_meta() caches per unique author — cheap for a small staff
+        $row['author_name'] = scoop_text_out(
+          get_the_author_meta( 'display_name', (int) ( $pod->row['post_author'] ?? 0 ) )
         );
-      } elseif ($field === 'post_modified') {
-        $row['post_modified'] = $p?->post_modified ?? '';
-      } elseif ($field === 'post_date') {
-        $row['post_date'] = $p?->post_date ?? '';
+      } elseif ( $field === 'post_modified' ) {
+        $row['post_modified'] = $pod->row['post_modified'] ?? '';
+      } elseif ( $field === 'post_date' ) {
+        $row['post_date'] = $pod->row['post_date'] ?? '';
       }
     }
 
-    // Optional contextual filter
-    if (!empty($spec['filter']) && is_callable($spec['filter'])) {
-      if (!$spec['filter']($row, $ctx)) continue;
+    // Custom per-entity filter (e.g. tub state/DateActivity logic)
+    if ( ! empty( $spec['filter'] ) && is_callable( $spec['filter'] ) ) {
+      if ( ! $spec['filter']( $row, $ctx ) ) continue;
     }
 
-    // Optional location filter (common)
-    if (!empty($ctx['location']) && isset($row['location'])) {
-      if ((int)$row['location'] !== (int)$ctx['location']) continue;
+    // PHP-side location guard for entity types where the SQL filter wasn't applied
+    if ( $loc_id > 0 && ! $db_loc_applied && isset( $row['location'] ) && $key !== 'slot' ) {
+      if ( (int) $row['location'] !== $loc_id ) continue;
     }
 
     $out[] = $row;
   }
 
-  // Enrich slots with location from parent cabinet
-  if ($key === 'slot' && !empty($out)) {
-    $out = scoop_enrich_slots_with_location($out);
+  // Slots derive location from their parent cabinet — enriched in a single bulk query
+  if ( $key === 'slot' && ! empty( $out ) ) {
+    $out = scoop_enrich_slots_with_location( $out );
+
+    if ( $loc_id > 0 ) {
+      $out = array_values( array_filter( $out, function ( $slot ) use ( $loc_id ) {
+        return (int) ( $slot['location'] ?? 0 ) === $loc_id;
+      } ) );
+    }
   }
 
   return $out;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Slot enrichment — one bulk query for all cabinets
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Enrich slots with location from parent cabinet
+ * Enrich slots with location from their parent cabinet.
+ *
+ * Uses a single find() with WHERE t.ID IN (...) to fetch all needed cabinets
+ * at once, then resolves location via $pod->field() so Pods handles the
+ * relationship correctly — same as every other int field in this schema.
+ *
+ * Before: N calls to pods('cabinet', $id) — one DB round-trip per cabinet.
+ * After:  one find() call — one DB round-trip for all cabinets.
  */
-function scoop_enrich_slots_with_location(array $slots): array {
-  // Extract unique cabinet IDs
-  $cabinet_ids = array_unique(array_filter(array_map(function($slot) {
-    return scoop_rel_id($slot['cabinet'] ?? null);
-  }, $slots)));
+function scoop_enrich_slots_with_location( array $slots ): array {
 
-  if (empty($cabinet_ids)) return $slots;
+  $cabinet_ids = array_values( array_unique( array_filter( array_map(
+    fn( $slot ) => scoop_rel_id( $slot['cabinet'] ?? null ),
+    $slots
+  ) ) ) );
 
-  // Batch fetch cabinet locations
+  if ( empty( $cabinet_ids ) ) return $slots;
+
+  $id_list = implode( ',', array_map( 'intval', $cabinet_ids ) );
+
+  $cabinet_pod = pods( 'cabinet' );
+  if ( ! $cabinet_pod ) return $slots;
+
+  $cabinet_pod->find( [
+    'limit' => count( $cabinet_ids ),
+    'where' => "t.ID IN ({$id_list})",
+  ] );
+
   $cabinet_locations = [];
-  foreach ($cabinet_ids as $cab_id) {
-    $cabinet = pods('cabinet', $cab_id);
-    if ($cabinet && $cabinet->exists()) {
-      $location_id = scoop_rel_id($cabinet->field('location'));
-      $cabinet_locations[$cab_id] = $location_id;
-    }
+  while ( $cabinet_pod->fetch() ) {
+    $cab_id = (int) $cabinet_pod->id();
+    // field() lets Pods resolve the location relationship ID correctly
+    $cabinet_locations[ $cab_id ] = scoop_rel_id( $cabinet_pod->field( 'location' ) );
   }
 
-  // Enrich each slot with its cabinet's location
-  foreach ($slots as &$slot) {
-    $cabinet_id = scoop_rel_id($slot['cabinet'] ?? null);
-    $slot['location'] = $cabinet_locations[$cabinet_id] ?? 0;
+  foreach ( $slots as &$slot ) {
+    $cabinet_id       = scoop_rel_id( $slot['cabinet'] ?? null );
+    $slot['location'] = $cabinet_locations[ $cabinet_id ] ?? 0;
   }
-  unset($slot); // Break reference
+  unset( $slot );
 
   return $slots;
 }
 
-function scoop_bundle_fetch_type(string $needType, \WP_REST_Request $req, array $bundle_ctx = []): array {
-    $ctx = [];
+// ─────────────────────────────────────────────────────────────────────────────
+// Bundle fetch dispatcher
+// ─────────────────────────────────────────────────────────────────────────────
 
-    $loc = $req->get_param('location');
-    if ($loc !== null && $loc !== '') $ctx['location'] = (int) $loc;
-    
-    // THIS LINE MUST BE HERE
-    if (!empty($bundle_ctx['requesting_types'])) {
-        $ctx['requesting_types'] = $bundle_ctx['requesting_types'];
-    }
-    
-    error_log("scoop_bundle_fetch_type: needType={$needType}, ctx=" . json_encode($ctx));  // ← ADD THIS
-    
-    $key = $map[$needType] ?? $needType;
-    return scoop_fetch_entities($key, $ctx);
+function scoop_bundle_fetch_type( string $needType, \WP_REST_Request $req, array $bundle_ctx = [] ): array {
+  $ctx = [];
+
+  $loc = $req->get_param( 'location' );
+  if ( $loc !== null && $loc !== '' ) {
+    $ctx['location'] = (int) $loc;
+  }
+
+  // Optional flag for audit/history views that need emptied tubs
+  $include_empty = $req->get_param( 'include_empty_tubs' );
+  if ( $include_empty !== null && $include_empty !== '' ) {
+    $ctx['include_empty_tubs'] = (bool) $include_empty;
+  }
+
+  if ( ! empty( $bundle_ctx['requesting_types'] ) ) {
+    $ctx['requesting_types'] = $bundle_ctx['requesting_types'];
+  }
+
+  // Only the entries that are actually reachable from bundle specs.
+  // Capitalized keys like 'Flavor' => 'flavor' are never sent as needType —
+  // those come from $specs[$t]['needs'] in bundle.php, which are all lowercase.
+  // FlavorTub is the one real alias: the FlavorTub bundle needs tub records.
+  $map = [
+    'FlavorTub' => 'tub',
+  ];
+
+  $key = $map[ $needType ] ?? $needType;
+  return scoop_fetch_entities( $key, $ctx );
 }

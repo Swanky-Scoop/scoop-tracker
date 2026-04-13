@@ -125,11 +125,9 @@ function scoop_set_batch_title($pieces, $is_new_item) {
 
   $count = 1;
   $raw_count = $pieces['fields']['count']['value'] ?? null;
-  error_log( '??? batch-tub raw_count:'.$raw_count);
   if (is_numeric($raw_count)) {
     $count = max(1, (float)$raw_count);
   }
-  error_log( '??? batch-tub THE_count:'.$count);
   $date_str   = current_time('Y-m-d H:i');
   $this_title = "{$flavor_name} {$date_str}_{$count}";
 
@@ -140,8 +138,6 @@ function scoop_set_batch_title($pieces, $is_new_item) {
     $pieces['object_fields']['post_name'] = ['value' => ''];
   }
   $pieces['object_fields']['post_name']['value'] = sanitize_title($this_title);
-
-  scoop_log("scoop_set_batch_title: title='{$this_title}'");
 
   return $pieces;
 }
@@ -181,7 +177,6 @@ function scoop_create_tubs_for_new_batch($pieces, $is_new_item, $id) {
     }
 
     $count     = (float)$batch->field('count');
-    error_log('??? $count'. $count);
     $flavor_id = (int)$batch->field('flavor.ID');
 
     if ($count <= 0) {
@@ -204,7 +199,6 @@ function scoop_create_tubs_for_new_batch($pieces, $is_new_item, $id) {
     }
     
     $fraction = fmod($count, 1);
-    error_log( '??? batch-tub:'.$count );
     if($fraction > 0){
       $last = ceil($count);
       $tub_frac_args = [
@@ -215,7 +209,6 @@ function scoop_create_tubs_for_new_batch($pieces, $is_new_item, $id) {
         'amount'      => $fraction,
         'post_status' => 'publish',
       ];
-      error_log( '??? batch-tub frac:'.$fraction );
       if ($location_id) $tub_frac_args['location'] = $location_id;
       $new_tub_frac_id = pods_api()->save_pod_item([
         'pod'  => 'tub',

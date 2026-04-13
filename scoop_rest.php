@@ -18,8 +18,6 @@ function scoop_require($rel) {
   require_once $path;
 }
 
-//error_log("========== SCOOP REST PLUGIN LOADING ==========");
-
 /**
  * Config/constants first
  */
