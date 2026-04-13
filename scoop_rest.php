@@ -31,7 +31,7 @@ scoop_require('includes/_write_fields.php');
 scoop_require('includes/_pods_helpers.php');
 scoop_require('includes/_policy.php');
 scoop_require('includes/_auth.php');
-
+scoop_require('includes/_cache.php');
 
 /**
  * Pods hooks / domain behavior
