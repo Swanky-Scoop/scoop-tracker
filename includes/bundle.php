@@ -12,6 +12,7 @@ function scoop_bundle_get( \WP_REST_Request $req ) {
   // ── Cache read ────────────────────────────────────────────────────────────
   $cache_key = scoop_bundle_cache_key( $req );
   $cached    = get_transient( $cache_key );
+  
   if ( $cached !== false ) {
     // Stamp it so you can confirm cache hits in Query Monitor / network tab
     $cached['_cache'] = 'hit';

@@ -202,7 +202,7 @@ function scoop_create_tubs_for_new_batch($pieces, $is_new_item, $id) {
     if($fraction > 0){
       $last = ceil($count);
       $tub_frac_args = [
-        'post_title'  => "{$batch_title}{$last}",
+        'post_title'  => "{$batch_title}|{$last}",
         'batch'       => $batch_id,
         'flavor'      => $flavor_id,
         'index'       => $last,

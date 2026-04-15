@@ -10,6 +10,8 @@
  *   because in this schema almost all ints are relationship IDs that Pods
  *   needs to resolve correctly
  * - Cabinet enrichment for slots uses a single bulk find() instead of N calls
+ * - Zero-date datetime fields are omitted from the response entirely;
+ *   the client treats absence as equivalent to 0000-00-00 00:00:00
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,9 +160,16 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
       $row['_title'] = (string) ( $pod->row['post_title'] ?? '' );
     }
 
-    // Scalar fields — plain columns in $pod->row, zero extra DB hits
+    // Scalar fields — plain columns in $pod->row, zero extra DB hits.
+    // Datetime fields with a zero/null value are omitted entirely;
+    // the client treats absence as equivalent to 0000-00-00 00:00:00.
     foreach ( $row_fields as $field => $desc ) {
-      $row[ $field ] = scoop_cast( $pod->row[ $field ] ?? null, $desc );
+      $type = scoop_field_type( $desc );
+      $raw  = $pod->row[ $field ] ?? null;
+
+      if ( $type === 'datetime' && scoop_nodate( $raw ) ) continue;
+
+      $row[ $field ] = scoop_cast( $raw, $desc );
     }
 
     // Relationship + unknown-typed fields — resolved by Pods
@@ -168,7 +177,8 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
       $row[ $field ] = scoop_cast( $pod->field( $field ), $desc );
     }
 
-    // Post fields from wp_posts columns already in $pod->row
+    // Post fields from wp_posts columns already in $pod->row.
+    // post_modified and post_date are omitted when zero, same as spec datetime fields.
     foreach ( $post_fields as $field => $type ) {
       if ( $field === 'author_name' ) {
         // get_the_author_meta() caches per unique author — cheap for a small staff
@@ -176,9 +186,11 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
           get_the_author_meta( 'display_name', (int) ( $pod->row['post_author'] ?? 0 ) )
         );
       } elseif ( $field === 'post_modified' ) {
-        $row['post_modified'] = $pod->row['post_modified'] ?? '';
+        $val = $pod->row['post_modified'] ?? null;
+        if ( ! scoop_nodate( $val ) ) $row['post_modified'] = $val;
       } elseif ( $field === 'post_date' ) {
-        $row['post_date'] = $pod->row['post_date'] ?? '';
+        $val = $pod->row['post_date'] ?? null;
+        if ( ! scoop_nodate( $val ) ) $row['post_date'] = $val;
       }
     }
 

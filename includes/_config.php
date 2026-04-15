@@ -52,14 +52,11 @@ function scoop_routes_config(string $batch_key = ''): array {
   ];
   
   if ($batch_key === '') {
-    error_log('🔍 TRACE: Returning all configs, count: ' . count($cfg));
     return $cfg;
   }
   
-  if (!isset($cfg[$batch_key])) {
-    error_log('🔍 TRACE: WARNING - Config key not found: ' . $batch_key);
-    return [];
-  }
+  if (!isset($cfg[$batch_key])) return [];
+  
   
   return $cfg[$batch_key];
 }

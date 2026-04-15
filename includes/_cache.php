@@ -17,10 +17,10 @@ function scoop_cache_version(): int {
   return (int) get_option( 'scoop_cache_version', 1 );
 }
 
-function scoop_cache_bust(): void {
+function scoop_cache_bust(?int $post_id = null, array $ctx = []): void {
+  //TODO: $post_id can be used for smarter invalidation later, but for now we just bump the version on any post change.
   // autoload=false: this option changes frequently, no need to load on every page
   update_option( 'scoop_cache_version', scoop_cache_version() + 1, false );
-  error_log( 'scoop_cache_bust: version now ' . scoop_cache_version() );
 }
 
 function scoop_bundle_cache_key( \WP_REST_Request $req ): string {
@@ -46,6 +46,17 @@ function scoop_bundle_cache_key( \WP_REST_Request $req ): string {
  * The $pieces array contains 'pod' (pod name) and 'id' if you ever
  * want to do smarter partial invalidation later.
  */
+/*
+TODO: This is redundant with the 'save_post' hook below, which also fires on Pods saves. The 'save_post' hook is more general and reliable, so we can probably remove this one after confirming that cache busting still works for all endpoints.
 add_action( 'pods_api_post_save_pod_item', function( array $pieces ) {
   scoop_cache_bust();
 }, 10, 1 );
+*/
+
+
+// Belt-and-suspenders: fires for any post save regardless of code path,
+// covering creates via wp_insert_post and any non-Pods save mechanisms.
+add_action( 'save_post',      'scoop_cache_bust', 10, 1 );
+add_action( 'trashed_post',   'scoop_cache_bust', 10, 1 );
+add_action( 'untrashed_post', 'scoop_cache_bust', 10, 1 );
+add_action( 'deleted_post',   'scoop_cache_bust', 10, 1 );

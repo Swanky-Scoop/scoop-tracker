@@ -35,6 +35,8 @@
    */
   function scoop_handle_create_post(\WP_REST_Request $req, array $cfg, array $allowed_fields) {
 
+    error_log("🔍 TRACE: Handling create POST for route: ");
+
     $envelope_key = $cfg['envelope_key'] ?? null;
     if (!$envelope_key) {
       error_log("🔍 TRACE: ERROR - Missing envelope_key in config");
@@ -180,10 +182,12 @@
     }
 
     $ok = empty($errors);
+    if($ok) scoop_cache_bust();
     
     return new \WP_REST_Response([
       'ok'      => $ok,
       'updated' => $updated,
+      'notes'   => 'here\'s interesting stuff',
       'errors'  => $errors,
     ], $ok ? 200 : 400);
   }
