@@ -86,7 +86,6 @@ export default class FindIt extends El {
 
       if (k === "Escape") {
         e.preventDefault();
-        console.log('[FindIt] Escape pressed - clearing');
         this.clear();
         this.close();
         return;
@@ -141,21 +140,16 @@ export default class FindIt extends El {
     });
 
     this.INP.addEventListener("blur", () => {
-      console.log('[FindIt] Blur event - INP.value:', this.INP.value);
       
       const match = this.options.find(op => op.label === this.INP.value);
       
-      if (match) {
-        console.log('[FindIt] Blur - found match:', match.key, match.label);
-        this.select(match);
-      } else {
-        console.log('[FindIt] Blur - no match, clearing');
+      if (match) this.select(match);
+      
+      else {
         const oldValue = this.value;
         
         this.value = ""; 
         this.HDN.value = "";
-        
-        console.log('[FindIt] Blur - dispatching ts:findit-change (cleared from', oldValue, 'to empty)');
         
         // FIX: Dispatch the change event!
         this.HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
@@ -165,24 +159,17 @@ export default class FindIt extends El {
     });
   }
 
-  clear() {
-    console.log('[FindIt] clear() called - field:', this.fieldName);
-    console.log('[FindIt] clear() - old value:', this.value);
-    
+  clear() {    
     this.HDN.value = "0";
     this.INP.value = "";
     this.value = "0";
     this.display = "";
     this._applyFilter("", { noPaint: !this.isOpen });
     
-    console.log('[FindIt] clear() - dispatching ts:findit-change');
     this.HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
   }
 
   select(op) {
-    console.log('[FindIt] select() called - field:', this.fieldName);
-    console.log('[FindIt] select() - old value:', this.value);
-    console.log('[FindIt] select() - new option:', op);
     
     const key = op?.key;
 
@@ -191,9 +178,6 @@ export default class FindIt extends El {
 
     this.HDN.value = this.value;
     this.INP.value = this.display;
-
-    console.log('[FindIt] select() - new value:', this.value);
-    console.log('[FindIt] select() - dispatching ts:findit-change');
 
     this.onSelect?.(op);
     this.HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
@@ -325,7 +309,6 @@ export default class FindIt extends El {
     if (updateInput) {
       const op = this.filtered[i];
       if (op) {
-        console.log('op',op);
         this.suppressInput = true;
         this.INP.value = op.label ?? "";
         this.HDN.value = op.key ?? "";

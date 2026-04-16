@@ -20,12 +20,13 @@ export default class Toast {
     return TOASTER;
   }
 
-  static addMessage({title='title', message='This event happened', state='OK', id=null}={}){
+  static addMessage({title='title', message='', changes=[], state='OK', id=null}={}){
     const date    = Date.now();
     const TOASTER = Toast._ensureHost();
     const TOAST   = Toast._el('div', '', 'TOAST', state, 't'+date);
     const H3      = Toast._el('h3', title);
     const P       = Toast._el('p', message);
+    const ul      = Toast._el('ul');
     const DATE    = Toast._el('spen', new Date(date).toLocaleString(), 'date' );
     const CLOSE   = Toast._el('button', 'x', 'close');
 
@@ -34,9 +35,14 @@ export default class Toast {
       Toast.hide();
     });
 
+    changes.forEach(element => {
+      ul.append(Toast._el('li', element.sentence));
+    });
+
     TOAST.append(DATE);
     TOAST.append(H3);
     TOAST.append(P);
+    TOAST.append(ul);
     TOAST.append(CLOSE);
     TOAST.update = Toast.update;
     if(id) TOAST.id = id;

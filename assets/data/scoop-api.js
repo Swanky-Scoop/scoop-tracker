@@ -65,10 +65,10 @@ export default class ScoopAPI {
 
   getModelsBom() {
     return {
-      "Cabinet"   : CabinetGridModel,
-      "FlavorTub" : FlavorTubGridModel,
-      "Batch"     : BatchGridModel,
-      "Closeout"  : CloseoutGridModel,
+      "Cabinet"      : CabinetGridModel,
+      "FlavorTub"    : FlavorTubGridModel,
+      "Batch"        : BatchGridModel,
+      "Closeout"     : CloseoutGridModel,
       "DateActivity" : DateActivityGridModel,
     };
   }
@@ -234,7 +234,7 @@ export default class ScoopAPI {
     if (!this.gridTypes) throw new Error("refreshPageDomain: page types not set");
     if (!force && this._domain) return this._domain;
     if (this._domainInflight) return this._domainInflight;
-    if(toast) toast.update(toast, {title:"Data Saved..."});
+    //if(toast) toast.update(toast, {title:"Data Saved..."});
 
     this._domainInflight = (async () => {
       // bypass in-memory bundle cache on force
@@ -245,10 +245,11 @@ export default class ScoopAPI {
       document.dispatchEvent(new CustomEvent("ts:domain:updated", {
         detail: { types: this._pageTypes, ts: Date.now() }
       }));
+      /*
       if(toast) toast.update(toast, {
         title:"Data Reloaded", 
         message:(info)? 'Triggered by ' + info.name : ''
-      });
+      });*/
       document.body.classList.remove('TS_GRID-UPDATING');
 
       return this._domain;

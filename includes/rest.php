@@ -35,15 +35,11 @@
    */
   function scoop_handle_create_post(\WP_REST_Request $req, array $cfg, array $allowed_fields) {
 
-    error_log("🔍 TRACE: Handling create POST for route: ");
-
     $envelope_key = $cfg['envelope_key'] ?? null;
     if (!$envelope_key) {
       error_log("🔍 TRACE: ERROR - Missing envelope_key in config");
       return new \WP_REST_Response(['ok'=>false,'error'=>'Misconfigured endpoint (missing envelope_key).'], 500);
     }
-    
-    error_log("🔍 TRACE: Using envelope_key: $envelope_key");
 
     $payload = $req->get_param($envelope_key);
     if (!is_array($payload)) {
@@ -53,11 +49,8 @@
 
     $cells = $payload['cells'] ?? null;
     if (!is_array($cells)) {
-      error_log("🔍 TRACE: ERROR - Missing cells in payload");
       return new \WP_REST_Response(['ok'=>false,'error'=>"Missing {$envelope_key}[cells]."], 400);
     }
-
-    error_log("🔍 TRACE: Cells count: " . count($cells));
 
     if (count($cells) !== 1) {
       error_log("🔍 TRACE: ERROR - Expected 1 row, got " . count($cells));
@@ -70,16 +63,11 @@
       return new \WP_REST_Response(['ok'=>false,'error'=>'Invalid row'], 400);
     }
 
-    error_log("🔍 TRACE: Row data: " . json_encode($row));
-
     $pod_name  = $cfg['pod_name'] ?? '';
     if (!$pod_name) {
       error_log("🔍 TRACE: ERROR - Missing pod_name in config");
       return new \WP_REST_Response(['ok'=>false,'error'=>'Misconfigured endpoint (missing pod_name).'], 500);
     }
-
-    error_log("🔍 TRACE: Creating item in pod: $pod_name");
-    error_log("🔍 TRACE: Allowed fields: " . implode(', ', $allowed_fields));
 
     $new_id = scoop_create_pod_item($pod_name, $allowed_fields, $row);
     
@@ -93,7 +81,7 @@
       ], 400);
     }
 
-    error_log("🔍 TRACE: SUCCESS - Created item with ID: $new_id");
+    scoop_log_post($req, $cfg, $row);
 
     return new \WP_REST_Response([
       'ok' => true,
@@ -102,9 +90,55 @@
     ], 200);
   } 
 
+  function scoop_log_post(\WP_REST_Request $req, array $cfg, array $updated = [], array $errors = []):void
+  {
+    $user       = wp_get_current_user()->user_login;
+    $payload    = $req->get_param($cfg['envelope_key'] ?? '') ?: [];
+    $cells      = is_array($payload['cells'] ?? null) ? $payload['cells'] : [];
+
+    $mode       = $cfg['mode']         ?? 'unknown';
+    $entity     = $cfg['pod_name']     ?? 'unknown';
+    $envelope   = $cfg['envelope_key'] ?? 'unknown';
+    $count      = count($cells);
+    $s          = ($count > 1)?'s':'';
+    $date       = date("D m/d");
+    $title      = "{$user} {$mode}d {$count} {$entity}{$s} on {$date}";
+    
+    $details    = "";
+
+    $ok = empty($errors);
+
+    if( $mode === 'create' && $ok ) {
+      $flav     = $updated['flavor'] ?? 0;
+      $count    = $updated['count'] ?? 0;
+      $flav_t   = get_the_title($flav);
+      $title    = "created {$count} {$entity} of {$flav_t}{$s} on {$date}";
+      $s        = ($count > 1)?'s':'';
+    }
+
+    foreach ($updated as $row_id => $fields) {
+      $details .= '<strong>'. (get_the_title((int) $row_id) ?: "Item {$row_id}") .'</strong><br />';
+      foreach ($fields as $field => $value)
+        $details .= $field .' => ' .( get_the_title((int) $value) ?: $value ) . '<br />';
+    }
+
+    $allowed = [
+      'strong'     => [],
+      'br'         => [],
+    ];
+
+    pods('inventory_change')->add([
+        'title'       => $title,
+        'change_count'=> $count,
+        'entity'      => $entity,
+        'envelope'    => $envelope,
+        'mode'        => $mode,
+        'details'     => $details,
+        'post_content'=> wp_kses( $details, $allowed )
+    ]);
+  }
 
   function scoop_handle_cells_post(\WP_REST_Request $req, array $cfg, array $allowed_fields) {
-    
     $envelope_key = $cfg['envelope_key'] ?? null;
     if (!$envelope_key) {
       error_log("🔍 TRACE: ERROR - Missing envelope_key in config");
@@ -184,10 +218,14 @@
     $ok = empty($errors);
     if($ok) scoop_cache_bust();
     
+    scoop_log_post($req, $cfg, $updated, $errors);
+
     return new \WP_REST_Response([
       'ok'      => $ok,
+      'author'  => wp_get_current_user()->user_login,
       'updated' => $updated,
       'notes'   => 'here\'s interesting stuff',
+      'cfg'     => $cfg,
       'errors'  => $errors,
     ], $ok ? 200 : 400);
   }

@@ -127,8 +127,79 @@ export default class BaseGridModel {
 
   }
 
+  describeFieldChanges(responseData = {}, rawChanges = [] ) {
+    const changes = [];
+    const created = responseData?.created ?? null;
+    const updates = responseData?.updated ?? {};
+    const ref     = responseData?.cfg?.pod_name ?? this.metaData?.primary ?? "unknown";
+  
+    const items   = Array.isArray(this.domain?.[ref]) ? this.domain[ref] : [];
+    const byId    = Indexer.byId(items);
+  
+    // Prefer the full column catalog so hidden/editable fields still resolve nicely
+    const cols    = this._allColumns?.length ? this._allColumns : (this.columns ?? []);
+    const colsByKey = new Map(cols.map(col => [col.key, col]));
+
+    if (created) {
+      const { count = 0, flavor: flavorId = 0 } = rawChanges?.[0] ?? {};
+      const flavorTitle = this.titleById(this._flavorsById, flavorId, "unknown flavor");
+    
+      return [ { sentence: `Created ${count} tubs of ${flavorTitle}` }];
+    }
+
+    for (const [rowIdStr, patch] of Object.entries(updates)) {
+      const rowId     = Number(rowIdStr);
+      const item      = byId.get(rowId);
+      const subject   =  item?._title ?? `${ref} ${rowId}`;
+      
+  
+      for (const [fieldKey, rawNewValue] of Object.entries(patch ?? {})) {
+        const col = colsByKey.get(fieldKey) ?? {
+          key:    fieldKey,
+          label:  fieldKey.replace(/_/g, " ")
+        };
+        const newValue = this._describePostedValue(rawNewValue, col, fieldKey);
+        const modified = col.label ?? fieldKey.replace(/_/g, " ");
+
+        changes.push({
+          rowId,
+          rawNewValue,
+          subject,
+          newValue,
+          modified,
+          sentence: `${subject}: ${modified} -> ${newValue}`,
+        });
+      }
+
+    }
+  
+    return changes;
+  }
+  
+  _describePostedValue(rawValue, col = {}, fieldKey = "") {
+    // Relationship cleared intentionally
+    if (rawValue === 0 || rawValue === "0") {
+      if (col.titleMap) return "(cleared)";
+      return "0";
+    }
+    if (rawValue == null || rawValue === "") return "";
+  
+    // Resolve relationship IDs through existing titleMap logic
+    if (col.titleMap) {
+      const titled = this.titleFrom(rawValue, col);
+      return titled ?? String(rawValue);
+    }
+  
+    // Try enum/options labels
+    const options = this.getOptions(0, fieldKey) ?? [];
+    const match   = options.find(opt => String(opt.key) === String(rawValue));
+    if (match?.label) return match.label;
+  
+    return String(rawValue);
+  }
+
   buildCols() {
-    const md = this.metaData;
+    const md      = this.metaData;
     if (!md || !md.primary || !md.entities) return; 
     
     const rawColumns = md.entities[md.primary];

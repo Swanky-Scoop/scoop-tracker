@@ -1,5 +1,4 @@
 import BaseGridModel from "./_base-grid-model.js";
-import Indexer       from "../data/indexer.js";
 
 export default class DateActivityGridModel extends BaseGridModel{
   constructor(name, domain, attrs){

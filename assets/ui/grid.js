@@ -21,6 +21,7 @@ export default class Grid extends El{
     this.modelInstance = config?.modelInstance ?? null;
     this.location = config?.modelInstance?.location ?? 0;
     this.formCodec = config?.formCodec;
+    this.msgManager = config?.msgManager;
 
     this._columnsSet = false;
     this.cols = null;
@@ -527,7 +528,8 @@ export default class Grid extends El{
     return cellData;
   }
 
-  _handleCellChange(e) {
+  _handleCellChange(e) 
+  {
     const h = e.target.closest('input[type="hidden"][name]');
     if (!h) return;
   
@@ -636,7 +638,11 @@ export default class Grid extends El{
           
           this._commitPosted(changes);
           
-          const TOAST = Toast.addMessage({title:'Update sent', message:r.data.updated});
+          const chng = this.modelInstance.describeFieldChanges(r.data, changes?.cells??[] );
+          const TOAST = Toast.addMessage({
+            title: 'Update Confirmed',
+            changes: chng
+          });
           
           await this.api.refreshPageDomain({ force: true, toast:TOAST, info:{name:this.name, response:r} });
           this._restoreFocusAddress();

@@ -1,0 +1,32 @@
+{
+  "ok": true,
+  "author": "gus",
+  "updated": {
+      "1236": {
+          "next_flavor": 0
+      },
+      "1245": {
+          "next_flavor": 0
+      },
+      "1246": {
+          "next_flavor": 0
+      },
+      "1247": {
+          "next_flavor": 2169
+      }
+  },
+  "notes": "here's interesting stuff",
+  "cfg": {
+      "path": "/planning",
+      "methods": [
+          "GET",
+          "POST"
+      ],
+      "mode": "update",
+      "envelope_key": "Cabinet",
+      "post_type": "slot",
+      "pod_name": "slot",
+      "allowed_fields_cb": "scoop_planning_allowed_slot_fields"
+  },
+  "errors": []
+}

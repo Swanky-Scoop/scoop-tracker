@@ -4,7 +4,6 @@
  * Description: Minimal REST endpoint to receive planning grid commands.
  */
 if (!defined('ABSPATH')) exit;
-
 define('SCOOP_REST_FILE', __FILE__);
 define('SCOOP_REST_DIR', plugin_dir_path(__FILE__));
 define('SCOOP_REST_URL', plugin_dir_url(__FILE__));

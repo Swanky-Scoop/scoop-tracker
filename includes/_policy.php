@@ -53,11 +53,8 @@ function scoop_access_policy(): array {
 }
 
 function scoop_get_user_policy(\WP_User $user): array {
-  error_log('🔍 TRACE: scoop_get_user_policy() called for user: ' . $user->user_login);
   
   $policy = scoop_access_policy();
-  
-  error_log("🔍 TRACE: User roles: " . print_r($user->roles, true));
   
   // Check roles in priority order
   if (in_array('administrator', $user->roles)) {
