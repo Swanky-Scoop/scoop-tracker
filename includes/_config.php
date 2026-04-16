@@ -41,13 +41,13 @@ function scoop_routes_config(string $batch_key = ''): array {
       'allowed_fields_cb' => 'scoop_closeouts_allowed_fields',
     ],
     'DateActivity' => [
-      'path'        => '/tubs',
+      'path'         => '/dateactivity',
       'methods'      => ['GET','POST'],
       'mode'         => 'update',
       'envelope_key' => 'DateActivity',
       'post_type'    => 'tub',
       'pod_name'     => 'tub',
-      'allowed_fields_cb' => 'scoop_dateactivity_allowed_fields',
+      'allowed_fields_cb' => 'scoop_tubs_allowed_fields',
     ]
   ];
   

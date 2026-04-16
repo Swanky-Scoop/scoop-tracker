@@ -224,7 +224,6 @@
       'ok'      => $ok,
       'author'  => wp_get_current_user()->user_login,
       'updated' => $updated,
-      'notes'   => 'here\'s interesting stuff',
       'cfg'     => $cfg,
       'errors'  => $errors,
     ], $ok ? 200 : 400);

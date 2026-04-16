@@ -2,7 +2,6 @@
 // Add to _pods_helpers.php (or create new _access.php file)
 
 function scoop_access_policy(): array {
-  error_log('🔍 TRACE: scoop_access_policy() called');
   
   $policy = [
     '_default' => [

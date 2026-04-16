@@ -16,7 +16,7 @@ function scoop_closeouts_allowed_fields( $user ): array {
 }
 
 function scoop_dateactivity_allowed_fields( $user ): array {
-  return [ 'author', 'modified', 'flavor' ];
+  return [ 'state', 'use', 'amount' ];
 
 }
 

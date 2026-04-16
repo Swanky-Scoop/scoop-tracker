@@ -434,19 +434,21 @@ export default class Grid extends El{
     requestAnimationFrame(() => (focusable ?? h).focus());
   }
 
-  _sortCols(e){
-    const el = e.target;
-    const colKey = el.dataset.key;
-    if(el.closest("th.sortable")){
-      if (this.sortColumn === colKey) {
-          this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-      } else {
-        this.sortColumn = colKey;
-        this.sortDirection = 'asc';
-      }
-      
-      this._applySortAndRender();
+  _sortCols(e) {
+    const th = e.target.closest("th.sortable");
+    if (!th) return;
+  
+    const colKey = th.dataset.key;
+    if (!colKey) return;
+  
+    if (this.sortColumn === colKey) {
+      this.sortDirection = this.sortDirection === "asc" ? "desc" : "asc";
+    } else {
+      this.sortColumn = colKey;
+      this.sortDirection = "asc";
     }
+  
+    this._applySortAndRender();
   }
 
   _applySortAndRender(){
@@ -594,7 +596,7 @@ export default class Grid extends El{
 
     }, true);
 
-    this.FORM.addEventListener("mousedown", (e)=>{
+    this.FORM.addEventListener("click", (e)=>{
       this._showHide(e);
       this._sortCols(e);
     }, true);
