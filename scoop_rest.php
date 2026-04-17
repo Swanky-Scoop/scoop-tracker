@@ -47,6 +47,7 @@ scoop_require('includes/bundle-fetch.php');
 scoop_require('includes/bundle.php');
 scoop_require('includes/rest.php');
 scoop_require('includes/_routes.php');
+scoop_require('includes/analytics.php');
 /**
  * UI glue (shortcode/admin/enqueue) last
  */

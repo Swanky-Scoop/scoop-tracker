@@ -6,6 +6,7 @@ import BatchGridModel        from "../models/batch-grid-model.js";
 import CloseoutGridModel     from "../models/closeout-grid-model.js";
 import FlavorTubGridModel    from "../models/flavor-tub-grid-model.js";
 import DateActivityGridModel from "../models/date-activity-grid-model.js";
+import AnalyticsGridModel    from "../models/analytics-grid-model.js";
 
 
 export default class ScoopAPI {
@@ -70,6 +71,7 @@ export default class ScoopAPI {
       "Batch"        : BatchGridModel,
       "Closeout"     : CloseoutGridModel,
       "DateActivity" : DateActivityGridModel,
+      "Analytics"    : AnalyticsGridModel,
     };
   }
 
@@ -265,46 +267,86 @@ export default class ScoopAPI {
   // --- MOUNTING ---
   async mountAllGrids({ root = document, formCodec = FormCodec } = {}) {
     if (!this.getTypesFromGridHosts(root)) return [];
-    
-    // Phase 1: Create models with metadata only
-    const grids = this._hosts.map(dom => {
+
+    // Separate analytics grids from bundle-based grids
+    const analyticsHosts = [];
+    const bundleHosts    = [];
+
+    for (const dom of this._hosts) {
+      if (dom.dataset.gridType === "Analytics") {
+        analyticsHosts.push(dom);
+      } else {
+        bundleHosts.push(dom);
+      }
+    }
+
+    const allGrids = [];
+
+    // ── Analytics grids: self-fetching, bypass the bundle ──
+    for (const dom of analyticsHosts) {
+      const location = Number(dom.dataset.location || 0);
+      const days     = Number(dom.dataset.days || 30);
+      const model    = new AnalyticsGridModel("Analytics", {
+        location,
+        days,
+        nonce: this.nonce,
+      });
+
+      await model.fetch();
+
+      const grid = new Grid(dom, "Analytics", {
+        api: this,
+        modelInstance: model,
+        formCodec,
+        columns: model.columns,
+      });
+      grid.init(model);
+      allGrids.push(grid);
+    }
+
+    // ── Bundle-based grids: existing behavior ──
+    if (bundleHosts.length) {
+      const bundleGrids = bundleHosts.map(dom => {
         const name = dom.dataset.gridType;
         const location = Number(dom.dataset.location || 0);
         const ModelClass = this.getModelsBom()[name];
-        
+
         const modelInstance = new ModelClass(name, null, {
             location,
             metaData: SCOOP.metaData?.[name]
         });
-        
+
         return new Grid(dom, name, {
             api: this,
             modelInstance,
             formCodec,
             columns: modelInstance.columns
         });
-    });
-    
-    // Phase 2: Fetch domain with date filtering if needed
-    const needsDateFilter = this.gridTypes.has('DateActivity');
-    
-    if (needsDateFilter) {
-        const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
-        const url = this._bundleUrlForTypes();
-        url.searchParams.set('modified_since', fortyEightHoursAgo.toISOString());
-        
-        const bundle = await this.getJson(url);
-        this._domain = bundle?.data ?? {};
-    } else {
-        await this.refreshPageDomain({ force: true });
+      });
+
+      // Fetch domain with date filtering if needed
+      const needsDateFilter = this.gridTypes.has('DateActivity');
+
+      if (needsDateFilter) {
+          const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+          const url = this._bundleUrlForTypes();
+          url.searchParams.set('modified_since', fortyEightHoursAgo.toISOString());
+
+          const bundle = await this.getJson(url);
+          this._domain = bundle?.data ?? {};
+      } else {
+          await this.refreshPageDomain({ force: true });
+      }
+
+      // Set domain on each bundle grid
+      bundleGrids.forEach(g => {
+          g.setDomain(this._domain);
+      });
+
+      allGrids.push(...bundleGrids);
     }
-    
-    // Phase 3: Set domain on each grid
-    grids.forEach(g => {
-        g.setDomain(this._domain);  // Pass full domain now
-    });
-    
-    return grids;
+
+    return allGrids;
   }
   
   
