@@ -305,9 +305,10 @@ function scoop_analytics_sellthrough(
     "emptied_at >= '{$period_start}'",
   ];
 
-  if ( $location_id > 0 ) {
-    $where[] = "location = {$location_id}";
-  }
+  // NOTE: location is a Pods relationship field — not a direct column on
+  // track_pods_tub.  Pushing "location = N" into the SQL WHERE causes
+  // "Unknown column 'location' in 'WHERE'".  Filter in PHP instead,
+  // exactly like scoop_analytics_aggregate_closeouts() does.
 
   $pod->find( [
     'limit' => -1,
@@ -320,6 +321,12 @@ function scoop_analytics_sellthrough(
   while ( $pod->fetch() ) {
     $flavor_id  = scoop_rel_id( $pod->field( 'flavor' ) );
     if ( $flavor_id <= 0 ) continue;
+
+    // Location filter — resolve via Pods relationship (not raw SQL column)
+    if ( $location_id > 0 ) {
+      $tub_loc = scoop_rel_id( $pod->field( 'location' ) );
+      if ( $tub_loc !== $location_id ) continue;
+    }
 
     $emptied_at = $pod->row['emptied_at'] ?? '';
     if ( scoop_nodate( $emptied_at ) ) continue;
@@ -373,9 +380,9 @@ function scoop_analytics_current_stock( int $location_id ): array {
     "state != 'Emptied'",
   ];
 
-  if ( $location_id > 0 ) {
-    $where[] = "location = {$location_id}";
-  }
+  // NOTE: location is a Pods relationship field — not a direct column on
+  // track_pods_tub.  Filter in PHP after fetching, same as the closeout
+  // and sellthrough helpers above.
 
   $pod->find( [
     'limit' => -1,
@@ -387,6 +394,12 @@ function scoop_analytics_current_stock( int $location_id ): array {
   while ( $pod->fetch() ) {
     $flavor_id = scoop_rel_id( $pod->field( 'flavor' ) );
     if ( $flavor_id <= 0 ) continue;
+
+    // Location filter — resolve via Pods relationship (not raw SQL column)
+    if ( $location_id > 0 ) {
+      $tub_loc = scoop_rel_id( $pod->field( 'location' ) );
+      if ( $tub_loc !== $location_id ) continue;
+    }
 
     if ( ! isset( $counts[ $flavor_id ] ) ) {
       $counts[ $flavor_id ] = 0;
