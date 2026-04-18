@@ -275,6 +275,22 @@ function scoop_enrich_slots_with_location( array $slots ): array {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function scoop_bundle_fetch_type( string $needType, \WP_REST_Request $req, array $bundle_ctx = [] ): array {
+
+  // Analytics is computed data (not a Pods entity) — delegate to the shared
+  // compute helper so the standalone REST endpoint and the bundle stay in sync.
+  if ( $needType === 'analytics' ) {
+    if ( ! function_exists( 'pods' ) ) return [];
+
+    $period_days = max( 1, (int) ( $req->get_param( 'days' ) ?? 30 ) );
+    $loc         = $req->get_param( 'location' );
+    $location_id = ( $loc !== null && $loc !== '' ) ? (int) $loc : 0;
+
+    // scoop_analytics_compute() is defined in includes/analytics.php,
+    // loaded after this file in scoop_rest.php, but always present by the
+    // time any REST request fires.
+    return scoop_analytics_compute( $period_days, $location_id );
+  }
+
   $ctx = [];
 
   $loc = $req->get_param( 'location' );

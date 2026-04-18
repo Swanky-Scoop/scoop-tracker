@@ -1,15 +1,18 @@
 <?php
 
 function scoop_bundle_specs(): array {
-  
+
   $specs = [
     'Cabinet'      => ['needs' => ['cabinet','slot','flavor']],
     'FlavorTub'    => ['needs' => ['tub','flavor','use']],
     'Batch'        => ['needs' => ['flavor']],
     'Closeout'     => ['needs' => ['flavor','use']],
     'DateActivity' => ['needs' => ['tub','flavor','use','location']],
+    // Analytics data is computed (not a Pods entity), fetched via the
+    // scoop_analytics_compute() helper and keyed as 'analytics' in bundle.data.
+    'Analytics'    => ['needs' => ['analytics']],
   ];
-  
+
   return $specs;
 }
 

@@ -265,89 +265,85 @@ export default class ScoopAPI {
   }
 
   // --- MOUNTING ---
+
+  /**
+   * Mount every .scoop-grid element on the page.
+   *
+   * All grid types — including Analytics — participate in one shared bundle
+   * request.  Analytics data arrives in bundle.data.analytics (an object
+   * matching the standalone /analytics endpoint shape) so AnalyticsGridModel
+   * reads it from domain.analytics in setDomain(), exactly like sibling models
+   * read domain.tub / domain.flavor.
+   *
+   * This eliminates the race / clobber that occurred when Analytics was
+   * self-fetching: its type was included in this.gridTypes, which caused the
+   * bundle URL to carry "Analytics" in the types param, which the PHP bundle
+   * handler rejected as unknown — breaking every other grid on the page.
+   */
   async mountAllGrids({ root = document, formCodec = FormCodec } = {}) {
     if (!this.getTypesFromGridHosts(root)) return [];
 
-    // Separate analytics grids from bundle-based grids
-    const analyticsHosts = [];
-    const bundleHosts    = [];
+    // ── Scan host elements for per-page configuration ──────────────────────
+    // All hosts share the same location on a typical page.  Analytics grids
+    // additionally carry a `days` window; we use the first one found.
+    let pageLocation  = 0;
+    let analyticsDays = 30;
 
     for (const dom of this._hosts) {
+      const loc = Number(dom.dataset.location || 0);
+      if (loc && !pageLocation) pageLocation = loc;
       if (dom.dataset.gridType === "Analytics") {
-        analyticsHosts.push(dom);
-      } else {
-        bundleHosts.push(dom);
+        analyticsDays = Number(dom.dataset.days || 30);
       }
     }
 
-    const allGrids = [];
+    // ── Build Grid + Model instances for every host ─────────────────────────
+    const grids = this._hosts.map(dom => {
+      const name       = dom.dataset.gridType;
+      const location   = Number(dom.dataset.location || 0);
+      const days       = Number(dom.dataset.days || 30);
+      const ModelClass = this.getModelsBom()[name];
 
-    // ── Analytics grids: self-fetching, bypass the bundle ──
-    for (const dom of analyticsHosts) {
-      const location = Number(dom.dataset.location || 0);
-      const days     = Number(dom.dataset.days || 30);
-      const model    = new AnalyticsGridModel("Analytics", {
+      const modelInstance = new ModelClass(name, null, {
         location,
         days,
-        nonce: this.nonce,
+        nonce:    this.nonce,
+        metaData: SCOOP.metaData?.[name],
       });
 
-      await model.fetch();
-
-      const grid = new Grid(dom, "Analytics", {
+      return new Grid(dom, name, {
         api: this,
-        modelInstance: model,
+        modelInstance,
         formCodec,
-        columns: model.columns,
+        columns: modelInstance.columns,
       });
-      grid.init(model);
-      allGrids.push(grid);
+    });
+
+    // ── Fetch one bundle for the whole page ─────────────────────────────────
+    // Build the URL from the full gridTypes set (Analytics is now registered
+    // in the PHP bundle specs, so the server accepts it).
+    const url = this._bundleUrlForTypes();
+
+    // Pass location and days so the PHP analytics helper can filter server-side.
+    // These params are ignored by non-Analytics entity fetchers.
+    if (this.gridTypes.has("Analytics")) {
+      if (pageLocation) url.searchParams.set("location", String(pageLocation));
+      url.searchParams.set("days", String(analyticsDays));
     }
 
-    // ── Bundle-based grids: existing behavior ──
-    if (bundleHosts.length) {
-      const bundleGrids = bundleHosts.map(dom => {
-        const name = dom.dataset.gridType;
-        const location = Number(dom.dataset.location || 0);
-        const ModelClass = this.getModelsBom()[name];
-
-        const modelInstance = new ModelClass(name, null, {
-            location,
-            metaData: SCOOP.metaData?.[name]
-        });
-
-        return new Grid(dom, name, {
-            api: this,
-            modelInstance,
-            formCodec,
-            columns: modelInstance.columns
-        });
-      });
-
-      // Fetch domain with date filtering if needed
-      const needsDateFilter = this.gridTypes.has('DateActivity');
-
-      if (needsDateFilter) {
-          const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
-          const url = this._bundleUrlForTypes();
-          url.searchParams.set('modified_since', fortyEightHoursAgo.toISOString());
-
-          const bundle = await this.getJson(url);
-          this._domain = bundle?.data ?? {};
-      } else {
-          await this.refreshPageDomain({ force: true });
-      }
-
-      // Set domain on each bundle grid
-      bundleGrids.forEach(g => {
-          g.setDomain(this._domain);
-      });
-
-      allGrids.push(...bundleGrids);
+    if (this.gridTypes.has("DateActivity")) {
+      const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+      url.searchParams.set("modified_since", fortyEightHoursAgo.toISOString());
     }
 
-    return allGrids;
+    const bundle    = await this.getJson(url);
+    this._domain    = bundle?.data ?? {};
+
+    // ── Deliver domain to every grid ────────────────────────────────────────
+    grids.forEach(g => g.setDomain(this._domain));
+
+    return grids;
   }
-  
+
   
 }

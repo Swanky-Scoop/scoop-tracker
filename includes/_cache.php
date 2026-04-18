@@ -31,10 +31,17 @@ function scoop_bundle_cache_key( \WP_REST_Request $req ): string {
   $loc   = (int) ( $req->get_param( 'location' )          ?? 0 );
   $empty = (bool)( $req->get_param( 'include_empty_tubs' ) ?? false );
 
+  // Analytics bundles vary by analysis period; include `days` in the key
+  // only when Analytics is one of the requested types so unrelated bundles
+  // are unaffected.
+  $days = in_array( 'Analytics', $types, true )
+    ? max( 1, (int) ( $req->get_param( 'days' ) ?? 30 ) )
+    : 0;
+
   $v = scoop_cache_version();
 
   // WordPress transient keys max out at 172 chars; this stays well under that
-  return 'scoop_b_' . md5( $v . '|' . implode( ',', $types ) . '|' . $loc . '|' . ( $empty ? '1' : '0' ) );
+  return 'scoop_b_' . md5( $v . '|' . implode( ',', $types ) . '|' . $loc . '|' . ( $empty ? '1' : '0' ) . '|' . $days );
 }
 
 /**

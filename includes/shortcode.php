@@ -5,10 +5,11 @@
  */
 
 add_shortcode('scoop_grid', function ($atts) {
-    
+
     $atts = shortcode_atts([
-        'type'     => 'Cabinet', // Cabinet | tub | etc
+        'type'     => 'Cabinet', // Cabinet | FlavorTub | Batch | Closeout | DateActivity | Analytics
         'location' => null,
+        'days'     => 30,        // Analytics only: analysis window in days
     ], $atts, 'scoop_grid');
 
     if (!is_user_logged_in()) {
@@ -16,7 +17,7 @@ add_shortcode('scoop_grid', function ($atts) {
     }
 
     $id = 'scoop-grid-' . uniqid();
-    
+
     ob_start();
     ?>
     <div
@@ -24,9 +25,10 @@ add_shortcode('scoop_grid', function ($atts) {
     class="scoop-grid <?php echo esc_attr($atts['type']); ?>"
     data-grid-type="<?php echo esc_attr($atts['type']); ?>"
     data-location="<?php echo esc_attr($atts['location']); ?>"
+    data-days="<?php echo esc_attr((int) $atts['days']); ?>"
     ></div>
     <?php
     $output = ob_get_clean();
-    
+
     return $output;
 });

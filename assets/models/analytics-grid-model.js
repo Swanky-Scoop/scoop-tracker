@@ -15,13 +15,17 @@
 export default class AnalyticsGridModel {
 
   /**
-   * @param {string}  name       Grid type identifier (usually "Analytics")
-   * @param {Object}  [options]
-   * @param {number}  [options.location]  Location filter ID (0 = all)
-   * @param {number}  [options.days]      Analysis period in days (default 30)
-   * @param {string}  [options.nonce]     WP REST nonce for authentication
+   * @param {string}        name              Grid type identifier ("Analytics")
+   * @param {Object|null}   [domain]          Pass null when constructing before
+   *                                          domain is available (bundle flow).
+   *                                          Kept for API compatibility with
+   *                                          BaseGridModel(name, domain, options).
+   * @param {Object}        [options]
+   * @param {number}        [options.location]  Location filter ID (0 = all)
+   * @param {number}        [options.days]      Analysis period in days (default 30)
+   * @param {string}        [options.nonce]     WP REST nonce for authentication
    */
-  constructor( name = "Analytics", options = {} ) {
+  constructor( name = "Analytics", domain = null, options = {} ) {
     this.name     = name;
     this.location = options.location ?? 0;
     this.days     = options.days     ?? 30;
@@ -33,6 +37,8 @@ export default class AnalyticsGridModel {
     this.raw       = null;  // raw API response for inspection
 
     this._buildColumns();
+
+    if ( domain ) this.setDomain( domain );
   }
 
 
@@ -219,8 +225,23 @@ export default class AnalyticsGridModel {
   // These exist so Grid can call them without blowing up, even though
   // this model has no editable cells, dirty tracking, or domain bundle.
 
-  /** No-op: analytics model is self-contained, does not use domain bundles. */
-  setDomain( /* domain */ ) {}
+  /**
+   * Populate rows from the bundle domain.
+   *
+   * The bundle places analytics data at domain.analytics — the same shape
+   * returned by GET /wp-json/scoop/v1/analytics.  If the key is absent (e.g.
+   * a bundle request that pre-dates this change) the model stays empty rather
+   * than throwing.
+   *
+   * @param {Object} domain  Full bundle data object (bundle.data).
+   */
+  setDomain( domain ) {
+    const a = domain?.analytics;
+    if ( a?.ok && Array.isArray( a.flavors ) ) {
+      this.raw = a;
+      this._buildRows( a.flavors );
+    }
+  }
 
   /** Read-only grid has no save target. */
   get submitMode() { return null; }

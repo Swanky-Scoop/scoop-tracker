@@ -36,52 +36,42 @@ add_action( 'rest_api_init', 'scoop_register_analytics_route' );
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main handler
+// Core computation — shared by the REST handler and the bundle endpoint
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Handle GET /wp-json/scoop/v1/analytics
+ * Run the analytics computation and return the response body as an array.
  *
- * @param WP_REST_Request $req
- * @return WP_REST_Response
+ * Shared by scoop_analytics_handler() (standalone REST) and
+ * scoop_bundle_fetch_type('analytics', …) (bundle).  Callers wrap the result
+ * in WP_REST_Response or embed it in bundle.data as appropriate.
+ *
+ * @param int    $period_days  Analysis window in days (≥1).
+ * @param int    $location_id  Location post ID; 0 = all locations.
+ * @param string $trace_id     Correlation ID injected into log lines and the
+ *                             returned array.  Auto-generated if empty.
+ * @return array  Response body: ['ok'=>bool, 'period_days'=>int,
+ *                'generated_at'=>string, 'flavors'=>array, 'trace_id'=>string,
+ *                'degraded'=>string[] (only when non-empty),
+ *                'error'=>string (only on hard failure)]
  */
-function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
+function scoop_analytics_compute( int $period_days, int $location_id, string $trace_id = '' ): array {
 
-  // Correlation ID — appears in both error_log output and the JSON error
-  // response. Gus (or whoever hits the 500) can copy it from the browser
-  // devtools and we can grep the PHP error log for the full stack. This is
-  // the single thing that makes a "DatabaseError surfaces in the browser"
-  // bug traceable without live debugger access.
-  $trace_id = substr( bin2hex( random_bytes( 6 ) ), 0, 12 );
-
-  if ( ! function_exists( 'pods' ) ) {
-    return new \WP_REST_Response( [
-      'ok'       => false,
-      'error'    => 'Pods framework not available.',
-      'trace_id' => $trace_id,
-    ], 500 );
+  if ( $trace_id === '' ) {
+    $trace_id = substr( bin2hex( random_bytes( 6 ) ), 0, 12 );
   }
 
-  $period_days = max( 1, (int) ( $req->get_param( 'days' ) ?? 30 ) );
-  $location_id = $req->get_param( 'location' );
-  $location_id = ( $location_id !== null && $location_id !== '' )
-    ? (int) $location_id
-    : 0;
-
-  $now         = current_time( 'mysql' );
+  $now          = current_time( 'mysql' );
   $period_start = date( 'Y-m-d H:i:s', strtotime( "-{$period_days} days", strtotime( $now ) ) );
 
   // Half-period boundary for trend calculation (split the period into two halves)
-  $half_days    = max( 1, intdiv( $period_days, 2 ) );
-  $half_start   = date( 'Y-m-d H:i:s', strtotime( "-{$half_days} days", strtotime( $now ) ) );
+  $half_days  = max( 1, intdiv( $period_days, 2 ) );
+  $half_start = date( 'Y-m-d H:i:s', strtotime( "-{$half_days} days", strtotime( $now ) ) );
 
   // Each data-gathering step is independently wrapped. A fault in one
-  // section (e.g. a Pods schema quirk hitting closeouts) no longer blanks
-  // the entire grid — the rest of the columns still render, and the
-  // failing section returns [] with the real cause captured in error_log.
-  //
-  // We keep a list of degraded sections so the client can surface which
-  // pieces of the response are stale/empty rather than silently missing.
+  // section (e.g. a Pods schema quirk) no longer blanks the entire grid —
+  // the rest of the columns still render, and the failing section returns []
+  // with the real cause captured in error_log.
   $degraded = [];
 
   $run = function ( string $stage, callable $fn ) use ( $trace_id, &$degraded ) {
@@ -106,24 +96,22 @@ function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
 
   $flavors_map = $run( 'fetch_flavors', 'scoop_analytics_fetch_flavors' );
   if ( ! is_array( $flavors_map ) ) {
-    // Flavors are load-bearing — without them there is literally nothing to
-    // aggregate against. Surface the failure rather than returning an empty
-    // success that would look like "no flavors exist" (misleading for ops).
-    return new \WP_REST_Response( [
-      'ok'         => false,
-      'error'      => 'Failed to enumerate flavors.',
-      'trace_id'   => $trace_id,
-      'degraded'   => $degraded,
-    ], 500 );
+    // Flavors are load-bearing — without them there is nothing to aggregate.
+    return [
+      'ok'       => false,
+      'error'    => 'Failed to enumerate flavors.',
+      'trace_id' => $trace_id,
+      'degraded' => $degraded,
+    ];
   }
   if ( empty( $flavors_map ) ) {
-    return new \WP_REST_Response( [
-      'ok'          => true,
-      'period_days' => $period_days,
+    return [
+      'ok'           => true,
+      'period_days'  => $period_days,
       'generated_at' => gmdate( 'Y-m-d\TH:i:s' ),
-      'flavors'     => [],
-      'trace_id'    => $trace_id,
-    ], 200 );
+      'flavors'      => [],
+      'trace_id'     => $trace_id,
+    ];
   }
 
   // ── Step 2: Aggregate tub sales (authoritative) ────────────────────────────
@@ -161,49 +149,47 @@ function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
 
   foreach ( $flavors_map as $flavor_id => $flavor_name ) {
 
-    $total_sold   = $sales[ $flavor_id ]['total']      ?? 0.0;
-    $recent_sold  = $sales[ $flavor_id ]['recent']     ?? 0.0;
-    $prior_sold   = $sales[ $flavor_id ]['prior']      ?? 0.0;
-    $last_sale    = $sales[ $flavor_id ]['last_sale']   ?? null;
+    $total_sold   = $sales[ $flavor_id ]['total']    ?? 0.0;
+    $recent_sold  = $sales[ $flavor_id ]['recent']   ?? 0.0;
+    $prior_sold   = $sales[ $flavor_id ]['prior']    ?? 0.0;
+    $last_sale    = $sales[ $flavor_id ]['last_sale'] ?? null;
 
-    $sell_rate    = ( $period_days > 0 ) ? $total_sold / $period_days : 0.0;
-    $recent_rate  = ( $half_days > 0 )   ? $recent_sold / $half_days : 0.0;
-    $prior_rate   = ( $half_days > 0 )   ? $prior_sold / $half_days  : 0.0;
+    $sell_rate   = ( $period_days > 0 ) ? $total_sold   / $period_days : 0.0;
+    $recent_rate = ( $half_days > 0   ) ? $recent_sold  / $half_days   : 0.0;
+    $prior_rate  = ( $half_days > 0   ) ? $prior_sold   / $half_days   : 0.0;
 
-    // Trend: compare recent half vs prior half, +-10% threshold for "steady"
+    // Trend: compare recent half vs prior half, ±10% threshold for "steady"
     $trend     = 'steady';
     $trend_pct = 0.0;
     if ( $prior_rate > 0 ) {
       $trend_pct = ( ( $recent_rate - $prior_rate ) / $prior_rate ) * 100.0;
-      if ( $trend_pct > 10.0 )       $trend = 'rising';
-      elseif ( $trend_pct < -10.0 )  $trend = 'falling';
+      if ( $trend_pct > 10.0 )      $trend = 'rising';
+      elseif ( $trend_pct < -10.0 ) $trend = 'falling';
     } elseif ( $recent_rate > 0 ) {
       // Had no prior sales but has recent sales — clearly rising
       $trend     = 'rising';
       $trend_pct = 100.0;
     }
 
-    $current_stock = $stock[ $flavor_id ] ?? 0;
-    $days_supply   = ( $sell_rate > 0 ) ? $current_stock / $sell_rate : null;
-
+    $current_stock   = $stock[ $flavor_id ]      ?? 0;
+    $days_supply     = ( $sell_rate > 0 ) ? $current_stock / $sell_rate : null;
     $avg_sellthrough = $sellthrough[ $flavor_id ] ?? null;
-
-    $batch_date = $last_batch[ $flavor_id ] ?? null;
+    $batch_date      = $last_batch[ $flavor_id ]  ?? null;
 
     $flavors_out[] = [
-      'flavor_id'           => $flavor_id,
-      'flavor_name'         => $flavor_name,
-      'total_sold'          => round( $total_sold, 2 ),
-      'sell_rate_per_day'   => round( $sell_rate, 4 ),
+      'flavor_id'            => $flavor_id,
+      'flavor_name'          => $flavor_name,
+      'total_sold'           => round( $total_sold, 2 ),
+      'sell_rate_per_day'    => round( $sell_rate, 4 ),
       'avg_sellthrough_days' => ( $avg_sellthrough !== null ) ? round( $avg_sellthrough, 1 ) : null,
-      'current_stock'       => $current_stock,
-      'days_of_supply'      => ( $days_supply !== null ) ? round( $days_supply, 1 ) : null,
-      'trend'               => $trend,
-      'trend_pct'           => round( $trend_pct, 1 ),
-      'recent_rate'         => round( $recent_rate, 4 ),
-      'prior_rate'          => round( $prior_rate, 4 ),
-      'last_batch_date'     => $batch_date,
-      'last_sale_date'      => $last_sale,
+      'current_stock'        => $current_stock,
+      'days_of_supply'       => ( $days_supply !== null ) ? round( $days_supply, 1 ) : null,
+      'trend'                => $trend,
+      'trend_pct'            => round( $trend_pct, 1 ),
+      'recent_rate'          => round( $recent_rate, 4 ),
+      'prior_rate'           => round( $prior_rate, 4 ),
+      'last_batch_date'      => $batch_date,
+      'last_sale_date'       => $last_sale,
     ];
   }
 
@@ -212,10 +198,9 @@ function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
     return $b['sell_rate_per_day'] <=> $a['sell_rate_per_day'];
   } );
 
-  // A successful but partially-degraded response still returns 200 with
-  // ok=true — the grid is renderable — but lists the failed stages so
-  // the client can flag stale/empty columns and ops can correlate with
-  // the error log via trace_id.
+  // A successful but partially-degraded response still returns ok=true —
+  // the grid is renderable — but lists the failed stages so the client can
+  // flag stale/empty columns and ops can correlate via trace_id.
   $response = [
     'ok'           => true,
     'period_days'  => $period_days,
@@ -232,7 +217,45 @@ function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
     ) );
   }
 
-  return new \WP_REST_Response( $response, 200 );
+  return $response;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main handler
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Handle GET /wp-json/scoop/v1/analytics
+ *
+ * @param WP_REST_Request $req
+ * @return WP_REST_Response
+ */
+function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
+
+  // Correlation ID — appears in both error_log output and the JSON error
+  // response. Gus (or whoever hits the 500) can copy it from the browser
+  // devtools and we can grep the PHP error log for the full stack. This is
+  // the single thing that makes a "DatabaseError surfaces in the browser"
+  // bug traceable without live debugger access.
+  $trace_id = substr( bin2hex( random_bytes( 6 ) ), 0, 12 );
+
+  if ( ! function_exists( 'pods' ) ) {
+    return new \WP_REST_Response( [
+      'ok'       => false,
+      'error'    => 'Pods framework not available.',
+      'trace_id' => $trace_id,
+    ], 500 );
+  }
+
+  $period_days = max( 1, (int) ( $req->get_param( 'days' ) ?? 30 ) );
+  $location_id = $req->get_param( 'location' );
+  $location_id = ( $location_id !== null && $location_id !== '' )
+    ? (int) $location_id
+    : 0;
+
+  $result = scoop_analytics_compute( $period_days, $location_id, $trace_id );
+  return new \WP_REST_Response( $result, $result['ok'] ? 200 : 500 );
 }
 
 
