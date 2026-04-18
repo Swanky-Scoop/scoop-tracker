@@ -47,10 +47,18 @@ add_action( 'rest_api_init', 'scoop_register_analytics_route' );
  */
 function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
 
+  // Correlation ID — appears in both error_log output and the JSON error
+  // response. Gus (or whoever hits the 500) can copy it from the browser
+  // devtools and we can grep the PHP error log for the full stack. This is
+  // the single thing that makes a "DatabaseError surfaces in the browser"
+  // bug traceable without live debugger access.
+  $trace_id = substr( bin2hex( random_bytes( 6 ) ), 0, 12 );
+
   if ( ! function_exists( 'pods' ) ) {
     return new \WP_REST_Response( [
-      'ok'    => false,
-      'error' => 'Pods framework not available.',
+      'ok'       => false,
+      'error'    => 'Pods framework not available.',
+      'trace_id' => $trace_id,
     ], 500 );
   }
 
@@ -67,15 +75,54 @@ function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
   $half_days    = max( 1, intdiv( $period_days, 2 ) );
   $half_start   = date( 'Y-m-d H:i:s', strtotime( "-{$half_days} days", strtotime( $now ) ) );
 
+  // Each data-gathering step is independently wrapped. A fault in one
+  // section (e.g. a Pods schema quirk hitting closeouts) no longer blanks
+  // the entire grid — the rest of the columns still render, and the
+  // failing section returns [] with the real cause captured in error_log.
+  //
+  // We keep a list of degraded sections so the client can surface which
+  // pieces of the response are stale/empty rather than silently missing.
+  $degraded = [];
+
+  $run = function ( string $stage, callable $fn ) use ( $trace_id, &$degraded ) {
+    try {
+      return $fn();
+    } catch ( \Throwable $e ) {
+      error_log( sprintf(
+        '[scoop_analytics trace=%s stage=%s] %s: %s @ %s:%d',
+        $trace_id,
+        $stage,
+        get_class( $e ),
+        $e->getMessage(),
+        $e->getFile(),
+        $e->getLine()
+      ) );
+      $degraded[] = $stage;
+      return null;
+    }
+  };
+
   // ── Step 1: Fetch all flavors ──────────────────────────────────────────────
 
-  $flavors_map = scoop_analytics_fetch_flavors();
+  $flavors_map = $run( 'fetch_flavors', 'scoop_analytics_fetch_flavors' );
+  if ( ! is_array( $flavors_map ) ) {
+    // Flavors are load-bearing — without them there is literally nothing to
+    // aggregate against. Surface the failure rather than returning an empty
+    // success that would look like "no flavors exist" (misleading for ops).
+    return new \WP_REST_Response( [
+      'ok'         => false,
+      'error'      => 'Failed to enumerate flavors.',
+      'trace_id'   => $trace_id,
+      'degraded'   => $degraded,
+    ], 500 );
+  }
   if ( empty( $flavors_map ) ) {
     return new \WP_REST_Response( [
       'ok'          => true,
       'period_days' => $period_days,
       'generated_at' => gmdate( 'Y-m-d\TH:i:s' ),
       'flavors'     => [],
+      'trace_id'    => $trace_id,
     ], 200 );
   }
 
@@ -88,21 +135,25 @@ function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
   // ends in a tub being flipped to Emptied (enforced by
   // includes/hooks/tub-state.php and includes/hooks/closeout.php).
 
-  $sales = scoop_analytics_aggregate_tubs(
-    $period_start, $now, $half_start, $location_id
-  );
+  $sales = $run( 'aggregate_tubs', function () use ( $period_start, $now, $half_start, $location_id ) {
+    return scoop_analytics_aggregate_tubs( $period_start, $now, $half_start, $location_id );
+  } ) ?? [];
 
   // ── Step 3: Compute sellthrough times from tub lifecycle ───────────────────
 
-  $sellthrough = scoop_analytics_sellthrough( $period_start, $now, $location_id );
+  $sellthrough = $run( 'sellthrough', function () use ( $period_start, $now, $location_id ) {
+    return scoop_analytics_sellthrough( $period_start, $now, $location_id );
+  } ) ?? [];
 
   // ── Step 4: Current stock per flavor ───────────────────────────────────────
 
-  $stock = scoop_analytics_current_stock( $location_id );
+  $stock = $run( 'current_stock', function () use ( $location_id ) {
+    return scoop_analytics_current_stock( $location_id );
+  } ) ?? [];
 
   // ── Step 5: Last batch date per flavor ─────────────────────────────────────
 
-  $last_batch = scoop_analytics_last_batch();
+  $last_batch = $run( 'last_batch', 'scoop_analytics_last_batch' ) ?? [];
 
   // ── Step 6: Assemble per-flavor results ────────────────────────────────────
 
@@ -161,12 +212,27 @@ function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
     return $b['sell_rate_per_day'] <=> $a['sell_rate_per_day'];
   } );
 
-  return new \WP_REST_Response( [
+  // A successful but partially-degraded response still returns 200 with
+  // ok=true — the grid is renderable — but lists the failed stages so
+  // the client can flag stale/empty columns and ops can correlate with
+  // the error log via trace_id.
+  $response = [
     'ok'           => true,
     'period_days'  => $period_days,
     'generated_at' => gmdate( 'Y-m-d\TH:i:s' ),
     'flavors'      => $flavors_out,
-  ], 200 );
+    'trace_id'     => $trace_id,
+  ];
+  if ( ! empty( $degraded ) ) {
+    $response['degraded'] = $degraded;
+    error_log( sprintf(
+      '[scoop_analytics trace=%s] partial response, degraded stages: %s',
+      $trace_id,
+      implode( ',', $degraded )
+    ) );
+  }
+
+  return new \WP_REST_Response( $response, 200 );
 }
 
 
