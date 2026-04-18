@@ -200,7 +200,7 @@ function scoop_coerce_value(string $field, $value) {
     return (string)$value;
   }
 
-  // integer relationship ids + numeric fields
+  // integer relationship ids + integer-valued fields
   if (in_array($field, [
     'current_flavor',
     'immediate_flavor',
@@ -208,15 +208,19 @@ function scoop_coerce_value(string $field, $value) {
     'flavor',
     'use',
     'location',
-    'tubs_emptied',
     'order',
   ], true)) {
     return (int)$value;
   }
 
+  // fractional numeric fields — tubs_emptied can be 3.5 (three whole tubs +
+  // one half tub), so it MUST be stored as float. Casting to int here truncated
+  // half-tub closeouts, so a 3.5-tub closeout would persist as 3 and the
+  // fractional tub would never be marked Emptied downstream.
   if(in_array($field, [
     'count',
-    'amount'
+    'amount',
+    'tubs_emptied',
   ], true)) {
     return (float)$value;
   }
