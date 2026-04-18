@@ -494,16 +494,22 @@ export default class Grid extends El{
 
   _sortRows(rows, colKey, direction) {
     if (!colKey) return rows;
-    
+
+    // Find the column descriptor so _getSortValue can honour col.type.
+    // Without this, numeric columns (whose display is a formatted string
+    // like "9.7") fall through to localeCompare and sort lexically —
+    // "84.6" < "9.7" as text.
+    const col = (this.cols ?? []).find(c => c.key === colKey) ?? null;
+
     const sorted = [...rows].sort((a, b) => {
-      const aVal = this._getSortValue(a[colKey]);
-      const bVal = this._getSortValue(b[colKey]);
-      
+      const aVal = this._getSortValue(a[colKey], col);
+      const bVal = this._getSortValue(b[colKey], col);
+
       // Handle nulls
       if (aVal == null && bVal == null) return 0;
       if (aVal == null) return 1;
       if (bVal == null) return -1;
-      
+
       // Compare
       let comparison = 0;
       if (typeof aVal === 'number' && typeof bVal === 'number') {
@@ -511,23 +517,47 @@ export default class Grid extends El{
       } else {
         comparison = String(aVal).localeCompare(String(bVal));
       }
-      
+
       return direction === 'asc' ? comparison : -comparison;
     });
-    
+
     return sorted;
   }
 
-  _getSortValue(cellData) {
+  _getSortValue(cellData, col = null) {
     // Handle different cell data structures
     if (cellData == null) return null;
-    
-    // If it's an object with display/id (your cell structure)
+
     if (typeof cellData === 'object') {
+      // For numeric columns, prefer the raw numeric .value over the
+      // formatted display string so the comparator takes the numeric
+      // branch. Fall back through value -> display -> id, coercing when
+      // the value is a numeric string (e.g. "9.7" from JSON).
+      if (col?.type === 'number') {
+        const n = this._asFiniteNumber(cellData.value);
+        if (n !== null) return n;
+        const d = this._asFiniteNumber(cellData.display);
+        if (d !== null) return d;
+        const i = this._asFiniteNumber(cellData.id);
+        if (i !== null) return i;
+        return null;
+      }
+
+      // Non-numeric: preserve the original preference order.
       return cellData.display ?? cellData.id ?? cellData.value ?? null;
     }
-    
+
     return cellData;
+  }
+
+  _asFiniteNumber(v) {
+    if (v == null || v === '') return null;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    if (typeof v === 'string') {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+    return null;
   }
 
   _handleCellChange(e) 
