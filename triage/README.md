@@ -14,6 +14,8 @@ is a view. When a row changes, the TSV changes first.
   UTF-8, no BOM, Unix (LF) line endings. Tab-separated.
 - `flavors-2026-04-19.tsv` — 221 data rows + 1 header row = 222 lines.
   UTF-8, no BOM, Unix (LF) line endings. Tab-separated.
+- `sub-recipes-2026-04-19.tsv` — 100 data rows + 1 header row = 101 lines.
+  UTF-8, no BOM, Unix (LF) line endings. Tab-separated.
 - `README.md` — this file.
 
 ## Column definitions
@@ -258,3 +260,120 @@ write-auth tooling track (Webel-side, separate node) and will land as a
 distinct follow-up PR once the tooling is in place. Read-side landing
 first gives Gus a reviewable source-of-truth without committing any
 mutations against OPS.
+
+---
+
+# Sub-Recipe Conversion (Phase 2)
+
+**File:** `sub-recipes-2026-04-19.tsv` — 100 data rows + 1 header = 101 lines.
+UTF-8, no BOM, Unix (LF) line endings. Tab-separated.
+
+## Scope
+
+This table covers the **100 RCC sub-recipes** — recipes that appear as
+components inside at least one other recipe (referenced via a `/recipes/<id>`
+link in another recipe's Cost Breakdown). These are the "leaf-with-reference"
+and "ambiguous" nodes of the recipe DAG.
+
+Out-of-scope populations discovered in the same pass (deferred to Phase 3/4):
+
+- **113 ref-only ("compound") recipes** — reference sub-recipes themselves but
+  are not referenced by others. Phase 3 scope.
+- **120 pure-leaf recipes** — no internal sub-recipe refs, not referenced.
+  Phase 4 candidates.
+
+## Confidence ladder (0–5)
+
+Each sub-recipe carries a confidence score derived from its components via the
+MIN-of-components (weakest-link) rule:
+
+- **5 — verified**: Gus-confirmed value or wholesale-catalog-sourced price.
+  Zero rows in Phase 2 — a sub-recipe cannot exceed the confidence of its
+  weakest-link component, and no component chain reaches Gus-verified status
+  yet.
+- **4 — clean source + unit conversion**: all components resolved via Phase 1
+  Tier-4 or Tier-5 ingredients (pure mass or RCC-provided density converter).
+- **3 — density / food-science derivation**: weakest component used a
+  name-pattern density rule (oil 0.92, dairy 1.03, juice 1.04, etc.) or a
+  Q4-override wholesale estimate. Well-grounded but assumption-based.
+- **2 — source suspect**: RCC value exists but looks miskeyed. Zero rows in
+  Phase 2 (suspect values were resolved or escalated to conf-0).
+- **1 — placeholder-inherited**: at least one component is a Phase 1
+  `PLACEHOLDER-SUSPECTED` ingredient (the "$1.00 stub" pattern). The computed
+  `$/g` is mathematically consistent but the upstream price is untrustworthy.
+- **0 — confirmed wrong**: a required component is an empty-body stub recipe
+  (zero ingredient rows in RCC), has an unresolvable unit, or has no `$/g` at
+  all. The sub-recipe `$/g` cannot be trusted.
+
+## Methodology
+
+`$/g = Σ(component_grams × component_$/g) / Σ(component_grams)`
+
+Confidence = MIN(component confidences) — weakest link sets the floor.
+
+Gram conversions apply Q5-confirmed densities (Gus-confirmed 2026-04-19):
+oil 0.92 g/mL, dairy/ice-cream-base 1.03 g/mL, syrup 1.375 g/mL, juice
+1.04 g/mL, extract/flavor 0.88 g/mL, water 1.00 g/mL.
+
+**Q4 overrides** applied in-rollup (not editing the Phase 1 table): Apple
+Puree, Kiwi Puree, Pear Puree, white peach puree, Buttermilk Powder, and
+chickpeas (aquafaba) each received a Webel-sourced food-service wholesale
+estimate at confidence 3. Water was confirmed at $0/g (confidence 5) per Gus
+Q4. Sub-recipes whose `$/g` depends materially on these 6 estimates cap at
+confidence 3.
+
+## Confidence distribution
+
+| Confidence | Label | Rows |
+|---|---|---|
+| 5 | verified | 0 |
+| 4 | clean source + unit conversion | 14 |
+| 3 | density / food-science derivation | 11 |
+| 2 | source suspect | 0 |
+| 1 | placeholder-inherited | 64 |
+| 0 | confirmed wrong | 11 |
+| **Total** | | **100** |
+
+**66 of 100 rows** (66%) carry the placeholder flag — any sub-recipe that
+touches one Phase 1 `PLACEHOLDER-SUSPECTED` ingredient inherits the flag and
+drops to confidence ≤ 1. High-leverage remediation: resolve the most-referenced
+placeholder ingredients; each fix cascades into multiple sub-recipes.
+
+**18 empty-body stubs** (zero ingredient rows in RCC) drive 11 downstream
+sub-recipes to confidence 0 via cascade.
+
+**12 ambiguous sub-vs-compound recipes** (contain other sub-recipes AND are
+referenced as sub-recipes themselves) are included in this table pending Gus's
+Gate-2 taxonomy decision (see open questions below).
+
+## TSV column definitions
+
+| Column | Meaning |
+|--------|---------|
+| `name` | RCC sub-recipe name. |
+| `rcc_id` | RCC recipe ID (numeric). |
+| `dollars_per_gram` | Computed `$/g`; blank for empty-body stubs (no resolvable components). |
+| `confidence_0_to_5` | Confidence tier on the 0–5 ladder above. |
+| `placeholder_flag` | `Y` if any component is a Phase 1 `PLACEHOLDER-SUSPECTED` ingredient or an empty-body stub sub-recipe. |
+| `ambiguous_sub_or_compound` | `Y` if this recipe both contains sub-recipes AND is referenced as a sub-recipe by other recipes (Gate-2 taxonomy pending). |
+| `q4_override_affected` | `Y` if any component used a Q4-override wholesale estimate (Apple/Kiwi/Pear/Peach puree, Buttermilk Powder, aquafaba, or Water). |
+| `is_empty_stub` | `Y` if RCC shows zero ingredient rows for this recipe (zest/juice alias stubs). |
+| `downstream_cascade_count` | Number of other sub-recipes in this table that cascade to confidence 0 because this row is an empty stub and they reference it. 0 for non-stubs and stubs with no downstream conf-0 impact. |
+| `notes` | Brief context: placeholder trigger ingredient, unresolved component, Q4-override components, parent-ref count where notable. |
+
+## Open questions for Gate 2
+
+The following six questions require Gus's decision before the Phase 2 OPS
+write pass can proceed. They are reproduced verbatim from the source analysis.
+
+1. **Empty-stub zest/juice/alias sub-recipes (18 total).** RCC shows these with zero ingredient rows, yield "1 tbsp" at $0. 7 of them (Lemon zested/juiced, Orange zested/juiced, Limes zested/juiced, Pineapple juiced) are referenced by 11 downstream sub-recipes that consequently cascade to confidence 0. **Decision requested:** Should these be (a) re-keyed as direct ingredient references with RCC measurement converters ("1 lemon = 30 mL juice"), (b) given explicit yield + cost in RCC, or (c) treated as documentation-only aliases and skipped in OPS?
+
+2. **Sub-vs-compound taxonomy for 12 ambiguous recipes.** Listed in §6 of the source analysis. Ambiguous cases (Cheesecake, Chocolate Paste, etc.) both contain sub-recipes AND are used as components. Confirm: should these be treated as sub-recipes in OPS canonical (current Phase 2 assumption), or split into "sub-recipe variant" + "compound variant"?
+
+3. **Q4-override wholesale estimates (25 affected sub-recipes).** Webel's $/g estimates for Apple/Kiwi/Pear/Peach puree, Buttermilk Powder, and aquafaba are food-service wholesale benchmarks, not Gus-sourced. Ratify the 6 estimates (listed in §3 of the source analysis) or provide Gus-confirmed prices so affected sub-recipes can move from confidence 3 to confidence 5.
+
+4. **RCC data-entry cleanup.** ≥10 rows have unit `pinch` with ingredient-name suffix `grams` (likely intended `g`). 1 row has 480 qts of orange juice (implausibly large). These are in Phase 3/4-scope recipes but worth flagging now. **Decision requested:** Should Phase 3/4 auto-correct these (grams when name says grams) or preserve RCC as source-of-truth?
+
+5. **Ice-cream-base volume unit (`qts`).** Meadowvale bases consistently priced per quart. Applied Q5-confirmed dairy density 1.03 g/mL to convert. **Confirm density is appropriate** for 16% dairy ice cream base mix (which is not plain dairy; it contains stabilizers/sugars).
+
+6. **Sub-recipe "yield" field ignored.** RCC's yield metadata (e.g., "Yield Count × Units = 1 tbsp") was not used. Our $/g computation uses total component grams as the denominator. This matches Phase 1 conversion logic but assumes no cooking-loss / evaporation / yield-shrinkage adjustment. **Confirm:** is gross-component-weight the right denominator for OPS $/g, or should we apply yield correction (e.g., syrup reductions lose ~50% water mass)?
