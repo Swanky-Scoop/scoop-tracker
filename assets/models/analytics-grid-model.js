@@ -2,134 +2,81 @@
 // AnalyticsGridModel
 //
 // Read-only grid model for the analytics dashboard.
-// Fetches computed sales velocity data from GET /wp-json/scoop/v1/analytics
-// and renders a flat table sorted by sell_rate_per_day (fastest sellers first).
+// Extends BaseGridModel so Analytics participates in the shared bundle flow
+// the same way as Cabinet, FlavorTub, Batch, Closeout, and DateActivity.
 //
-// Unlike other grid models, this one:
-//   - Does NOT extend BaseGridModel (no domain bundle, no dirty tracking, no save)
-//   - Fetches from its own dedicated endpoint rather than the bundle
-//   - All columns are read-only
-//   - Owns its own data lifecycle (fetch, transform, render)
+// Bundle path: mountAllGrids() calls setDomain(bundle.data) → reads
+//   domain.analytics (same shape as GET /wp-json/scoop/v1/analytics).
+//
+// Standalone path: fetch() hits the dedicated endpoint directly and calls
+//   setDomain({ analytics: json }) so both paths share buildRows().
 ///////////////////////////////////
 
-export default class AnalyticsGridModel {
+import BaseGridModel from "./_base-grid-model.js";
+
+export default class AnalyticsGridModel extends BaseGridModel {
 
   /**
-   * @param {string}  name       Grid type identifier (usually "Analytics")
-   * @param {Object}  [options]
-   * @param {number}  [options.location]  Location filter ID (0 = all)
-   * @param {number}  [options.days]      Analysis period in days (default 30)
-   * @param {string}  [options.nonce]     WP REST nonce for authentication
+   * @param {string}      name              Grid type identifier ("Analytics")
+   * @param {Object|null} [domain]          Pass null when constructing before
+   *                                        domain is available (bundle flow).
+   *                                        Kept for API compatibility with
+   *                                        BaseGridModel(name, domain, options).
+   * @param {Object}      [options]
+   * @param {number}      [options.location]  Location filter ID (0 = all)
+   * @param {number}      [options.days]      Analysis period in days (default 30)
+   * @param {string}      [options.nonce]     WP REST nonce for authentication
    */
-  constructor( name = "Analytics", options = {} ) {
-    this.name     = name;
-    this.location = options.location ?? 0;
-    this.days     = options.days     ?? 30;
-    this.nonce    = options.nonce    ?? (typeof SCOOP !== "undefined" ? SCOOP.nonce : null);
+  constructor( name = "Analytics", domain = null, options = {} ) {
+    // Pass null domain — we handle it ourselves after setting instance state.
+    super( name, null, options );
 
-    this.columns   = [];
-    this.rows      = [];
-    this.rowGroups = [];
-    this.raw       = null;  // raw API response for inspection
+    this.days  = options.days  ?? 30;
+    this.nonce = options.nonce ?? ( typeof SCOOP !== "undefined" ? SCOOP.nonce : null );
+    this.raw   = null;
 
+    // Explicit column build: base won't auto-build (no metaData).
     this._buildColumns();
+
+    // Now deliver domain if provided (calls our overridden setDomain/buildRows).
+    if ( domain ) this.setDomain( domain );
   }
 
 
   // ── Column definitions ────────────────────────────────────────────────────
 
-  _buildColumns() {
-    this.columns = [
-      {
-        key:   "flavor_name",
-        label: "Flavor",
-        type:  "string",
-      },
-      {
-        key:   "total_sold",
-        label: "Total Sold",
-        type:  "number",
-      },
-      {
-        key:   "sell_rate_per_day",
-        label: "Rate (tubs/day)",
-        type:  "number",
-      },
-      {
-        key:   "avg_sellthrough_days",
-        label: "Avg Days to Sell",
-        type:  "number",
-      },
-      {
-        key:   "current_stock",
-        label: "Current Stock",
-        type:  "number",
-      },
-      {
-        key:   "days_of_supply",
-        label: "Days of Supply",
-        type:  "number",
-      },
-      {
-        key:   "trend",
-        label: "Trend",
-        type:  "string",
-      },
+  buildCols() {
+    this._allColumns = [
+      { key: "flavor_name",          label: "Flavor",           type: "string" },
+      { key: "total_sold",           label: "Total Sold",       type: "number" },
+      { key: "sell_rate_per_day",    label: "Rate (tubs/day)",  type: "number" },
+      { key: "avg_sellthrough_days", label: "Avg Days to Sell", type: "number" },
+      { key: "current_stock",        label: "Current Stock",    type: "number" },
+      { key: "days_of_supply",       label: "Days of Supply",   type: "number" },
+      { key: "trend",                label: "Trend",            type: "string" },
     ];
 
+    this._applyColumnFilter();
     return this.columns;
   }
 
 
-  // ── Data fetch ────────────────────────────────────────────────────────────
+  // ── Domain handling ───────────────────────────────────────────────────────
 
-  /**
-   * Fetch analytics data from the REST endpoint.
-   * Call this after construction, then pass this model to a Grid.
-   *
-   * @return {Promise<AnalyticsGridModel>}  Returns self for chaining.
-   */
-  async fetch() {
-    const url = new URL( "/wp-json/scoop/v1/analytics", window.location.origin );
-    url.searchParams.set( "days", String( this.days ) );
-    if ( this.location ) {
-      url.searchParams.set( "location", String( this.location ) );
-    }
-    // Cache-bust
-    url.searchParams.set( "_ts", String( Date.now() ) );
-
-    const headers = { Accept: "application/json" };
-    if ( this.nonce ) {
-      headers["X-WP-Nonce"] = this.nonce;
-    }
-
-    const res  = await fetch( url, { credentials: "include", headers } );
-    const json = await res.json();
-
-    if ( ! json?.ok ) {
-      console.error( "AnalyticsGridModel: endpoint returned error", json );
-      this.raw  = json;
-      this.rows = [];
-      return this;
-    }
-
-    this.raw = json;
-    this._buildRows( json.flavors ?? [] );
-    return this;
+  setDomain( domain ) {
+    super.setDomain( domain );
   }
 
+  buildRows() {
+    const a = this.domain?.analytics;
+    if ( ! a?.ok || ! Array.isArray( a.flavors ) ) {
+      this.rows = [];
+      this.raw  = a ?? null;
+      return this.rows;
+    }
 
-  // ── Row construction ──────────────────────────────────────────────────────
-
-  /**
-   * Transform the API response into Grid-compatible row objects.
-   * Each cell is { display, value, ... } matching what Grid._getCellDom reads
-   * for read-only cells (it uses data.display when col.write is falsy).
-   *
-   * @param {Array} flavors  Array of flavor objects from the API
-   */
-  _buildRows( flavors ) {
-    this.rows = flavors.map( ( f, i ) => {
+    this.raw  = a;
+    this.rows = a.flavors.map( ( f, i ) => {
       const row = { id: f.flavor_id ?? i };
 
       // Flavor name — plain text
@@ -215,25 +162,50 @@ export default class AnalyticsGridModel {
   }
 
 
-  // ── Grid interface stubs ──────────────────────────────────────────────────
-  // These exist so Grid can call them without blowing up, even though
-  // this model has no editable cells, dirty tracking, or domain bundle.
+  // ── Data fetch ────────────────────────────────────────────────────────────
 
-  /** No-op: analytics model is self-contained, does not use domain bundles. */
-  setDomain( /* domain */ ) {}
+  /**
+   * Fetch analytics data from the REST endpoint (standalone path).
+   * Retained for any page using Analytics alone (without the bundle).
+   * Terminates via setDomain() so both bundle and standalone paths
+   * share the same buildRows() code path.
+   *
+   * @return {Promise<AnalyticsGridModel>}  Returns self for chaining.
+   */
+  async fetch() {
+    const url = new URL( "/wp-json/scoop/v1/analytics", window.location.origin );
+    url.searchParams.set( "days", String( this.days ) );
+    if ( this.location ) {
+      url.searchParams.set( "location", String( this.location ) );
+    }
+    // Cache-bust
+    url.searchParams.set( "_ts", String( Date.now() ) );
 
-  /** Read-only grid has no save target. */
-  get submitMode() { return null; }
+    const headers = { Accept: "application/json" };
+    if ( this.nonce ) {
+      headers["X-WP-Nonce"] = this.nonce;
+    }
 
-  /** No editable columns means no change descriptions. */
-  describeFieldChanges() { return []; }
+    const res  = await fetch( url, { credentials: "include", headers } );
+    const json = await res.json();
 
-  /** No title maps needed for read-only display. */
-  getTitleMap() { return new Map(); }
-  titleFrom( id ) { return String( id ); }
+    if ( ! json?.ok ) {
+      console.error( "AnalyticsGridModel: endpoint returned error", json );
+      this.raw  = json;
+      this.rows = [];
+      return this;
+    }
 
-  /** No badges on analytics rows. */
-  getBadges()    { return []; }
-  getOptions()   { return []; }
-  getAlertCase() { return ""; }
+    // Route through setDomain so bundle and standalone share buildRows()
+    this.setDomain( { analytics: json } );
+    return this;
+  }
+
+
+  // ── BaseGridModel overrides ───────────────────────────────────────────────
+
+  /** Analytics is read-only; no change descriptions to generate. */
+  describeFieldChanges( responseData, rawChanges ) {
+    return [];
+  }
 }
