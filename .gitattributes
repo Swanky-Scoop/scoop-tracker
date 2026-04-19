@@ -1,0 +1,2 @@
+triage/*.tsv text eol=lf
+triage/*.md text eol=lf
