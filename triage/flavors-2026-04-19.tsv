@@ -1,0 +1,222 @@
+flavor_id	flavor_name	proposed_recipe_id	proposed_recipe_name	match_source	confidence	recipe_class	status	notes
+6326	Raspberry White Chocolate	688	Caramelized White Chocolate	name-keyword	1	unknown	NEEDS-GUS-CALL	
+6315	Vanilla (pea)	887	Vanilla #3	name-exact	4	icecream	AMBIGUOUS	alts=Vegan Vanilla Bean icecream#922(s=0.95); vegan-base(pea) but recipe not flagged vegan
+5997	Banana Caramel Chip (v)	843	Salted Caramel Swirl (V) Ice Cream	name-keyword	1	icecream	AMBIGUOUS	alts=Vegan Caramel (housemade)#5531(s=0.63)
+5967	Just Peachy Sorbet (v)	670	Blood Peach Sorbet	name-keyword	1	sorbet	AMBIGUOUS	alts=Roasted Peaches#834(s=0.53)
+5963	Smoked S'mores	916	Vegan S’mores Icecream	name-fuzzy	3	icecream	LIKELY-MATCH	
+5903	The Wise Turtle	5514	Raspberry Rose Truffle Icecream	name-keyword	1	icecream	AMBIGUOUS	alts=The Chaperone Icecream#5524(s=0.43)|V/GF Swiss Roll (for christmas)#5529(s=0.40)|Swiss Roll (yule log)#5522(s=0.40)
+5853	Raspberry Blondie (pea)	885	V/GF Raspberry Blondie Icerceam	name-exact	3	icecream	LIKELY-MATCH	exact-after-normalization
+5687	Raspberry Lime Rickey Sorbet	824	Raspberry Lime Rickey	name-exact	4	sorbet	CLEAR-MATCH	
+5636	Cookie Buttah	720	Cookie buttah Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5623	Yellow Pluot (sorbet)	5547	Yellow Pluot Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+5622	Watermelon (sorbet)	5546	Watermelon Sorbet	name-exact	4	sorbet	AMBIGUOUS	alts=Watermelon Mint Sorbet#5545(s=0.95)
+5621	Watermelon Mint (sorbet)	5545	Watermelon Mint Sorbet	name-exact	4	sorbet	AMBIGUOUS	alts=Watermelon Sorbet#5546(s=0.95)
+5620	Super Sorbet	5520	Super Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+5619	Sorbet De' Normandie	5517	Sorbet De' Normandie	name-exact	4	sorbet	CLEAR-MATCH	
+5618	Purple Pluot (sorbet)	5513	Purple Pluot Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+5617	Kiwi (sorbet)	5493	Kiwi Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+5616	Heirloom Tomato (sorbet)	5484	Heirloom Tomato Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+5615	Blueberry (sorbet)	5474	Blueberry Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+5614	Blood Orange (sorbet)	5473	Blood Orange Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+5613	Apple Chaider (sorbet)	5472	Apple Chaider Sorbet	name-exact	4	sorbet	AMBIGUOUS	alts=Apple Chaider#654(s=1.00)
+5612	Wassail (sorbet)	925	Wassail Sorbet (v)	name-exact	4	sorbet	CLEAR-MATCH	
+5611	Strawberry (sorbet)	856	Strawberry Sorbet	name-exact	4	sorbet	AMBIGUOUS	alts=Vegan Strawberry Icecream (PEA)#5540(s=1.00)|Vegan Strawberry Ice Cream#918(s=1.00)|Strawberry Lemonade Sorbet#855(s=0.95)
+5610	Cranberry Pomegranate (sorbet)	725	Cranberry Pomegranate Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+5609	Peach Bourbon (oat)	5536	Vegan Peach Bourbon Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5608	Coffee Caramel Brownie (oat)	5528	V/GF Coffee Caramel Brownie Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5607	Chai (oat)	898	Vegan Chocolate Chai	name-fuzzy	3	icecream	LIKELY-MATCH	
+5606	Lemon (sorbet)	764	Lemon Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+5605	Strawberry	5540	Vegan Strawberry Icecream (PEA)	name-exact	4	icecream	AMBIGUOUS	alts=Vegan Strawberry Ice Cream#918(s=1.00)|Strawberry Sorbet#856(s=1.00)
+5604	Salted Sage Pecan	5516	Salted Sage Pecan Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5603	Pickle	5538	Vegan Pickle Icecream (PEA)	name-exact	4	icecream	AMBIGUOUS	alts=Pickle Icecream#5507(s=1.00)
+5602	Blueberry Lavender (oat)	894	Vegan Blueberry Lavender Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5601	Peach Melba (oat)	884	V/gf Peach Melba Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5600	Pear Cardamom Walnut Streusel	5505	Pear Cardamom Walnut Streusel Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5599	Guava+ (sorbet)	752	Guava+ Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+5598	Peach Cobbler	5504	Peach Cobbler Icrecream	name-fuzzy	3	icecream	LIKELY-MATCH	
+5597	Mango	5497	Mango Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5596	Cherry Chocolate Chip (oat)	874	V/gf Cherry Chocolate Chip	name-exact	4	icecream	CLEAR-MATCH	
+5595	Black Currant (sorbet)	666	Black Currant Sorbet	name-exact	4	sorbet	AMBIGUOUS	alts=Black Currant Ice Cream#665(s=1.00)
+5594	Avocado Kalamansi (sorbet)	656	Avocado Kalamansi Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+5592	Boysenberry Crumble	871	V/gf Boysenberry Crumble icecream	name-exact	4	icecream	CLEAR-MATCH	
+5591	Lime	5495	Lime Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5590	Huckleberry	5533	Vegan Huckleberry Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Huckleberry (dairy) Icecream#5492(s=1.00)
+5589	Hot Honey Peach	5490	Hot Honey Peach Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5588	Sweet Cream	5521	Sweet Cream Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5587	Hint of Mint Ripple	5486	Hint of Mint Ripple Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5586	Grizzler	5482	Grizzler Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5585	Apple Spiced Granola (oat)	5526	V/GF Apple Spiced Granola Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5584	Fruit of the Forest	5479	Fruit of the Forest Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5583	The Chaperone	5524	The Chaperone Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5582	Dad Bod	5477	Dad Bod Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5581	Strawberry Rhubarb (coco)	5541	Vegan Strawberry Rhubarb Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Vegan Strawberry Icecream (PEA)#5540(s=0.95)|Vegan Strawberry Ice Cream#918(s=0.95)
+5580	Neapolitan (coco)	5535	Vegan Neapolitan Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5579	Pumpkin Spice (coco)	915	Vegan Pumpkin Spice Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5578	Huckleberry (coco)	5533	Vegan Huckleberry Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Huckleberry (dairy) Icecream#5492(s=1.00)
+5577	Brookie (coco)	5527	V/GF Brookie Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5576	Creamsicle (coco)	904	Vegan Creamsicle Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5575	Chocolate Peppermint (coco)	901	Vegan chocolate peppermint Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Vegan Chocolate Icecream#899(s=0.95)
+5574	Chocolate (coco)	899	Vegan Chocolate Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Vegan chocolate peppermint Icecream#901(s=0.95)
+5573	Choco-Berry Kiss (coco)	897	Vegan Choco-Berry Kiss Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5572	Cherry (coco)	896	Vegan Cherry Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Cherry Icecream#694(s=1.00)
+5571	Blue Moon (coco)	893	Vegan Blue Moon	name-exact	4	icecream	AMBIGUOUS	alts=V/gf Blue Moon (Peafection)#869(s=1.00)
+5570	Blackberry (coco)	892	Vegan Blackberry Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5569	Avocado Lime (coco)	891	Vegan Avocado Lime Icecream	name-exact	4	icecream	CLEAR-MATCH	
+5550	Earl Grey (pea)	5478	Earl Grey Icecream (Pea)	name-exact	4	icecream	CLEAR-MATCH	vegan-base(pea) but recipe not flagged vegan
+5549	Pickle (pea)	5538	Vegan Pickle Icecream (PEA)	name-exact	4	icecream	AMBIGUOUS	alts=Pickle Icecream#5507(s=1.00)
+5548	Candy Cane (pea)	683	Candy Cane Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Vegan Candy Cane Peafection#895(s=0.95); vegan-base(pea) but recipe not flagged vegan
+4372	Pina Colada	5499	Milk Chocolate Icecream	name-keyword	1	icecream	AMBIGUOUS	alts=Milk Chocolate#781(s=0.43)|Pink Velvet Cake Icecream#812(s=0.41)
+4354	Irish Coffee Truffle	717	Coffee Icecream (for cakes)	name-keyword	1	icecream	AMBIGUOUS	alts=Malted Coffee Toffee Ice Cream#771(s=0.58)|Chocolate Truffles#708(s=0.55)
+4311	Jam & Tea (pea)	759	Jam Tart Icecream	name-keyword	1	icecream	NEEDS-GUS-CALL	vegan-base(pea) but recipe not flagged vegan
+4310	Mango Passionfruit Sorbet	775	Mango Passionfruit Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+4309	Strawberry (pea)	5540	Vegan Strawberry Icecream (PEA)	name-exact	4	icecream	AMBIGUOUS	alts=Vegan Strawberry Ice Cream#918(s=1.00)|Strawberry Sorbet#856(s=1.00)|Vegan Strawberry Rhubarb Icecream#5541(s=0.95)
+4304	__a			none	0		NO-RECIPE	no-credible-match; nearest="Mango Icecream" (id=5497, s=0.23)
+3060	Lychee Sorbet	770	Lychee Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+3021	Mixed Berry	5502	Mixed Berry Compote (for ic for bfast)	name-fuzzy	3	sauce	LIKELY-MATCH	
+2980	Guilty Pleasure	5483	Guilty Pleasure Icecream	name-exact	4	icecream	CLEAR-MATCH	
+2979	Neapolitan (pea)	5535	Vegan Neapolitan Icecream	name-exact	4	icecream	CLEAR-MATCH	
+2918	Swanky Chocolate	899	Vegan Chocolate Icecream	name-fuzzy	3	icecream	LIKELY-MATCH	
+2891	It's Giving Purple Sorbet	758	It's Giving Purple Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+2875	Lime in the Coconut (coco)	5495	Lime Icecream	name-fuzzy	3	icecream	LIKELY-MATCH	vegan-base(coco) but recipe not flagged vegan
+2865	Matcha Made in Heaven II (pea)	777	Matcha Made In Heaven Ice Cream	name-fuzzy	3	icecream	LIKELY-MATCH	vegan-base(pea) but recipe not flagged vegan
+2848	Apple Spiced Granola (PEA)	5526	V/GF Apple Spiced Granola Icecream	name-exact	4	icecream	CLEAR-MATCH	
+2842	High Tea	5485	High Tea Icecream	name-exact	4	icecream	CLEAR-MATCH	
+2798	Cin-Bun (pea)	922	Vegan Vanilla Bean icecream	name-keyword	1	icecream	AMBIGUOUS	alts=Candy Cane Icecream#683(s=0.43)|Cookie buttah Icecream#720(s=0.41)|Vegan Mocho-Nut Icecream#5534(s=0.41)
+2790	Lemon Blueberry Streusel (pea)	894	Vegan Blueberry Lavender Icecream	name-keyword	1	icecream	AMBIGUOUS	alts=Vegan Pear Blackberry Crumble Icecream#5537(s=0.54)|Blueberry Sorbet#5474(s=0.53)|Lemon Sorbet#764(s=0.53)
+2639	Raspberry Rose Truffle	5514	Raspberry Rose Truffle Icecream	name-exact	4	icecream	CLEAR-MATCH	
+2635	Paloma Sorbet	801	Paloma Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+2560	Chocolate Covered Strawberry (coco)	5475	Choco-Covered Strawberry Icecream (COCO)	name-fuzzy	3	icecream	LIKELY-MATCH	vegan-base(coco) but recipe not flagged vegan
+2549	Lemon Meringue Pie (coco)	911	Vegan Lemon Meringue Pie Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Lemon meringue pie Icecream#763(s=1.00)
+2506	ChoCoChai (coco)	898	Vegan Chocolate Chai	name-keyword	1	unknown	NEEDS-GUS-CALL	
+2500	DBC2: Coconut Boogaloo (coco)	905	Vegan Death by Chocolate coconut boogaloo	name-keyword	1	unknown	NEEDS-GUS-CALL	
+2482	Brownie Batter Up (pea)	872	V/GF Brownie Batter Up (Peafection)	name-exact	4	mix-in	CLEAR-MATCH	
+2476	Cookies and Dreams (coco)	903	Vegan Cookies And Dreams Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+2449	Matcha (pea)	778	Matcha Peafection	name-fuzzy	3	icecream	AMBIGUOUS	alts=Matcha Mochi#5498(s=0.88); vegan-base(pea) but recipe not flagged vegan
+2444	Mochonut (coco)	5534	Vegan Mocho-Nut Icecream	name-exact	3	icecream	LIKELY-MATCH	exact-after-normalization
+2419	Blue Moon (pea)	893	Vegan Blue Moon	name-exact	4	icecream	AMBIGUOUS	alts=V/gf Blue Moon (Peafection)#869(s=1.00)
+2386	Brown No Cow (oat)	756	Hot Cocoa Icecream	name-keyword	1	icecream	AMBIGUOUS	alts=V/Gf Brownies#873(s=0.47)|Brownies (Sally’s Recipe)#676(s=0.42)|Brownies#675(s=0.42); vegan-base(oat) but recipe not flagged vegan
+2380	Ginger (pea)	908	Vegan Ginger Peafection	name-fuzzy	3	icecream	LIKELY-MATCH	
+2333	Bananatella	662	Bananamon Ice Cream	name-keyword	1	icecream	AMBIGUOUS	alts=Banana Cake#658(s=0.55)
+2284	Orange	793	Orange Blossom Icecream	name-fuzzy	3	icecream	AMBIGUOUS	alts=Orange, zested#799(s=0.88)|Orange, juiced#798(s=0.88)|Orange Syrup#797(s=0.88)
+2274	Sugar Plumb	5519	Sugar Plum (dairy) Icecream	name-fuzzy	3	icecream	LIKELY-MATCH	
+2211	Mango Chamoy	5496	Mango Chamoy Icecream	name-exact	4	icecream	CLEAR-MATCH	
+2169	___flavor test___			none	0		NO-RECIPE	no-credible-match; nearest="Fruit of the Forest Icecream" (id=5479, s=0.40)
+1783	Minter Wonderland	5501	Minter WonderLand Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1725	OMG Sorbet	792	OMG Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+1721	Red Berry Sorbet	826	Red Berry Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+1716	Caramel Coffee Brownie (oat)	5528	V/GF Coffee Caramel Brownie Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1712	Caramel Brownie (oat)	5528	V/GF Coffee Caramel Brownie Icecream	name-exact	4	icecream	CLEAR-MATCH	exact-after-normalization
+1708	Tomato Sorbet	5484	Heirloom Tomato Sorbet	name-exact	3	sorbet	LIKELY-MATCH	exact-after-normalization
+1704	Soursop Sorbet	5518	Soursop Sorbet	name-exact	4	sorbet	CLEAR-MATCH	
+1699	S’mores (oat)	916	Vegan S’mores Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1693	Chocolate II (pea)	899	Vegan Chocolate Icecream	name-exact	3	icecream	LIKELY-MATCH	exact-after-normalization
+1687	Raspberry Blondie (oat)	885	V/GF Raspberry Blondie Icerceam	name-exact	3	icecream	LIKELY-MATCH	exact-after-normalization
+1679	Strawberry Hibiscus Sorbet	854	Strawberry Hibiscus Sorbet	name-exact	4	sorbet	AMBIGUOUS	alts=Strawberry Sorbet#856(s=0.95)
+1675	Brookie (pea)	5527	V/GF Brookie Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1671	Vanilla Bean (coco)	922	Vegan Vanilla Bean icecream	name-exact	4	icecream	AMBIGUOUS	alts=Vanilla Bean (V)#888(s=1.00)
+1662	Cookie Monster (oat)	877	V/gf Cookie Monster Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Cookie Monster Icecream#721(s=1.00)
+1656	Blackberry Pear Crumble (pea)	5537	Vegan Pear Blackberry Crumble Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1652	Roasted Pluot Sorbet	831	Roasted Carrots	name-keyword	1	mix-in	AMBIGUOUS	alts=Roasted Apples#830(s=0.64)|Purple Pluot Sorbet#5513(s=0.62)|Roasted Rhubarb#835(s=0.60)
+1647	Mint Matcha Chip (coco)	782	Mint Matcha Chip	name-exact	4	icecream	CLEAR-MATCH	vegan-base(coco) but recipe not flagged vegan
+1643	Tuxedo (oat)	866	Tuxedo Icecream (Oatrageous)	name-exact	4	icecream	CLEAR-MATCH	vegan-base(oat) but recipe not flagged vegan
+1633	Lemon Poppyseed (coco)	912	Vegan Lemon Poppy Seed	name-exact	4	icecream	CLEAR-MATCH	exact-after-normalization
+1628	Coffee Oreo (pea)	718	Coffee Oreo IceCream	name-exact	4	icecream	AMBIGUOUS	alts=Vegan Coffee Oreo Peafection#902(s=0.95); vegan-base(pea) but recipe not flagged vegan
+1624	Salted Caramel Swirl (coco)	843	Salted Caramel Swirl (V) Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+1619	Chocoberry Chunk (coco)	897	Vegan Choco-Berry Kiss Icecream	name-fuzzy	2	icecream	LIKELY-MATCH	
+1615	Spiced Chocolate Orange (coco)	917	Vegan Spiced Chocolate Orange Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1611	Pumpkin Sage maple (coco)	5539	Vegan Pumpkin Sage Maple Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1606	Sunbutter Date Bark (coco)	920	Vegan Sun butter date bark Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Vegan Sun Butter Date Bark#919(s=1.00)
+1603	Sweet Potato Pie (coco)	921	Vegan Sweet Potato Pie icecream	name-exact	4	icecream	AMBIGUOUS	alts=Sweet Potato Pie Icecream#860(s=1.00)
+1597	Golden Milk (coco)	5481	Golden Milk (dairy) Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Vegan Golden Milk#909(s=1.00); vegan-base(coco) but recipe not flagged vegan
+1593	Strawberry (coco)	5540	Vegan Strawberry Icecream (PEA)	name-exact	4	icecream	AMBIGUOUS	alts=Vegan Strawberry Ice Cream#918(s=1.00)|Strawberry Sorbet#856(s=1.00)|Vegan Strawberry Rhubarb Icecream#5541(s=0.95)
+1589	Mmminty (GF)	785	MMMinty Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1584	Chocolate	899	Vegan Chocolate Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1548	Kristen’s Lunch	5494	Kristens Lunch Icecream	name-exact	3	icecream	LIKELY-MATCH	exact-after-normalization
+1542	Pear hazelnut	5506	Pear Hazelnut Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1528	Strawberry Matcha	5540	Vegan Strawberry Icecream (PEA)	name-fuzzy	3	icecream	AMBIGUOUS	alts=Vegan Strawberry Ice Cream#918(s=0.91)|Matcha Strawberry Neapolitan Cookies#779(s=0.88)
+1496	Pistachio Rose Bark	5509	Pistachio Rose Bark Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Pistachio Rose Bark#814(s=1.00)
+1479	Cherry Goat Cheese	693	Cherry Goat Cheese	name-exact	4	icecream	CLEAR-MATCH	
+1460	Honey Lavender	5488	Honey Lavender Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1436	Vanilla Cardamom Mollases	5530	Vanilla Cardamom Molasses Icecream	name-exact	3	icecream	AMBIGUOUS	alts=Vanilla Cardamom Molasses#890(s=0.92); exact-after-normalization
+1435	Vanilla	887	Vanilla #3	name-exact	4	icecream	CLEAR-MATCH	
+1084	Golden Milk	5481	Golden Milk (dairy) Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Vegan Golden Milk#909(s=1.00)
+1019	Yass Cream Slay	932	Yass Cream Slay	name-exact	4	icecream	CLEAR-MATCH	
+1018	White Chocolate Peppermint Bark	929	White Chocolate Peppermint Bark	name-exact	4	icecream	CLEAR-MATCH	
+1017	Unicorn	867	Unicorn icecream	name-exact	4	icecream	CLEAR-MATCH	
+1016	Tastes Great Together	5523	Tastes Great Together Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Tastes Great Together#862(s=1.00)
+1015	Tall, Dark, and Spicy	861	Tall, Dark, and Spicy	name-exact	4	icecream	CLEAR-MATCH	
+1014	Sweet Potato Pie	921	Vegan Sweet Potato Pie icecream	name-exact	4	icecream	AMBIGUOUS	alts=Sweet Potato Pie Icecream#860(s=1.00)
+1013	Sugar Baby	857	Sugar Baby Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+1012	Strawberry Balsamic	853	Strawberry Balsamic Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+1011	Spumoni	852	Spumoni Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+1010	Santa’s little helper	845	Santa’s little helper icecream	name-exact	4	icecream	CLEAR-MATCH	
+1009	Rugelach	840	Rugelach Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1008	Rhubarb Crisp	827	Rhubarb Crisp Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1007	Raspberry	823	Raspberry	name-exact	4	icecream	CLEAR-MATCH	
+1006	Pumpkin tiramisu	821	Pumpkin tiramisu Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1005	Pumpkin Pie	819	Pumpkin Pie Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1004	Pumpkin CheeseCake	818	Pumpkin CheeseCake Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1003	Pot o gold	816	Pot o gold icecream	name-exact	4	icecream	CLEAR-MATCH	
+1002	Pistachio	813	Pistachio	name-exact	4	icecream	CLEAR-MATCH	
+1001	Pink Velvet Cake	812	Pink Velvet Cake Icecream	name-exact	4	icecream	CLEAR-MATCH	
+1000	Peppermint Bark	805	Peppermint Bark Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Peppermint Bark#804(s=1.00)
+999	Passionfruit Cashew Nut Brittle	802	Passionfruit Cashew Nut Brittle Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+998	Orange Cranberry Swirl	794	Orange Cranberry Swirl Icecream	name-exact	4	icecream	CLEAR-MATCH	
+997	Orange Blossom	793	Orange Blossom Icecream	name-exact	4	icecream	CLEAR-MATCH	
+996	MMMinty	785	MMMinty Icecream	name-exact	4	icecream	CLEAR-MATCH	
+995	Miso Maple	784	Miso Maple Icecream	name-exact	4	icecream	CLEAR-MATCH	
+994	Milk Chocolate	5499	Milk Chocolate Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Milk Chocolate#781(s=1.00)
+993	Matcha Made In Heaven	777	Matcha Made In Heaven Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+992	Matcha Blackberry Swirl	776	Matcha Blackberry Swirl Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+991	Mandarin Goat Cheese	774	Mandarin Goat Cheese Icecream	name-exact	4	icecream	CLEAR-MATCH	
+990	Malty and Salty	773	Malty and Salty Icecream	name-exact	4	icecream	CLEAR-MATCH	
+989	Malted Coffee Toffee	771	Malted Coffee Toffee Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+988	Licorice	767	Licorice Icecream	name-exact	4	icecream	CLEAR-MATCH	
+987	Lemon meringue pie	911	Vegan Lemon Meringue Pie Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Lemon meringue pie Icecream#763(s=1.00)
+986	Jam Tart	759	Jam Tart Icecream	name-exact	4	icecream	CLEAR-MATCH	
+985	Hot Cross Buns	757	Hot Cross Buns Icecream	name-exact	4	icecream	CLEAR-MATCH	
+984	Hot Cocoa	756	Hot Cocoa Icecream	name-exact	4	icecream	CLEAR-MATCH	
+983	Honey Lemon Ricotta	755	Honey Lemon Ricotta Icecream	name-exact	4	icecream	CLEAR-MATCH	
+982	Granola Parfait	751	Granola Parfait Icecream	name-exact	4	icecream	CLEAR-MATCH	
+981	Gingerbread Cake	745	Gingerbread Cake Icecream	name-exact	4	icecream	CLEAR-MATCH	
+980	Farmers Market Strawberry	742	Farmers Market Strawberry Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+979	Everything But The&#8230;	741	Everything But The Ice Cream	name-fuzzy	3	icecream	LIKELY-MATCH	
+978	Espresso Bean	740	Espresso Bean Icecream	name-exact	4	icecream	CLEAR-MATCH	
+977	Eggnog	739	Eggnog Icecream	name-exact	4	icecream	CLEAR-MATCH	
+976	Donut Try This At Home	734	Donut Try This At Home Icecream	name-exact	4	icecream	CLEAR-MATCH	
+975	Dirty Soda	733	Dirty Soda Icecream	name-exact	4	icecream	CLEAR-MATCH	
+974	Death By Chocolate	732	Death By Chocolate Icecream	name-exact	4	icecream	CLEAR-MATCH	
+973	Creme Fraiche	728	Creme Fraiche Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+972	Cotton Candy	724	Cotton Candy Icecream	name-exact	4	icecream	CLEAR-MATCH	
+971	Cookies and Screams	723	Cookies and Screams Icecream	name-exact	4	icecream	CLEAR-MATCH	
+970	Cookie Monster	877	V/gf Cookie Monster Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Cookie Monster Icecream#721(s=1.00)
+969	Cookie buttah	720	Cookie buttah Icecream	name-exact	4	icecream	CLEAR-MATCH	
+968	Coffee Oreo	718	Coffee Oreo IceCream	name-exact	4	icecream	CLEAR-MATCH	
+967	Coffee	717	Coffee Icecream (for cakes)	name-exact	4	icecream	CLEAR-MATCH	
+966	Coffee Cinnamon Cardamom	716	Coffee Cinnamon Cardamom Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+965	Coffee Brownie	715	Coffee Brownie Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+964	Cinnamon Roll	710	Cinnamon Roll Icecream	name-exact	4	icecream	CLEAR-MATCH	
+963	Chocolate Mini Egg	705	Chocolate Mini egg Icecream	name-exact	4	icecream	CLEAR-MATCH	
+962	Chocolate Malt	704	Chocolate Malt Icecream	name-exact	4	icecream	CLEAR-MATCH	
+961	Chestnut	696	Chestnut IceCream	name-exact	4	icecream	CLEAR-MATCH	
+960	Cherry	896	Vegan Cherry Icecream	name-exact	4	icecream	AMBIGUOUS	alts=Cherry Icecream#694(s=1.00)
+959	Cherry Chocolate Flake	692	Cherry Chocolate Flake IceCream	name-exact	4	icecream	CLEAR-MATCH	
+958	Carrot Cake	689	Carrot Cake Icecream	name-exact	4	icecream	CLEAR-MATCH	
+957	Caramel cookie crunch	687	Caramel cookie crunch icecream	name-exact	4	icecream	CLEAR-MATCH	
+956	Caramel Apple Pie	686	Caramel Apple Pie Icecream	name-exact	4	icecream	CLEAR-MATCH	
+955	Cantaloupe	685	Cantaloupe Icecream	name-exact	4	icecream	CLEAR-MATCH	
+954	Candy Crushing It	684	Candy Crushing It Icecream	name-exact	4	icecream	CLEAR-MATCH	
+953	Candy Cane	683	Candy Cane Icecream	name-exact	4	icecream	CLEAR-MATCH	
+952	Butterscotch	682	Butterscotch Icecream	name-exact	4	icecream	CLEAR-MATCH	
+951	Butter Pecan Baklava	679	Butter Pecan Baklava Icecream	name-exact	4	icecream	CLEAR-MATCH	
+950	Bumpy Road	678	Bumpy Road Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+949	Blueberry Cheesecake	671	Blueberry Cheesecake Icecream	name-exact	4	icecream	CLEAR-MATCH	
+948	Blackberry Flake	668	Blackberry Flake Icecream	name-exact	4	icecream	CLEAR-MATCH	
+947	Black Forest Cheesecake	667	Black Forest Cheesecake Icecream	name-exact	4	icecream	CLEAR-MATCH	
+946	Black Currant	665	Black Currant Ice Cream	name-exact	4	icecream	AMBIGUOUS	alts=Black Currant Sorbet#666(s=1.00)
+945	Birthday Cake	664	Birthday Cake Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+944	Basil	663	Basil Icecream	name-exact	4	icecream	CLEAR-MATCH	
+943	Bananamon	662	Bananamon Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+942	Banana Peanut Butter Party	661	Banana Peanut Butter Party Ice Cream	name-exact	4	icecream	CLEAR-MATCH	
+941	Banana Nut Muffin	660	Banana Nut Muffin Icecream	name-exact	4	icecream	CLEAR-MATCH	
+940	Banana Fluffernutter	659	Banana Fluffernutter Icecream	name-exact	4	icecream	CLEAR-MATCH	
