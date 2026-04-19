@@ -1,0 +1,101 @@
+name	rcc_id	dollars_per_gram	confidence_0_to_5	placeholder_flag	ambiguous_sub_or_compound	q4_override_affected	is_empty_stub	downstream_cascade_count	notes
+Brownies	229604	0.005567	4	N	N	N	N	0	Clean RCC; 7 of 7 components resolved
+Cashew brittle	239649	0.006497	4	N	N	Y	N	0	Q4-override: Water; 7 of 7 components resolved
+Chocolate Paste	230257	0.003091	4	N	N	Y	N	0	Q4-override: Water; 14 parent refs; 3 of 3 components resolved
+Cinnamon Crisp	243768	0.002852	4	N	N	N	N	0	7 of 7 components resolved
+Citric acid solution	231104	0.005280	4	N	N	Y	N	0	Q4-override: Water; 2 of 2 components resolved
+Cream Cheese Frosting	231109	0.006260	4	N	N	N	N	0	6 of 6 components resolved
+Edible chocolate chip dough	230064	0.007175	4	N	N	N	N	0	6 of 6 components resolved
+Mixed Berry Compote (for ic for bfast)	284960	0.007197	4	N	N	N	N	0	6 of 6 components resolved
+Roasted Bananas	287734	0.004169	4	N	N	N	N	0	3 of 3 components resolved
+Roasted Strawberries	231114	0.005540	4	N	N	N	N	0	2 of 2 components resolved
+Strawberry Sorbet	228848	0.007914	4	N	N	Y	N	0	Q4-override: Water; 7 of 7 components resolved
+Vegan Maple HoneyComb Candy	242605	0.005545	4	N	N	Y	N	0	Q4-override: Water; 5 of 5 components resolved
+Wet Cinnamon Walnuts	230435	0.005975	4	N	N	Y	N	0	Q4-override: Water; 6 of 6 components resolved
+White choco covered pretzels	239644	0.020542	4	N	N	N	N	0	2 of 2 components resolved
+Cherry Icecream	230431	0.007399	3	N	N	N	N	0	Density/food-science derivation; 5 of 5 components resolved
+Coffee Syrup	230516	0.003165	3	N	N	Y	N	0	Q4-override: Water; density estimate applied; 3 of 3 components resolved
+Mango Icecream	286636	0.006638	3	N	N	N	N	0	Density/food-science derivation; 4 of 4 components resolved
+Milk Chocolate Icecream	230432	0.004362	3	N	Y	N	N	0	AMBIGUOUS-SUB/COMPOUND: contains Chocolate Paste (230257)
+Pistachio Rose Bark	240201	0.034673	3	N	N	N	N	0	Density/food-science derivation; 4 of 4 components resolved
+Plain Pistachio Icecream	230433	0.006126	3	N	N	N	N	0	Density/food-science derivation; 4 of 4 components resolved
+Plain Strawberry Icecream	286638	0.006850	3	N	N	N	N	0	Density/food-science derivation; 5 of 5 components resolved
+V/GF Chocolate Chip Cookies	242292	0.004632	3	N	N	Y	N	0	Q4-override: Water; density estimate; 10 of 10 components resolved
+Vegan Chocolate Icecream	236494	0.006416	3	N	N	N	N	0	Density/food-science derivation; 6 of 6 components resolved
+Vegan Strawberry Ice Cream	237269	0.007574	3	N	N	N	N	0	Density/food-science derivation; 4 of 4 components resolved
+Vegan Sun Butter Date Bark	242302	0.011162	3	N	N	N	N	0	Density/food-science derivation; 5 of 5 components resolved
+Banana Cake	230223	0.004112	1	Y	N	N	N	0	Placeholder trigger: Vanilla bean paste; 10 of 10 components resolved
+Blackberry Swirl	230770	0.013740	1	Y	Y	N	N	0	AMBIGUOUS-SUB/COMPOUND; placeholder trigger: Blackberry flavor; contains Citric acid solution (231104)
+Buckeyes	242295	0.020460	1	Y	N	N	N	0	Placeholder trigger: Coconut Oil; 5 of 5 components resolved
+Buttercream Frosting	231111	0.006549	1	Y	N	N	N	0	Placeholder trigger: Salt; 6 of 6 components resolved
+Cheesecake	230071	0.005852	1	Y	N	N	N	0	Placeholder trigger: Salt; 8 of 8 components resolved; 3 parent refs
+Cherry Swirl	230844	0.039135	1	Y	N	N	N	0	Placeholder trigger: Tart Dried Cherries; 2 of 2 components resolved
+Chocolate cake	230062	0.003718	1	Y	N	Y	N	0	Placeholder trigger: Salt; Q4-override: Water (Boiling); 12 of 12 components resolved; 4 parent refs
+Chocolate chip cookies	230065	0.005859	1	Y	N	N	N	0	Placeholder trigger: Salt; 9 of 9 components resolved
+Chocolate Flake	240198	0.002448	1	Y	N	N	N	0	Placeholder trigger: Dark chocolate callets; 2 of 2 components resolved; 3 parent refs
+Chocolate Truffles	231122	0.005539	1	Y	N	N	N	0	Placeholder trigger: Dark chocolate callets; 4 of 4 components resolved
+Cinnamon syrup swirl	268270		1	Y	N	N	Y	0	EMPTY-RECIPE: zero ingredient rows in RCC; alias stub
+Coconut macaroon	240213	0.436214	1	Y	N	N	N	0	Placeholder trigger: Shredded Coconut; suspicious $/g likely from placeholder unit mismatch
+Cranberry Swirl	230501	0.010438	1	Y	N	N	N	0	Placeholder trigger: Cranberries; 5 of 5 components resolved
+Dark chocolate covered potato chips	239645	0.008339	1	Y	N	N	N	0	Placeholder trigger: Dark chocolate callets; 3 of 3 components resolved
+Earl Grey Syrup	230390	0.001143	1	Y	N	Y	N	0	Placeholder trigger: Earl Grey Tea, Loose leaf; Q4-override: Water; 3 of 3 components resolved; 3 parent refs
+Edible cinnamon sugar cookie dough	230218	0.006372	1	Y	N	N	N	0	Placeholder trigger: Salt; 7 of 7 components resolved; 4 parent refs
+Edible sugar cookie dough	229603	0.009401	1	Y	N	N	N	0	Placeholder trigger: Sanding sugar; 10 of 10 components resolved; 4 parent refs
+Gluten Free Heat Treated Flour	242293		1	Y	N	N	Y	1	EMPTY-RECIPE: zero ingredient rows in RCC; cascades V/GF Edible Chocolate Chip Dough to conf-0
+Golden Oreo cookie butter	231120	0.029269	1	Y	N	N	N	0	Placeholder trigger: Golden oreos; 5 of 5 components resolved
+Granny smith apples, chopped	230852		1	Y	N	N	Y	1	EMPTY-RECIPE: zero ingredient rows in RCC; cascades Apple Compote to conf-0; 2 parent refs
+Hazelnut Praline	231106	0.005633	1	Y	N	N	N	0	Placeholder trigger: Salt; 3 of 3 components resolved
+HoneyComb Candy	286373		1	Y	N	N	Y	0	EMPTY-RECIPE: zero ingredient rows in RCC; alias stub
+Housemade Fudge	286405		1	Y	N	N	Y	0	EMPTY-RECIPE: zero ingredient rows in RCC; alias stub
+Lemon, juiced	230357		1	Y	N	N	Y	2	EMPTY-RECIPE: zero ingredient rows in RCC; cascades Blueberry Jam + Lemon Curd to conf-0; 5 parent refs
+Lemon, zested	230356		1	Y	N	N	Y	3	EMPTY-RECIPE: zero ingredient rows in RCC; cascades Hibiscus Syrup + Lemon Curd + Lemon Sorbet to conf-0; 7 parent refs
+Limes, juiced	242300		1	Y	N	N	Y	0	EMPTY-RECIPE: zero ingredient rows in RCC; alias stub; 4 parent refs
+Limes, zested	242298		1	Y	N	N	Y	2	EMPTY-RECIPE: zero ingredient rows in RCC; cascades Blueberry Sorbet + Lime Icecream to conf-0; 5 parent refs
+Meringue	231128	0.004134	1	Y	N	N	N	0	Placeholder trigger: Cream of Tartar; 4 of 4 components resolved
+Mocha Ripple	230514	0.004711	1	Y	N	Y	N	0	Placeholder trigger: Dark cocoa powder; Q4-override: Water; 6 of 6 components resolved
+Orange GingerBread Cake	230242	0.004821	1	Y	N	Y	N	0	Placeholder trigger: Ginger; Q4-override: Water; 12 of 12 components resolved
+Orange, juiced	230517		1	Y	N	N	Y	1	EMPTY-RECIPE: zero ingredient rows in RCC; cascades Orange Syrup to conf-0; 4 parent refs
+Orange, zested	230518		1	Y	N	N	Y	1	EMPTY-RECIPE: zero ingredient rows in RCC; cascades Orange Syrup to conf-0; 4 parent refs
+Peanut brittle	239650	0.002998	1	Y	N	Y	N	0	Placeholder trigger: Honey Roasted Peanuts; Q4-override: Water; 7 of 7 components resolved
+Peppermint Bark	241287	0.017201	1	Y	N	N	N	0	Placeholder trigger: Dark chocolate callets; 7 of 7 components resolved; 2 parent refs
+pickles juiced	286295		1	Y	N	N	Y	0	EMPTY-RECIPE: zero ingredient rows in RCC; alias stub; 2 parent refs
+Pie crust	230068	0.003872	1	Y	N	Y	N	0	Placeholder trigger: Salt; Q4-override: Water; 5 of 5 components resolved
+Pineapple, juiced	230496		1	Y	N	N	Y	0	EMPTY-RECIPE: zero ingredient rows in RCC; alias stub; 1 parent ref
+pluots (roasted)	286361		1	Y	N	N	Y	0	EMPTY-RECIPE: zero ingredient rows in RCC; alias stub
+Pumpkin pie spice mix	230252	0.025003	1	Y	N	N	N	0	Placeholder trigger: Cloves, Grams; 5 of 5 components resolved; 4 parent refs
+Roasted Carrots	231112	0.003735	1	Y	N	N	N	0	Placeholder trigger: Carrots, chopped and peeled; 4 of 4 components resolved
+Roasted Maple Walnuts	231107	0.015823	1	Y	N	N	N	0	Placeholder trigger: Salt; 3 of 3 components resolved; 2 parent refs
+Roasted Peaches	231117	0.002152	1	Y	N	N	N	0	Placeholder trigger: Peaches; 2 of 2 components resolved; 2 parent refs
+Roasted Rhubarb	231116	0.004670	1	Y	N	N	N	0	Placeholder trigger: Rhubarb, cut and washed; 3 of 3 components resolved; 2 parent refs
+Roasted Sweet Potatoes	231119		1	Y	N	N	Y	0	EMPTY-RECIPE: zero ingredient rows in RCC; alias stub; 2 parent refs
+Rugelach dough	230240	0.005686	1	Y	N	N	N	0	Placeholder trigger: Salt; 4 of 4 components resolved
+Runny Sauce	230258	0.006076	1	Y	N	Y	N	0	Placeholder trigger: Salt; Q4-override: Water (Cups); 5 of 5 components resolved; 4 parent refs
+Shortbread	230070	0.005423	1	Y	N	N	N	0	Placeholder trigger: Salt; 5 of 5 components resolved; 4 parent refs
+Specialty sugar cookies	229612	0.005352	1	Y	N	N	N	0	Placeholder trigger: Salt (x2); 9 of 9 components resolved
+Sugar Cookies	229599	0.004151	1	Y	N	N	N	0	Placeholder trigger: Salt; 9 of 9 components resolved; 2 parent refs
+Thyme piecrust	284284	0.003615	1	Y	N	Y	N	0	Placeholder trigger: thyme; Q4-override: Water; 6 of 6 components resolved
+V/Gf Blondies	242289	0.003100	1	Y	N	Y	N	0	Placeholder trigger: Salt; Q4-override: Water; 11 of 11 components resolved
+V/Gf Brownies	242291	0.005925	1	Y	N	Y	N	0	Placeholder trigger: Salt; Q4-override: Water; 9 of 9 components resolved; 3 parent refs
+V/GF Chocolate Cake	262444	0.003561	1	Y	N	N	N	0	Placeholder trigger: White Vinegar (tea spoon unit); 10 of 10 components resolved
+V/GF Gingersnap Cookies	242602	0.002608	1	Y	N	Y	N	0	Placeholder trigger: Ginger; Q4-override: Water (hot); 13 of 13 components resolved
+V/GF Granola	242600	0.004517	1	Y	N	N	N	0	Placeholder trigger: Gluten Free Rolled Oats; 7 of 7 components resolved; 3 parent refs
+Vanilla Cake	229611	0.003634	1	Y	N	N	N	0	Placeholder trigger: Salt; 9 of 9 components resolved
+Vegan Fudge	262466	0.017142	1	Y	N	N	N	0	Placeholder trigger: Soy Milk; 8 of 8 components resolved; 2 parent refs
+Vegan lemon curd	275099		1	Y	N	N	Y	0	EMPTY-RECIPE: zero ingredient rows in RCC; alias stub
+Vegan meringue	275098	0.003478	1	Y	N	Y	N	0	Placeholder trigger: Cream of Tartar; Q4-override: chickpeas (aquafaba); 4 of 4 components resolved
+Vegan Vanilla Bean icecream	244545	0.006303	1	Y	N	N	N	0	Placeholder trigger: Vanilla bean paste, flakes; 5 of 5 components resolved
+vegan white choco fruity pebbles	283629	0.002205	1	Y	N	N	N	0	Placeholder trigger: Fruity cereal; 2 of 2 components resolved
+Walnut Streusel	286292		1	Y	N	N	Y	0	EMPTY-RECIPE: zero ingredient rows in RCC; alias stub
+White Choco covered fruity cereal	239643	0.016701	1	Y	N	N	N	0	Placeholder trigger: Fruity cereal; 2 of 2 components resolved
+Zucchini, grated	230849		1	Y	N	N	Y	0	EMPTY-RECIPE: zero ingredient rows in RCC; alias stub
+Apple Compote	284282	0.003468	0	N	Y	N	N	0	AMBIGUOUS-SUB/COMPOUND; unresolved: Granny smith apples, chopped (empty stub); 1 unresolved component
+Blueberry Jam	230493	0.005269	0	N	Y	N	N	0	AMBIGUOUS-SUB/COMPOUND; unresolved: Lemon, juiced (empty stub); 1 unresolved component
+Blueberry Sorbet	286367	0.356247	0	Y	Y	Y	N	0	PLACEHOLDER + AMBIGUOUS-SUB/COMPOUND; unresolved: Limes, zested (empty stub); Q4-override: Water (warm/cold); trigger: Blueberry Puree; $/g implausibly high
+Hibiscus Syrup	230492	0.001822	0	N	Y	Y	N	0	AMBIGUOUS-SUB/COMPOUND; unresolved: Lemon, zested (empty stub); Q4-override: Water; 1 unresolved component
+Lemon Curd	230494	0.004911	0	N	Y	N	N	0	AMBIGUOUS-SUB/COMPOUND; unresolved: Lemon, juiced + Lemon, zested (empty stubs); 2 unresolved components; 2 parent refs
+Lemon Sorbet	248540	0.006640	0	N	Y	Y	N	0	AMBIGUOUS-SUB/COMPOUND; unresolved: Lemon, zested (empty stub); Q4-override: Water (hot/cold); 1 unresolved component
+Lime Icecream	286639	0.006365	0	N	Y	N	N	0	AMBIGUOUS-SUB/COMPOUND; unresolved: Limes, zested (empty stub); 1 unresolved component
+Mulled wine	241291	0.171729	0	Y	N	N	N	0	PLACEHOLDER; unresolved: Red Wine (no weight — RCC says "Need weight of wine"); Oranges Sliced (no $/g); $/g unreliable
+Orange Syrup	230519	0.001371	0	N	Y	Y	N	0	AMBIGUOUS-SUB/COMPOUND; unresolved: Orange, juiced + Orange, zested (empty stubs); Q4-override: Water; 2 unresolved components
+Rose Truffles	231124	0.287419	0	N	Y	N	N	0	AMBIGUOUS-SUB/COMPOUND; unresolved grams: Chocolate Truffles (1 each — no standard per-item weight); $/g unreliable
+V/GF Edible Chocolate Chip Dough	242294	0.007273	0	N	Y	Y	N	0	AMBIGUOUS-SUB/COMPOUND; unresolved: Gluten Free Heat Treated Flour (empty stub); Q4-override: Water; 1 unresolved component
