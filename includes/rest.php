@@ -90,6 +90,38 @@
     ], 200);
   } 
 
+
+
+  function scoop_inventory_change_phase(array $cfg, array $updated = []): string {
+    $entity = $cfg['pod_name'] ?? '';
+    $mode   = $cfg['mode'] ?? '';
+
+    if ($entity === 'batch' && $mode === 'create') return 'created';
+    if ($entity === 'closeout' && $mode === 'create') return 'emptied';
+
+    if ($entity === 'tub') {
+      foreach ($updated as $fields) {
+        if (!is_array($fields) || !array_key_exists('state', $fields)) continue;
+        $state = (string)$fields['state'];
+        if ($state === '__override__') return 'overriden';
+        if ($state === 'Opened') return 'opened';
+        if ($state === 'Emptied') return 'emptied';
+      }
+    }
+
+    return 'unknown';
+  }
+
+  function scoop_inventory_change_source(array $cfg): string {
+    $entity = $cfg['pod_name'] ?? '';
+
+    if ($entity === 'batch') return 'batch';
+    if ($entity === 'slot') return 'cabinet';
+    if ($entity === 'tub') return 'tub';
+
+    return 'audit';
+  }
+
   function scoop_log_post(\WP_REST_Request $req, array $cfg, array $updated = [], array $errors = []):void
   {
     $user       = wp_get_current_user()->user_login;
@@ -133,6 +165,9 @@
         'entity'      => $entity,
         'envelope'    => $envelope,
         'mode'        => $mode,
+        'phase'       => scoop_inventory_change_phase($cfg, $updated),
+        'source'      => scoop_inventory_change_source($cfg),
+        'problem'     => empty($errors) ? 'none' : 'error',
         'details'     => $details,
         'post_content'=> wp_kses( $details, $allowed )
     ]);

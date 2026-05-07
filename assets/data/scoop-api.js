@@ -150,6 +150,9 @@ export default class ScoopAPI {
     const base = new URL(this.route("Bundle").toString());
     const key = this._typesKey();
     base.searchParams.set("types", key);
+    if (this.gridTypes?.has('DateActivity')) {
+      base.searchParams.set('include_empty_tubs', '1');
+    }
     return base;
   }
 

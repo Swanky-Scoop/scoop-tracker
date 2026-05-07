@@ -7,7 +7,7 @@ function scoop_bundle_specs(): array {
     'FlavorTub'    => ['needs' => ['tub','flavor','use']],
     'Batch'        => ['needs' => ['flavor']],
     'Closeout'     => ['needs' => ['flavor','use']],
-    'DateActivity' => ['needs' => ['tub','flavor','use','location']],
+    'DateActivity' => ['needs' => ['tub','flavor','use','location','slot','cabinet']],
   ];
   
   return $specs;
@@ -48,6 +48,8 @@ function scoop_entity_specs(string $key = ''): array {
           'opened_on'     => ['data_type' => 'string'],
           'emptied_at'    => ['data_type' => 'string'],
           'location'      => ['data_type' => 'int',      'control' => 'find', 'titleMap' => 'location', 'hidden' => true],
+          'batch'         => ['data_type' => 'int',      'control' => 'find', 'hidden' => true],
+          'closeout'      => ['data_type' => 'int',      'control' => 'find', 'hidden' => true],
           'index'         => ['data_type' => 'int',      'hidden'  => true],
         ],
         'post_fields' => [
