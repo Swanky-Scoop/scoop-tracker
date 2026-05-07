@@ -853,3 +853,31 @@ form table {
 .scoop-grid[data-grid-type="Analytics"] button.save {
   display: none;
 }
+/* ============================================
+   DATE ACTIVITY - flow/problem indicators
+   ============================================ */
+
+.zGRID td.problem-warning,
+.zGRID td.problem-error,
+table.zGRID tr .badges .badge.warning {
+  color: #d32f2f;
+  font-weight: 700;
+}
+
+.zGRID td.problem-info {
+  color: #757575;
+  font-weight: 600;
+}
+
+.zGRID td.phase-created,
+.zGRID td.source-batch {
+  color: var(--color-green-dark);
+}
+
+.zGRID td.phase-opened {
+  color: #0b6fa4;
+}
+
+.zGRID td.phase-emptied {
+  color: #7a4f01;
+}
