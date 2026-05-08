@@ -31,7 +31,10 @@ export default class FindInGrid {
   }
 
   getText(el) {
-    return (el?.dataset?.[this.textKey] ?? "").toString();
+    const label = (el?.dataset?.[this.textKey] ?? "").toString();
+    const groupBody = el?.matches?.('tr.group') ? el.parentElement : el;
+    const rowText = (groupBody?.innerText ?? groupBody?.textContent ?? "").toString();
+    return `${label} ${rowText}`;
   }
 
   getType(el) {
