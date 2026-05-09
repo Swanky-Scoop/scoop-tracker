@@ -122,8 +122,6 @@
     return 'audit';
   }
 
-
-
   function scoop_inventory_change_unique_ids(array $ids): array {
     $out = [];
     foreach ($ids as $id) {
