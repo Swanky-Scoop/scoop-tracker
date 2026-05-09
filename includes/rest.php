@@ -81,7 +81,7 @@
       ], 400);
     }
 
-    scoop_log_post($req, $cfg, $row);
+    scoop_log_post($req, $cfg, $row, [], (int)$new_id);
 
     return new \WP_REST_Response([
       'ok' => true,
@@ -122,7 +122,108 @@
     return 'audit';
   }
 
-  function scoop_log_post(\WP_REST_Request $req, array $cfg, array $updated = [], array $errors = []):void
+  function scoop_inventory_change_unique_ids(array $ids): array {
+    $out = [];
+    foreach ($ids as $id) {
+      $id = (int)$id;
+      if ($id > 0) $out[$id] = $id;
+    }
+    return array_values($out);
+  }
+
+  function scoop_inventory_change_rel_ids($value): array {
+    if (empty($value)) return [];
+
+    if (is_numeric($value)) return [(int)$value];
+
+    $ids = [];
+    $values = is_array($value) ? $value : [$value];
+    foreach ($values as $item) {
+      $ids[] = scoop_rel_id($item);
+    }
+
+    return scoop_inventory_change_unique_ids($ids);
+  }
+
+  function scoop_inventory_change_tub_flavor_id(int $tub_id): int {
+    if ($tub_id <= 0 || !function_exists('pods')) return 0;
+
+    $tub = pods('tub', $tub_id);
+    if (!$tub || !$tub->exists()) return 0;
+
+    return scoop_rel_id($tub->field('flavor'));
+  }
+
+  function scoop_inventory_change_tubs_for_relation(string $where): array {
+    if (!function_exists('pods')) return [];
+
+    $pod = pods('tub', [
+      'where' => $where,
+      'limit' => -1,
+    ]);
+    if (!$pod) return [];
+
+    $ids = [];
+    while ($pod->fetch()) {
+      $ids[] = (int)$pod->id();
+    }
+
+    return scoop_inventory_change_unique_ids($ids);
+  }
+
+  function scoop_inventory_change_refs(array $cfg, array $updated = [], int $created_id = 0): array {
+    $entity = $cfg['pod_name'] ?? '';
+    $tubs   = [];
+    $flavors = [];
+
+    if ($entity === 'tub') {
+      foreach ($updated as $row_id => $fields) {
+        $tub_id = (int)$row_id;
+        if ($tub_id <= 0) continue;
+
+        $tubs[] = $tub_id;
+        if (is_array($fields) && array_key_exists('flavor', $fields)) {
+          $flavors[] = scoop_rel_id($fields['flavor']);
+        } else {
+          $flavors[] = scoop_inventory_change_tub_flavor_id($tub_id);
+        }
+      }
+    } elseif ($entity === 'batch') {
+      $flavors[] = scoop_rel_id($updated['flavor'] ?? null);
+      if ($created_id > 0) {
+        $tubs = array_merge($tubs, scoop_inventory_change_tubs_for_relation('batch.ID = ' . $created_id));
+      }
+    } elseif ($entity === 'closeout') {
+      $flavors[] = scoop_rel_id($updated['flavor'] ?? null);
+      if ($created_id > 0 && function_exists('pods')) {
+        $closeout = pods('closeout', $created_id);
+        if ($closeout && $closeout->exists()) {
+          $tubs = array_merge($tubs, scoop_inventory_change_rel_ids($closeout->field('tub')));
+        }
+        if (empty($tubs)) {
+          $tubs = array_merge($tubs, scoop_inventory_change_tubs_for_relation('closeout.ID = ' . $created_id));
+        }
+      }
+    } elseif ($entity === 'slot') {
+      foreach ($updated as $fields) {
+        if (!is_array($fields)) continue;
+        foreach (['current_flavor', 'immediate_flavor', 'next_flavor'] as $field) {
+          if (array_key_exists($field, $fields)) $flavors[] = scoop_rel_id($fields[$field]);
+        }
+      }
+    }
+
+    foreach ($tubs as $tub_id) {
+      $flavors[] = scoop_inventory_change_tub_flavor_id((int)$tub_id);
+    }
+
+    return [
+      'tubs'    => scoop_inventory_change_unique_ids($tubs),
+      'flavors' => scoop_inventory_change_unique_ids($flavors),
+    ];
+  }
+
+  function scoop_log_post(\WP_REST_Request $req, array $cfg, array $updated = [], array $errors = [], int $created_id = 0):void
   {
     $user       = wp_get_current_user()->user_login;
     $payload    = $req->get_param($cfg['envelope_key'] ?? '') ?: [];
@@ -159,6 +260,8 @@
       'br'         => [],
     ];
 
+    $refs = scoop_inventory_change_refs($cfg, $updated, $created_id);
+
     pods('inventory_change')->add([
         'title'       => $title,
         'change_count'=> $count,
@@ -168,6 +271,8 @@
         'phase'       => scoop_inventory_change_phase($cfg, $updated),
         'source'      => scoop_inventory_change_source($cfg),
         'problem'     => empty($errors) ? 'none' : 'error',
+        'tubs'        => $refs['tubs'],
+        'flavors'     => $refs['flavors'],
         'details'     => $details,
         'post_content'=> wp_kses( $details, $allowed )
     ]);

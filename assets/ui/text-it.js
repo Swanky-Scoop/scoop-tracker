@@ -15,6 +15,9 @@ export default class TextIt {
     this.colKey = this.data.colKey ?? this.data.key ?? '';
     this.type   = (this.data.hidden)? "hidden" : this.data.type ?? "text"; // "number" or "text"
     this.step   = this.data.step ?? null;
+    this.min    = this.data.min ?? null;
+    this.max    = this.data.max ?? null;
+    this.title  = this.data.title ?? null;
 
     this.fieldName = `${this.formKey}[cells][${this.rowId}][${this.colKey}]`;
 
@@ -33,6 +36,9 @@ export default class TextIt {
     INP.value = String(this.value ?? "");
     INP.autocomplete = "off";
     if(this.type === "number" && this.step) INP.step = this.step;
+    if(this.type === "number" && this.min !== null) INP.min = this.min;
+    if(this.type === "number" && this.max !== null) INP.max = this.max;
+    if(this.title) INP.title = this.title;
 
     // Keep hidden input authoritative
     INP.addEventListener("input", () => {

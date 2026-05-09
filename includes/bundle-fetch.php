@@ -288,6 +288,16 @@ function scoop_bundle_fetch_type( string $needType, \WP_REST_Request $req, array
     $ctx['include_empty_tubs'] = (bool) $include_empty;
   }
 
+  $modified_since = $req->get_param( 'modified_since' );
+  if ( $modified_since !== null && $modified_since !== '' ) {
+    $ctx['modified_since'] = (string) $modified_since;
+  }
+
+  $modified_range = $req->get_param( 'modified_range' );
+  if ( $modified_range !== null && $modified_range !== '' ) {
+    $ctx['modified_range'] = (string) $modified_range;
+  }
+
   if ( ! empty( $bundle_ctx['requesting_types'] ) ) {
     $ctx['requesting_types'] = $bundle_ctx['requesting_types'];
   }

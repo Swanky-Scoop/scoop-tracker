@@ -2,10 +2,30 @@ import BaseGridModel from "./_base-grid-model.js";
 import Indexer       from "../data/indexer.js";
 
 export default class DateActivityGridModel extends BaseGridModel{
-  constructor(name, domain, attrs){
+  constructor(name, domain, attrs = {}){
     super(name, domain, attrs );
     this.filter = true;
+    this.modifiedRange = attrs?.modifiedRange ?? 'last_48_hours';
     this._build();
+  }
+
+  getFilterDefs() {
+    return [
+      {
+        key: 'modified_range',
+        label: 'Modified',
+        type: 'select',
+        mode: 'server',
+        default: 'last_48_hours',
+        options: [
+          { key: 'today', label: 'Today' },
+          { key: 'yesterday', label: 'Yesterday' },
+          { key: 'last_48_hours', label: 'Last 48 hours' },
+          { key: 'last_7_days', label: 'Last 7 days' },
+          { key: 'this_week', label: 'This week' },
+        ],
+      },
+    ];
   }
 
   buildCols() {
@@ -16,11 +36,11 @@ export default class DateActivityGridModel extends BaseGridModel{
       { key: "tub",           label: "Tub",      type: "string" },
       { key: "state",         label: "State",    write: true, control: "find", type: "string" },
       { key: "use",           label: "Use",      write: true, control: "find", type: "use", titleMap: "use" },
-      { key: "amount",        label: "Amount",   write: true, control: "text", type: "number", step: 0.01 },
+      { key: "amount",        label: "Amount",   write: true, control: "text", type: "number", step: 0.01, min: 0, max: 1, title: "Fraction of this tub that is full (0 to 1)." },
       { key: "created_on",    label: "Created",  type: "datetime" },
       { key: "opened_on",     label: "Opened",   type: "datetime" },
       { key: "emptied_at",    label: "Emptied",  type: "datetime" },
-      { key: "post_modified", label: "Updated",  type: "datetime" },
+      { key: "post_modified", label: "Modified", type: "datetime" },
       { key: "author_name",   label: "Who",      type: "string" },
     ];
 
@@ -34,17 +54,17 @@ export default class DateActivityGridModel extends BaseGridModel{
     const primary = this.metaData?.primary || 'tub';
     const items = this.domain[primary] || [];
     const locationTubIds = this.filterByLocation(items);
-    const recentItems = this._filterRecentLifecycleItems(locationTubIds);
+    const recentItems = this._filterModifiedItems(locationTubIds);
     const tubsByFlavorId = Indexer.groupBy(recentItems, t => t.flavor);
-    const cabinetWarnings = this._cabinetFlavorWarnings(locationTubIds);
+    const slotWarnings = this._slotFlavorWarnings(locationTubIds);
 
     return this.buildGroupedRows({
       groupsMap     : tubsByFlavorId,
       includeGroupId: (id) => Number(id) > 0,
-      getGroupLabel : (id) => this._flavorGroupLabel(id, tubsByFlavorId.get(id) ?? [], cabinetWarnings),
-      getGroupBadges: (items, flavorId) => this._dateActivityBadges(items, flavorId, cabinetWarnings),
+      getGroupLabel : (id) => this._flavorGroupLabel(id, tubsByFlavorId.get(id) ?? [], slotWarnings),
+      getGroupBadges: (items, flavorId) => this._dateActivityBadges(items, flavorId, slotWarnings),
       makeRowId     : (item) => item.id,
-      fillRow       : (row, item, i) => { this._fillActivityRow(row, item, i, cabinetWarnings); },
+      fillRow       : (row, item, i) => { this._fillActivityRow(row, item, i, slotWarnings); },
       collapsed     : false,
       groupType     : 'flavor',
       rowType       : 'tub',
@@ -52,34 +72,42 @@ export default class DateActivityGridModel extends BaseGridModel{
     });
   }
 
-  _filterRecentLifecycleItems(items = []) {
+  _filterModifiedItems(items = []) {
+    const { start, end } = this._modifiedWindow();
+
     return items
-      .filter(item => this._activityTime(item) >= this._windowStart())
-      .sort((a, b) => this._activityTime(b) - this._activityTime(a));
+      .filter(item => {
+        const modified = this._modifiedTime(item);
+        return modified >= start && modified <= end;
+      })
+      .sort((a, b) => this._modifiedTime(b) - this._modifiedTime(a));
   }
 
-  _windowStart() {
-    return Date.now() - (48 * 60 * 60 * 1000);
+  _modifiedWindow() {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const day = 24 * 60 * 60 * 1000;
+
+    switch (this.modifiedRange) {
+      case 'today':
+        return { start: startOfToday, end: now.getTime() };
+      case 'yesterday':
+        return { start: startOfToday - day, end: startOfToday - 1 };
+      case 'last_7_days':
+        return { start: now.getTime() - (7 * day), end: now.getTime() };
+      case 'this_week': {
+        const dayOfWeek = now.getDay();
+        return { start: startOfToday - (dayOfWeek * day), end: now.getTime() };
+      }
+      case 'last_48_hours':
+      default:
+        return { start: now.getTime() - (48 * 60 * 60 * 1000), end: now.getTime() };
+    }
   }
 
-  _dateInWindow(value) {
-    const time = new Date(value).getTime();
-    return Number.isFinite(time) && time >= this._windowStart();
-  }
-
-  _activityTime(item = {}) {
-    const candidates = [
-      item.emptied_at,
-      item.opened_on,
-      item.created_on,
-      item.post_modified,
-      item.date,
-    ];
-
-    return candidates.reduce((latest, value) => {
-      const time = new Date(value).getTime();
-      return Number.isFinite(time) ? Math.max(latest, time) : latest;
-    }, 0);
+  _modifiedTime(item = {}) {
+    const time = new Date(item.post_modified).getTime();
+    return Number.isFinite(time) ? time : 0;
   }
 
   _phaseForTub(item = {}) {
@@ -90,7 +118,7 @@ export default class DateActivityGridModel extends BaseGridModel{
       { phase: 'created', time: new Date(item.created_on).getTime() },
       { phase: 'opened',  time: new Date(item.opened_on).getTime() },
       { phase: 'emptied', time: new Date(item.emptied_at).getTime() },
-    ].filter(event => Number.isFinite(event.time) && event.time >= this._windowStart());
+    ].filter(event => Number.isFinite(event.time));
 
     events.sort((a, b) => b.time - a.time);
     if (events[0]) return events[0].phase;
@@ -108,15 +136,14 @@ export default class DateActivityGridModel extends BaseGridModel{
     return 'tub';
   }
 
-  _problemForTub(item = {}, cabinetWarnings = new Set()) {
+  _problemForTub(item = {}, slotWarnings = new Set()) {
     const phase = this._phaseForTub(item);
     const flavorId = Number(item.flavor || 0);
 
     if (phase === 'opened' && this._noDate(item.opened_on)) return 'warning';
     if (phase === 'emptied' && this._noDate(item.emptied_at)) return 'warning';
-    if (phase === 'emptied' && this._noDate(item.opened_on)) return 'warning';
-    if (Number(item.amount ?? 1) <= 0) return 'warning';
-    if (cabinetWarnings.has(flavorId) && phase !== 'opened') return 'warning';
+    if (Number(item.amount ?? 1) < 0 || Number(item.amount ?? 1) > 1) return 'warning';
+    if (slotWarnings.has(flavorId) && phase !== 'opened') return 'warning';
 
     return 'none';
   }
@@ -127,12 +154,12 @@ export default class DateActivityGridModel extends BaseGridModel{
     return s.startsWith('0000-00-00');
   }
 
-  _fillActivityRow(row, item, i, cabinetWarnings) {
+  _fillActivityRow(row, item, i, slotWarnings) {
     this.fillRowFromColumns(row, item, i);
 
     const phase = this._phaseForTub(item);
     const source = this._sourceForTub(item);
-    const problem = this._problemForTub(item, cabinetWarnings);
+    const problem = this._problemForTub(item, slotWarnings);
 
     row.phase = this._readOnlyCell(phase, item, 'phase', { alertCase: `phase-${phase}` });
     row.source = this._readOnlyCell(source, item, 'source', { alertCase: `source-${source}` });
@@ -152,7 +179,7 @@ export default class DateActivityGridModel extends BaseGridModel{
     };
   }
 
-  _cabinetFlavorWarnings(locationTubs = []) {
+  _slotFlavorWarnings(locationTubs = []) {
     const openedByFlavor = new Set(
       locationTubs
         .filter(t => String(t.state ?? '') === 'Opened')
@@ -174,28 +201,29 @@ export default class DateActivityGridModel extends BaseGridModel{
     return warnings;
   }
 
-  _flavorGroupLabel(flavorId, items = [], cabinetWarnings = new Set()) {
+  _flavorGroupLabel(flavorId, items = [], slotWarnings = new Set()) {
     const base = this.labelFromMap(Number(flavorId), this._flavorsById) ?? `Flavor ${flavorId}`;
     const summary = this._summaryForFlavor(items);
-    const cabinetNote = cabinetWarnings.has(Number(flavorId)) ? ' · cabinet needs opened tub' : '';
+    const slotNote = slotWarnings.has(Number(flavorId)) ? ' · slot needs opened tub' : '';
 
-    return `${base} · Created ${summary.created} · Opened ${summary.opened} · Emptied ${summary.emptied} · Active ${summary.active}${cabinetNote}`;
+    return `${base} · Created ${summary.created} · Opened ${summary.opened} · Emptied ${summary.emptied} · Active ${summary.active}${slotNote}`;
   }
 
   _summaryForFlavor(items = []) {
     return items.reduce((summary, item) => {
       const amount = Number(item.amount ?? 1) || 0;
 
-      if (this._dateInWindow(item.created_on)) summary.created += amount;
-      if (this._dateInWindow(item.opened_on)) summary.opened += amount;
-      if (this._dateInWindow(item.emptied_at)) summary.emptied += amount;
+      const phase = this._phaseForTub(item);
+      if (phase === 'created') summary.created += amount;
+      if (phase === 'opened') summary.opened += amount;
+      if (phase === 'emptied') summary.emptied += amount;
       if (String(item.state ?? '') !== 'Emptied') summary.active += amount;
 
       return summary;
     }, { created: 0, opened: 0, emptied: 0, active: 0 });
   }
 
-  _dateActivityBadges(items = [], flavorId, cabinetWarnings = new Set()) {
+  _dateActivityBadges(items = [], flavorId, slotWarnings = new Set()) {
     const summary = this._summaryForFlavor(items);
     const badges = [
       { key: 'created', text: `created ${summary.created}` },
@@ -204,8 +232,8 @@ export default class DateActivityGridModel extends BaseGridModel{
       { key: 'active',  text: `active ${summary.active}` },
     ];
 
-    if (cabinetWarnings.has(Number(flavorId))) {
-      badges.push({ key: 'warning', text: 'cabinet/no opened tub' });
+    if (slotWarnings.has(Number(flavorId))) {
+      badges.push({ key: 'warning', text: 'slot/no opened tub' });
     }
 
     return badges;

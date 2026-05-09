@@ -66,9 +66,9 @@ function scoop_entity_specs(string $key = ''): array {
 
           // DateActivity needs: recent tubs (any state)
           if ($has_date_activity) {
-            $modified          = strtotime($row['post_modified'] ?? '');
-            $fortyEightHoursAgo = time() - (48 * 60 * 60);
-            if ($modified && $modified >= $fortyEightHoursAgo) {
+            $modified = strtotime($row['post_modified'] ?? '');
+            $modified_since = strtotime($ctx['modified_since'] ?? '') ?: (time() - (48 * 60 * 60));
+            if ($modified && $modified >= $modified_since) {
               return true;
             }
           }

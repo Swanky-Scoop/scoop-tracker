@@ -267,6 +267,27 @@ export default class ScoopAPI {
     return this._domain ?? {};
   }
 
+
+  _modifiedSinceForRange(range = 'last_48_hours') {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const day = 24 * 60 * 60 * 1000;
+
+    switch (range) {
+      case 'today':
+        return startOfToday;
+      case 'yesterday':
+        return new Date(startOfToday.getTime() - day);
+      case 'last_7_days':
+        return new Date(now.getTime() - (7 * day));
+      case 'this_week':
+        return new Date(startOfToday.getTime() - (now.getDay() * day));
+      case 'last_48_hours':
+      default:
+        return new Date(now.getTime() - (48 * 60 * 60 * 1000));
+    }
+  }
+
   // --- MOUNTING ---
   async mountAllGrids({ root = document, formCodec = FormCodec } = {}) {
     if (!this.getTypesFromGridHosts(root)) return [];
@@ -316,7 +337,8 @@ export default class ScoopAPI {
 
         const modelInstance = new ModelClass(name, null, {
             location,
-            metaData: SCOOP.metaData?.[name]
+            metaData: SCOOP.metaData?.[name],
+            modifiedRange: dom.dataset.modifiedRange || 'last_48_hours'
         });
 
         return new Grid(dom, name, {
@@ -331,9 +353,11 @@ export default class ScoopAPI {
       const needsDateFilter = this.gridTypes.has('DateActivity');
 
       if (needsDateFilter) {
-          const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+          const dateActivityHost = bundleHosts.find(dom => dom.dataset.gridType === 'DateActivity');
+          const modifiedRange = dateActivityHost?.dataset?.modifiedRange || 'last_48_hours';
           const url = this._bundleUrlForTypes();
-          url.searchParams.set('modified_since', fortyEightHoursAgo.toISOString());
+          url.searchParams.set('modified_range', modifiedRange);
+          url.searchParams.set('modified_since', this._modifiedSinceForRange(modifiedRange).toISOString());
 
           const bundle = await this.getJson(url);
           this._domain = bundle?.data ?? {};
