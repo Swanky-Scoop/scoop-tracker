@@ -30,11 +30,13 @@ function scoop_bundle_cache_key( \WP_REST_Request $req ): string {
 
   $loc   = (int) ( $req->get_param( 'location' )          ?? 0 );
   $empty = (bool)( $req->get_param( 'include_empty_tubs' ) ?? false );
+  $modified_since = (string)( $req->get_param( 'modified_since' ) ?? '' );
+  $modified_range = (string)( $req->get_param( 'modified_range' ) ?? '' );
 
   $v = scoop_cache_version();
 
   // WordPress transient keys max out at 172 chars; this stays well under that
-  return 'scoop_b_' . md5( $v . '|' . implode( ',', $types ) . '|' . $loc . '|' . ( $empty ? '1' : '0' ) );
+  return 'scoop_b_' . md5( $v . '|' . implode( ',', $types ) . '|' . $loc . '|' . ( $empty ? '1' : '0' ) . '|' . $modified_range . '|' . $modified_since );
 }
 
 /**

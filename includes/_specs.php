@@ -7,7 +7,7 @@ function scoop_bundle_specs(): array {
     'FlavorTub'    => ['needs' => ['tub','flavor','use']],
     'Batch'        => ['needs' => ['flavor']],
     'Closeout'     => ['needs' => ['flavor','use']],
-    'DateActivity' => ['needs' => ['tub','flavor','use','location']],
+    'DateActivity' => ['needs' => ['tub','flavor','use','location','slot','cabinet']],
   ];
   
   return $specs;
@@ -48,6 +48,8 @@ function scoop_entity_specs(string $key = ''): array {
           'opened_on'     => ['data_type' => 'string'],
           'emptied_at'    => ['data_type' => 'string'],
           'location'      => ['data_type' => 'int',      'control' => 'find', 'titleMap' => 'location', 'hidden' => true],
+          'batch'         => ['data_type' => 'int',      'control' => 'find', 'hidden' => true],
+          'closeout'      => ['data_type' => 'int',      'control' => 'find', 'hidden' => true],
           'index'         => ['data_type' => 'int',      'hidden'  => true],
         ],
         'post_fields' => [
@@ -64,9 +66,9 @@ function scoop_entity_specs(string $key = ''): array {
 
           // DateActivity needs: recent tubs (any state)
           if ($has_date_activity) {
-            $modified          = strtotime($row['post_modified'] ?? '');
-            $fortyEightHoursAgo = time() - (48 * 60 * 60);
-            if ($modified && $modified >= $fortyEightHoursAgo) {
+            $modified = strtotime($row['post_modified'] ?? '');
+            $modified_since = strtotime($ctx['modified_since'] ?? '') ?: (time() - (48 * 60 * 60));
+            if ($modified && $modified >= $modified_since) {
               return true;
             }
           }
