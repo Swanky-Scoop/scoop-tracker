@@ -222,6 +222,7 @@ export default class ScoopAPI {
       flavor  : Array.isArray(data.flavor)   ? data.flavor   : [],
       location: Array.isArray(data.location) ? data.location : [],
       use     : Array.isArray(data.use)      ? data.use      : [],
+      inventory_change: Array.isArray(data.inventory_change) ? data.inventory_change : [],
       // if these exist later, keep them without forcing structure:
       batch  : Array.isArray(data.batch)   ? data.batch   : (data.batch ?? []),
       closeout: Array.isArray(data.closeout) ? data.closeout : (data.closeout ?? []),
