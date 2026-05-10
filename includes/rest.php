@@ -145,6 +145,94 @@
     return scoop_inventory_change_unique_ids($ids);
   }
 
+  function scoop_inventory_change_expected_data_keys(): array {
+    return [
+      'title',
+      'change_count',
+      'entity',
+      'envelope',
+      'mode',
+      'phase',
+      'source',
+      'problem',
+      'tubs',
+      'flavors',
+      'details',
+      'post_content',
+    ];
+  }
+
+  function scoop_inventory_change_expected_custom_fields(): array {
+    return [
+      'change_count',
+      'entity',
+      'envelope',
+      'mode',
+      'phase',
+      'source',
+      'problem',
+      'tubs',
+      'flavors',
+      'details',
+    ];
+  }
+
+  function scoop_inventory_change_custom_field_names(): array {
+    if (!function_exists('scoop_pods_ready') || !scoop_pods_ready()) return [];
+
+    $pod = pods_api()->load_pod(['name' => 'inventory_change']);
+    if (!$pod || !is_array($pod)) return [];
+
+    $fields = $pod['fields'] ?? [];
+    return is_array($fields) ? array_keys($fields) : [];
+  }
+
+  function scoop_inventory_change_log_failure(string $message, array $data = [], array $context = []): void {
+    $custom_fields = scoop_inventory_change_custom_field_names();
+    $expected_custom_fields = scoop_inventory_change_expected_custom_fields();
+
+    $diagnostic = [
+      'message'                => $message,
+      'expected_data_keys'     => scoop_inventory_change_expected_data_keys(),
+      'data_keys'             => array_keys($data),
+      'expected_custom_fields' => $expected_custom_fields,
+      'custom_fields'          => $custom_fields,
+      'missing_custom_fields'  => $custom_fields ? array_values(array_diff($expected_custom_fields, $custom_fields)) : $expected_custom_fields,
+      'context'                => $context,
+    ];
+
+    $encoded = function_exists('wp_json_encode') ? wp_json_encode($diagnostic) : json_encode($diagnostic);
+    error_log('Scoop inventory_change audit insert failed. Check that the inventory_change Pod exists and has relationship fields "tubs" and "flavors". ' . $encoded);
+  }
+
+  function scoop_inventory_change_add(array $data, array $context = []): void {
+    if (!function_exists('pods')) {
+      scoop_inventory_change_log_failure('pods() is not available', $data, $context);
+      return;
+    }
+
+    try {
+      $pod = pods('inventory_change');
+      if (!$pod || !method_exists($pod, 'add')) {
+        scoop_inventory_change_log_failure('pods("inventory_change") is unavailable or cannot add records', $data, $context);
+        return;
+      }
+
+      $result = $pod->add($data);
+
+      if (is_wp_error($result)) {
+        scoop_inventory_change_log_failure('Pods add returned WP_Error: ' . $result->get_error_message(), $data, $context);
+        return;
+      }
+
+      if (empty($result)) {
+        scoop_inventory_change_log_failure('Pods add returned an empty result', $data, $context);
+      }
+    } catch (\Throwable $e) {
+      scoop_inventory_change_log_failure('Pods add threw ' . get_class($e) . ': ' . $e->getMessage(), $data, $context);
+    }
+  }
+
   function scoop_inventory_change_tub_flavor_id(int $tub_id): int {
     if ($tub_id <= 0 || !function_exists('pods')) return 0;
 
@@ -262,7 +350,7 @@
 
     $refs = scoop_inventory_change_refs($cfg, $updated, $created_id);
 
-    pods('inventory_change')->add([
+    $change_data = [
         'title'       => $title,
         'change_count'=> $count,
         'entity'      => $entity,
@@ -275,6 +363,15 @@
         'flavors'     => $refs['flavors'],
         'details'     => $details,
         'post_content'=> wp_kses( $details, $allowed )
+    ];
+
+    scoop_inventory_change_add($change_data, [
+      'entity'     => $entity,
+      'envelope'   => $envelope,
+      'mode'       => $mode,
+      'created_id' => $created_id,
+      'tub_ids'    => $refs['tubs'],
+      'flavor_ids' => $refs['flavors'],
     ]);
   }
 

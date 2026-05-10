@@ -7,7 +7,7 @@ function scoop_bundle_specs(): array {
     'FlavorTub'    => ['needs' => ['tub','flavor','use']],
     'Batch'        => ['needs' => ['flavor']],
     'Closeout'     => ['needs' => ['flavor','use']],
-    'DateActivity' => ['needs' => ['tub','flavor','use','location','slot','cabinet']],
+    'DateActivity' => ['needs' => ['tub','inventory_change','flavor','use','location','slot','cabinet']],
   ];
   
   return $specs;
@@ -82,6 +82,41 @@ function scoop_entity_specs(string $key = ''): array {
         },
 
         'writeable' => ['state','use','amount']
+      ],
+
+      'inventory_change' => [
+        'post_type' => 'inventory_change',
+        'pod'       => 'inventory_change',
+        'title'     => true,
+        'fields'    => [
+          'change_count' => ['data_type' => 'float',  'hidden' => true],
+          'entity'       => ['data_type' => 'string', 'hidden' => true],
+          'envelope'     => ['data_type' => 'string', 'hidden' => true],
+          'mode'         => ['data_type' => 'string', 'hidden' => true],
+          'phase'        => ['data_type' => 'string'],
+          'source'       => ['data_type' => 'string'],
+          'problem'      => ['data_type' => 'string'],
+          'tubs'         => ['data_type' => 'ids',    'control' => 'find', 'titleMap' => 'tub', 'hidden' => true],
+          'flavors'      => ['data_type' => 'ids',    'control' => 'find', 'titleMap' => 'flavor', 'hidden' => true],
+          'details'      => ['data_type' => 'string', 'hidden' => true],
+        ],
+        'post_fields' => [
+          'author_name'   => 'string',
+          'post_modified' => 'datetime',
+          'post_date'     => 'datetime',
+        ],
+        'filter' => function(array $row, array $ctx) {
+          $requesting_types = $ctx['requesting_types'] ?? [];
+          if (!in_array('DateActivity', $requesting_types, true)) {
+            return false;
+          }
+
+          $modified = strtotime($row['post_modified'] ?? $row['post_date'] ?? '');
+          $modified_since = strtotime($ctx['modified_since'] ?? '') ?: (time() - (48 * 60 * 60));
+
+          return $modified && $modified >= $modified_since;
+        },
+        'writeable' => []
       ],
 
       'slot' => [
