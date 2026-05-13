@@ -259,7 +259,7 @@ export default class Grid extends El{
 
     if(col.hidden) CELL.classList.add('hidden');
     
-    if(col.write){
+    if(col.write && d.write !== false){
       if(col.hidden)
         new TextIt(CELL, col, this.name);
       else if(col.control === "text" )

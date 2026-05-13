@@ -64,12 +64,25 @@ function scoop_entity_specs(string $key = ''): array {
           $has_date_activity = in_array('DateActivity', $requesting_types, true);
           $has_other_grids   = !empty(array_diff($requesting_types, ['DateActivity']));
 
-          // DateActivity needs: recent tubs (any state)
+          // DateActivity needs tubs whose actual inventory event dates are recent.
+          // post_modified is still used for manual override rows, but opens and
+          // empties should be keyed off opened_on/emptied_at instead of the
+          // tub's current state snapshot.
           if ($has_date_activity) {
-            $modified = strtotime($row['post_modified'] ?? '');
             $modified_since = strtotime($ctx['modified_since'] ?? '') ?: (time() - (48 * 60 * 60));
-            if ($modified && $modified >= $modified_since) {
-              return true;
+            $candidates = [
+              $row['opened_on'] ?? '',
+              $row['emptied_at'] ?? '',
+              $row['created_on'] ?? '',
+            ];
+
+            if (($row['state'] ?? '') === '__override__') {
+              $candidates[] = $row['post_modified'] ?? '';
+            }
+
+            foreach ($candidates as $candidate) {
+              $modified = strtotime($candidate);
+              if ($modified && $modified >= $modified_since) return true;
             }
           }
 

@@ -154,13 +154,25 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
 
     if ( $has_date_activity && ! $has_other_grids && $modified_since_ts ) {
       $modified_since_sql = esc_sql( date( 'Y-m-d H:i:s', $modified_since_ts ) );
-      $where_clauses[] = "t.post_modified >= '{$modified_since_sql}'";
+      $where_clauses[] = "(opened_on >= '{$modified_since_sql}' OR emptied_at >= '{$modified_since_sql}' OR created_on >= '{$modified_since_sql}' OR (state = '__override__' AND t.post_modified >= '{$modified_since_sql}'))";
     }
 
     // Push location into SQL for tubs — location is a plain int column here.
     if ( $loc_id > 0 && array_key_exists( 'location', $spec_fields ) ) {
       $where_clauses[] = "location = {$loc_id}";
       $db_loc_applied  = true;
+    }
+  }
+
+
+  if ( $key === 'inventory_change' ) {
+    $requesting_types   = $ctx['requesting_types'] ?? [];
+    $has_date_activity = in_array( 'DateActivity', $requesting_types, true );
+    $modified_since_ts = strtotime( $ctx['modified_since'] ?? '' );
+
+    if ( $has_date_activity && $modified_since_ts ) {
+      $modified_since_sql = esc_sql( date( 'Y-m-d H:i:s', $modified_since_ts ) );
+      $where_clauses[] = "t.post_modified >= '{$modified_since_sql}'";
     }
   }
 

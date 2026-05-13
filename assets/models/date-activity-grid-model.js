@@ -51,25 +51,135 @@ export default class DateActivityGridModel extends BaseGridModel{
   buildRows() {
     if (!this.domain) return [];
 
-    const primary = this.metaData?.primary || 'tub';
-    const items = this.domain[primary] || [];
-    const locationTubIds = this.filterByLocation(items);
-    const recentItems = this._filterModifiedItems(locationTubIds);
-    const tubsByFlavorId = Indexer.groupBy(recentItems, t => t.flavor);
-    const slotWarnings = this._slotFlavorWarnings(locationTubIds);
+    const locationTubs = this.filterByLocation(this.domain.tub || []);
+    const slotWarnings = this._slotFlavorWarnings(locationTubs);
+    const activityItems = this._filterModifiedItems(this._activityItems(locationTubs));
+    const activityByFlavorId = Indexer.groupBy(activityItems, item => item.flavor);
 
     return this.buildGroupedRows({
-      groupsMap     : tubsByFlavorId,
+      groupsMap     : activityByFlavorId,
       includeGroupId: (id) => Number(id) > 0,
-      getGroupLabel : (id) => this._flavorGroupLabel(id, tubsByFlavorId.get(id) ?? [], slotWarnings),
+      getGroupLabel : (id) => this._flavorGroupLabel(id, activityByFlavorId.get(id) ?? [], slotWarnings),
       getGroupBadges: (items, flavorId) => this._dateActivityBadges(items, flavorId, slotWarnings),
       makeRowId     : (item) => item.id,
       fillRow       : (row, item, i) => { this._fillActivityRow(row, item, i, slotWarnings); },
       collapsed     : false,
       groupType     : 'flavor',
-      rowType       : 'tub',
-      rowLabel      : 'tub',
+      rowType       : 'activity',
+      rowLabel      : 'activity',
     });
+  }
+
+  _activityItems(locationTubs = []) {
+    const tubsById = Indexer.byId(locationTubs);
+    const changes = Array.isArray(this.domain?.inventory_change) ? this.domain.inventory_change : [];
+    const items = [];
+    const auditedTubIdsInWindow = new Set();
+    const modifiedWindow = this._modifiedWindow();
+
+    changes.forEach((change, changeIndex) => {
+      const tubIds = this._ids(change.tubs);
+      const flavorIds = this._ids(change.flavors);
+
+      if (tubIds.length) {
+        tubIds.forEach((tubId, tubIndex) => {
+          const tub = tubsById.get(Number(tubId));
+          if (!tub && Number(this.location || 0) > 0) return;
+
+          const activity = this._activityFromChange(change, tub, tub?.flavor || flavorIds[0] || 0, tubIndex);
+          const activityTime = this._modifiedTime(activity);
+          if (activityTime >= modifiedWindow.start && activityTime <= modifiedWindow.end) {
+            auditedTubIdsInWindow.add(Number(tubId));
+          }
+          items.push(activity);
+        });
+        return;
+      }
+
+      // Some audit rows (for example cabinet/slot changes) are flavor-only. Keep
+      // them when there is no location filter; with a location filter there is no
+      // tub relationship to prove the activity belongs to this store.
+      if (Number(this.location || 0) > 0) return;
+
+      if (flavorIds.length) {
+        flavorIds.forEach((flavorId, flavorIndex) => {
+          items.push(this._activityFromChange(change, null, flavorId, flavorIndex));
+        });
+      } else {
+        items.push(this._activityFromChange(change, null, 0, changeIndex));
+      }
+    });
+
+    // Legacy fallback: keep tub rows when no audit row already represents that
+    // tub in the selected window, so older activity still appears while the
+    // audit table fills in without duplicating audited opens/empties/overrides.
+    locationTubs.forEach(tub => {
+      if (!auditedTubIdsInWindow.has(Number(tub.id))) items.push(this._activityFromTub(tub));
+    });
+
+    return items;
+  }
+
+  _activityFromChange(change = {}, tub = null, flavorId = 0, index = 0) {
+    const phase = change.phase || this._phaseForTub(tub || {});
+    const activityAt = change.post_modified || change.post_date || '';
+    const id = -1 * ((Number(change.id || 0) * 1000) + Number(index || 0) + 1);
+    const amount = tub ? Number(tub.amount ?? 1) : Number(change.change_count ?? 1);
+
+    return {
+      ...(tub || {}),
+      id,
+      _activityKind: 'inventory_change',
+      _activitySourceId: Number(change.id || 0),
+      _activityPhase: phase,
+      _activitySource: change.source || 'audit',
+      _activityProblem: change.problem || 'none',
+      _activityAt: activityAt,
+      _activityReadOnly: true,
+      _title: change._title || tub?._title || `Change ${change.id}`,
+      tub: tub?._title || (tub?.id ? `Tub ${tub.id}` : this._auditTubLabel(change)),
+      state: tub?.state || '',
+      use: tub?.use || 0,
+      amount: Number.isFinite(amount) ? amount : 1,
+      flavor: Number(flavorId || tub?.flavor || 0),
+      created_on: phase === 'created' ? (tub?.created_on || activityAt) : (tub?.created_on || ''),
+      opened_on: phase === 'opened' ? (tub?.opened_on || activityAt) : (tub?.opened_on || ''),
+      emptied_at: phase === 'emptied' ? (tub?.emptied_at || activityAt) : (tub?.emptied_at || ''),
+      post_modified: activityAt,
+      author_name: change.author_name || tub?.author_name || '',
+    };
+  }
+
+  _activityFromTub(tub = {}) {
+    return {
+      ...tub,
+      _activityKind: 'tub',
+      _activityAt: this._eventTimeForTub(tub) || tub.post_modified || '',
+    };
+  }
+
+  _auditTubLabel(change = {}) {
+    const tubIds = this._ids(change.tubs);
+    if (tubIds.length === 1) return `Tub ${tubIds[0]}`;
+    if (tubIds.length > 1) return `${tubIds.length} tubs`;
+    return change._title || `Change ${change.id || ''}`;
+  }
+
+  _ids(value) {
+    if (value == null || value === false) return [];
+    const values = Array.isArray(value) ? value : [value];
+    const out = [];
+    const seen = new Set();
+
+    for (const item of values) {
+      const id = Number(typeof item === 'object' ? (item.id ?? item.ID ?? item.value) : item);
+      if (Number.isFinite(id) && id > 0 && !seen.has(id)) {
+        seen.add(id);
+        out.push(id);
+      }
+    }
+
+    return out;
   }
 
   _filterModifiedItems(items = []) {
@@ -106,11 +216,26 @@ export default class DateActivityGridModel extends BaseGridModel{
   }
 
   _modifiedTime(item = {}) {
-    const time = new Date(item.post_modified).getTime();
+    return this._activityTimeValue(item);
+  }
+
+  _activityTimeValue(item = {}) {
+    const time = new Date(item._activityAt || item.post_modified || item.post_date || '').getTime();
     return Number.isFinite(time) ? time : 0;
   }
 
+  _eventTimeForTub(item = {}) {
+    const phase = this._phaseForTub(item);
+    if (phase === 'created') return item.created_on || item.post_date || item.post_modified || '';
+    if (phase === 'opened') return item.opened_on || item.post_modified || '';
+    if (phase === 'emptied') return item.emptied_at || item.post_modified || '';
+    if (phase === 'overriden') return item.post_modified || item.changed_on || '';
+    return item.post_modified || item.changed_on || item.post_date || '';
+  }
+
   _phaseForTub(item = {}) {
+    if (item._activityPhase) return item._activityPhase;
+
     const state = String(item.state ?? '');
     if (state === '__override__') return 'overriden';
 
@@ -130,6 +255,8 @@ export default class DateActivityGridModel extends BaseGridModel{
   }
 
   _sourceForTub(item = {}) {
+    if (item._activitySource) return item._activitySource;
+
     const phase = this._phaseForTub(item);
     if (phase === 'created' && item.batch) return 'batch';
     if (phase === 'emptied' && item.closeout) return 'audit';
@@ -137,6 +264,8 @@ export default class DateActivityGridModel extends BaseGridModel{
   }
 
   _problemForTub(item = {}, slotWarnings = new Set()) {
+    if (item._activityProblem) return item._activityProblem;
+
     const phase = this._phaseForTub(item);
     const flavorId = Number(item.flavor || 0);
 
@@ -161,10 +290,16 @@ export default class DateActivityGridModel extends BaseGridModel{
     const source = this._sourceForTub(item);
     const problem = this._problemForTub(item, slotWarnings);
 
+    if (item._activityReadOnly) {
+      for (const colKey of ['state', 'use', 'amount']) {
+        if (row[colKey]) row[colKey].write = false;
+      }
+    }
+
     row.phase = this._readOnlyCell(phase, item, 'phase', { alertCase: `phase-${phase}` });
     row.source = this._readOnlyCell(source, item, 'source', { alertCase: `source-${source}` });
     row.problem = this._readOnlyCell(problem, item, 'problem', { alertCase: `problem-${problem}` });
-    row.tub = this._readOnlyCell(item._title ?? `Tub ${item.id}`, item, 'tub');
+    row.tub = this._readOnlyCell(item.tub || item._title || `Tub ${item.id}`, item, 'tub');
   }
 
   _readOnlyCell(display, item, colKey, extra = {}) {

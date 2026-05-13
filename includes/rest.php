@@ -415,8 +415,7 @@
       return;
     }
 
-    $log_id = $inventory_change->add([
-    $change_data = [
+    $log_id = [
         'post_status' => 'publish',
         'title'       => $title,
         'change_count'=> $count,

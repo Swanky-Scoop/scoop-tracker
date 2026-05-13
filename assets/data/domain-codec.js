@@ -20,7 +20,8 @@ export default class DomainCodec {
     cabinet : DomainCodec._decodeCabinet,
     flavor  : DomainCodec._decodeFlavor,
     location: DomainCodec._decodeLocation,
-    use     : DomainCodec._decodeUse 
+    use     : DomainCodec._decodeUse,
+    inventory_change: DomainCodec._decodeInventoryChange
   };
 
 
@@ -63,6 +64,9 @@ export default class DomainCodec {
   }
   static decodeUses(use = [], o = DomainCodec.defaults) {
     return DomainCodec.decodeList(use, DomainCodec._decodeUse, o);
+  }
+  static decodeInventoryChanges(inventoryChange = [], o = DomainCodec.defaults) {
+    return DomainCodec.decodeList(inventoryChange, DomainCodec._decodeInventoryChange, o);
   }
 
   // -------------------------
@@ -181,6 +185,24 @@ export default class DomainCodec {
     return x;
   }
 
+  static _decodeInventoryChange(change, o) {
+    if (!change || typeof change !== "object") return change;
+
+    const x = DomainCodec._withIdAndTitle(change, o);
+
+    if (o.coerceRelationIds) {
+      x.tubs = DomainCodec._idsOf(change.tubs);
+      x.flavors = DomainCodec._idsOf(change.flavors);
+    }
+
+    if (x.change_count != null) {
+      const n = Number(x.change_count);
+      x.change_count = Number.isFinite(n) ? n : 0;
+    }
+
+    return x;
+  }
+
   // -------------------------
   // Shared coercion helpers
   // -------------------------
@@ -188,6 +210,23 @@ export default class DomainCodec {
   static _first(v) {
     if (v == null) return null;
     return Array.isArray(v) ? (v.length ? v[0] : null) : v;
+  }
+
+  static _idsOf(v) {
+    if (v == null || v === false) return [];
+    const values = Array.isArray(v) ? v : [v];
+    const ids = [];
+    const seen = new Set();
+
+    for (const value of values) {
+      const id = DomainCodec._idOf(value);
+      if (id > 0 && !seen.has(id)) {
+        seen.add(id);
+        ids.push(id);
+      }
+    }
+
+    return ids;
   }
 
   static _idOf(v) {
