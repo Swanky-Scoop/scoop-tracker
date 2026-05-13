@@ -45,10 +45,25 @@ function scoop_post_names_out( $v ): array {
   return $a;
 }
 
+function scoop_relation_ids_out( $v ): array {
+  if ( empty( $v ) ) return [];
+
+  $values = is_array( $v ) ? $v : [ $v ];
+  $ids = [];
+
+  foreach ( $values as $item ) {
+    $id = scoop_rel_id( $item );
+    if ( $id > 0 ) $ids[ $id ] = $id;
+  }
+
+  return array_values( $ids );
+}
+
 function scoop_cast( $v, $desc ) {
   $type = scoop_field_type( $desc );
   switch ( $type ) {
     case 'post_names': return scoop_post_names_out( $v );
+    case 'ids':        return scoop_relation_ids_out( $v );
     case 'int':        return scoop_rel_id( $v );
     case 'float':      return ( is_array( $v ) || is_object( $v ) ) ? 0.0 : (float) $v;
     case 'string':     return scoop_text_out( $v );
