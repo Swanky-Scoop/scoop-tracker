@@ -351,6 +351,11 @@
     ];
   }
 
+
+  function scoop_inventory_change_expected_fields(): string {
+    return 'title, change_count, entity, envelope, mode, phase, source, problem, tubs, flavors, details, post_content';
+  }
+
   function scoop_log_post(\WP_REST_Request $req, array $cfg, array $updated = [], array $errors = [], int $created_id = 0):void
   {
     $user       = wp_get_current_user()->user_login;
@@ -377,7 +382,16 @@
       $s        = ($count > 1)?'s':'';
     }
 
-    foreach ($updated as $row_id => $fields) {
+    $detail_rows = ($mode === 'create')
+      ? [($created_id > 0 ? $created_id : 0) => $updated]
+      : $updated;
+
+    foreach ($detail_rows as $row_id => $fields) {
+      if (!is_array($fields)) {
+        scoop_log("scoop_log_post: skipping non-array detail row entity={$entity} row_id={$row_id} type=" . gettype($fields));
+        continue;
+      }
+
       $details .= '<strong>'. (get_the_title((int) $row_id) ?: "Item {$row_id}") .'</strong><br />';
       foreach ($fields as $field => $value)
         $details .= $field .' => ' .( get_the_title((int) $value) ?: $value ) . '<br />';
@@ -390,6 +404,18 @@
 
     $refs = scoop_inventory_change_refs($cfg, $updated, $created_id);
 
+    if (!function_exists('pods')) {
+      error_log('scoop_log_post: Pods function unavailable; inventory_change log skipped.');
+      return;
+    }
+
+    $inventory_change = pods('inventory_change');
+    if (!$inventory_change || !is_object($inventory_change)) {
+      error_log("scoop_log_post: pods('inventory_change') unavailable; log skipped for entity={$entity}, mode={$mode}. Check that the inventory_change pod exists/enabled with expected fields: " . scoop_inventory_change_expected_fields());
+      return;
+    }
+
+    $log_id = $inventory_change->add([
     $change_data = [
         'post_status' => 'publish',
         'title'       => $title,
@@ -414,6 +440,12 @@
       'tub_ids'    => $refs['tubs'],
       'flavor_ids' => $refs['flavors'],
     ]);
+
+    if (is_wp_error($log_id)) {
+      error_log('scoop_log_post: inventory_change add failed: ' . $log_id->get_error_message() . '. Check inventory_change fields: ' . scoop_inventory_change_expected_fields());
+    } elseif (!$log_id) {
+      error_log("scoop_log_post: inventory_change add returned empty result for entity={$entity}, mode={$mode}. Check inventory_change fields: " . scoop_inventory_change_expected_fields());
+    }
     error_log("Inventory change logged with ID: $change_id");
     if ($change_id > 0) scoop_inventory_change_sync_tubs($change_id, $refs['tubs']);
 

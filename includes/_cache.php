@@ -18,7 +18,13 @@ function scoop_cache_version(): int {
 }
 
 function scoop_cache_bust(?int $post_id = null, array $ctx = []): void {
-  //TODO: $post_id can be used for smarter invalidation later, but for now we just bump the version on any post change.
+  if ( $post_id ) {
+    if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) return;
+
+    $post_type = get_post_type( $post_id );
+    if ( $post_type === 'inventory_change' ) return;
+  }
+
   // autoload=false: this option changes frequently, no need to load on every page
   update_option( 'scoop_cache_version', scoop_cache_version() + 1, false );
 }
@@ -30,7 +36,6 @@ function scoop_bundle_cache_key( \WP_REST_Request $req ): string {
 
   $loc   = (int) ( $req->get_param( 'location' )          ?? 0 );
   $empty = (bool)( $req->get_param( 'include_empty_tubs' ) ?? false );
-  $modified_since = (string)( $req->get_param( 'modified_since' ) ?? '' );
   $modified_range = (string)( $req->get_param( 'modified_range' ) ?? '' );
 
   $v = scoop_cache_version();

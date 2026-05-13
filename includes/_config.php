@@ -1,5 +1,16 @@
 <?php
 
+
+function scoop_is_debug_logging_enabled(): bool {
+  return defined('SCOOP_DEBUG_LOG') && (bool) SCOOP_DEBUG_LOG;
+}
+
+function scoop_debug_log(string $message): void {
+  if (scoop_is_debug_logging_enabled()) {
+    error_log($message);
+  }
+}
+
 function scoop_routes_config(string $batch_key = ''): array {
   
   $cfg = [

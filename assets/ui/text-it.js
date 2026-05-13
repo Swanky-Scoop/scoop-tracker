@@ -43,7 +43,6 @@ export default class TextIt {
     // Keep hidden input authoritative
     INP.addEventListener("input", () => {
       HDN.value = INP.value;
-      console.log('FINDIT????', HDN.value);
       HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
     });
 

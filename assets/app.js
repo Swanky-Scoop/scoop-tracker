@@ -8,7 +8,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     metaData: SCOOP.metaData,
     user: SCOOP.user
   });
-  console.log(SCOOP);
   if( await api.userHelper(SCOOP) === false ) return;
   await api.mountAllGrids(SCOOP.metaData);
   

@@ -145,6 +145,18 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
       $where_clauses[] = "state != 'Emptied'";
     }
 
+    // DateActivity-only tub bundles should not scan every historical tub.
+    // When other grids are present, keep active tubs in scope for their views.
+    $requesting_types   = $ctx['requesting_types'] ?? [];
+    $has_date_activity = in_array( 'DateActivity', $requesting_types, true );
+    $has_other_grids   = ! empty( array_diff( $requesting_types, [ 'DateActivity' ] ) );
+    $modified_since_ts = strtotime( $ctx['modified_since'] ?? '' );
+
+    if ( $has_date_activity && ! $has_other_grids && $modified_since_ts ) {
+      $modified_since_sql = esc_sql( date( 'Y-m-d H:i:s', $modified_since_ts ) );
+      $where_clauses[] = "t.post_modified >= '{$modified_since_sql}'";
+    }
+
     // Push location into SQL for tubs — location is a plain int column here.
     if ( $loc_id > 0 && array_key_exists( 'location', $spec_fields ) ) {
       $where_clauses[] = "location = {$loc_id}";
