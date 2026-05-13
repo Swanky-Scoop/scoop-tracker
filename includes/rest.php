@@ -378,8 +378,8 @@
       $flav     = $updated['flavor'] ?? 0;
       $count    = $updated['count'] ?? 0;
       $flav_t   = get_the_title($flav);
-      $title    = "created {$count} {$entity} of {$flav_t}{$s} on {$date}";
       $s        = ($count > 1)?'s':'';
+      $title    = "created {$count} {$entity} of {$flav_t}{$s} on {$date}";
     }
 
     $detail_rows = ($mode === 'create')
@@ -415,7 +415,7 @@
       return;
     }
 
-    $log_id = [
+    $change_data = [
         'post_status' => 'publish',
         'title'       => $title,
         'change_count'=> $count,
@@ -440,9 +440,7 @@
       'flavor_ids' => $refs['flavors'],
     ]);
 
-    if (is_wp_error($log_id)) {
-      error_log('scoop_log_post: inventory_change add failed: ' . $log_id->get_error_message() . '. Check inventory_change fields: ' . scoop_inventory_change_expected_fields());
-    } elseif (!$log_id) {
+    if (!$change_id) {
       error_log("scoop_log_post: inventory_change add returned empty result for entity={$entity}, mode={$mode}. Check inventory_change fields: " . scoop_inventory_change_expected_fields());
     }
     error_log("Inventory change logged with ID: $change_id");
