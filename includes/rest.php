@@ -205,42 +205,6 @@
     error_log('Scoop inventory_change audit insert failed. Check that the inventory_change Pod exists and has relationship fields "tubs" and "flavors". ' . $encoded);
   }
 
-  function scoop_inventory_change_verify_sync(int $change_id, array $tub_ids): void {
-    foreach ($tub_ids as $tub_id) {
-        $tub_pod = pods('tub', $tub_id);
-        $related = $tub_pod->field('inventory_changes'); // note: plural
-        error_log("tub $tub_id inventory_changes field: " . wp_json_encode($related));
-    }
-    
-    $change_pod = pods('inventory_change', $change_id);
-    $tubs_stored = $change_pod->field('tubs');
-    error_log("inventory_change $change_id tubs field: " . wp_json_encode($tubs_stored));
-  }
-
-  function scoop_inventory_change_sync_tubs(int $change_id, array $tub_ids): void {
-    if (empty($tub_ids) || !function_exists('pods')) return;
-    
-    foreach ($tub_ids as $tub_id) {
-      $tub_pod = pods('tub', $tub_id);
-      if (!$tub_pod || !method_exists($tub_pod, 'save')) continue;
-      
-      // Read existing related change IDs to avoid clobbering
-      $existing = $tub_pod->field('inventory_changes');
-      $existing_ids = [];
-      if (!empty($existing)) {
-        foreach ((array)$existing as $item) {
-          $id = is_array($item) ? ($item['ID'] ?? 0) : (int)$item;
-          if ($id > 0) $existing_ids[] = $id;
-        }
-      }
-      
-      $existing_ids[] = $change_id;
-      $existing_ids = array_unique($existing_ids);
-      
-      $tub_pod->save(['inventory_changes' => $existing_ids]);
-    }
-  }
-
   function scoop_inventory_change_add(array $data, array $context = []): int {
     if (!function_exists('pods')) {
       scoop_inventory_change_log_failure('pods() is not available', $data, $context);
@@ -444,7 +408,6 @@
       error_log("scoop_log_post: inventory_change add returned empty result for entity={$entity}, mode={$mode}. Check inventory_change fields: " . scoop_inventory_change_expected_fields());
     }
     error_log("Inventory change logged with ID: $change_id");
-    if ($change_id > 0) scoop_inventory_change_sync_tubs($change_id, $refs['tubs']);
 
   }
 
