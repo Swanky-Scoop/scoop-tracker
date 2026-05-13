@@ -32,7 +32,7 @@ function scoop_save_pod_field( string $pod_name, int $id, string $field, $value 
 }
 
 function scoop_save_pod_fields( string $pod_name, int $id, array $data ) {
-  error_log("SAVE helper hit for pod={$pod_name}");
+  scoop_debug_log("SAVE helper hit for pod={$pod_name}");
   try {
     $clean = [];
     foreach ($data as $field => $value) {
@@ -44,7 +44,7 @@ function scoop_save_pod_fields( string $pod_name, int $id, array $data ) {
   }
 }
 function scoop_create_pod_item(string $pod_name, array $allowed_fields, array $data) {
-  error_log("CREATE helper hit for pod={$pod_name}");
+  scoop_debug_log("CREATE helper hit for pod={$pod_name}");
   if (!function_exists('pods_api')) {
     return new WP_Error('pods_missing', 'Pods API not available.');
   }

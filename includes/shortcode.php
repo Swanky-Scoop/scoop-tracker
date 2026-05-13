@@ -8,7 +8,8 @@ add_shortcode('scoop_grid', function ($atts) {
     
     $atts = shortcode_atts([
         'type'     => 'Cabinet', // Cabinet | tub | etc
-        'location' => null,
+        'location'       => null,
+        'modified_range' => null,
     ], $atts, 'scoop_grid');
 
     if (!is_user_logged_in()) {
@@ -24,6 +25,9 @@ add_shortcode('scoop_grid', function ($atts) {
     class="scoop-grid <?php echo esc_attr($atts['type']); ?>"
     data-grid-type="<?php echo esc_attr($atts['type']); ?>"
     data-location="<?php echo esc_attr($atts['location']); ?>"
+    <?php if (!empty($atts['modified_range'])) : ?>
+    data-modified-range="<?php echo esc_attr($atts['modified_range']); ?>"
+    <?php endif; ?>
     ></div>
     <?php
     $output = ob_get_clean();

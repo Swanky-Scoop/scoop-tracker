@@ -445,6 +445,10 @@ export default class BaseGridModel {
         badges:    this.getBadges   (id, col.key),   // ← Changed from col.type
         alertCase: this.getAlertCase(id, col.key),   // ← Changed from col.key
         value:     col.value,
+        step:      col.step,
+        min:       col.min,
+        max:       col.max,
+        title:     col.title,
         hidden:    col.hidden,
         write:     col.write ?? false
       };

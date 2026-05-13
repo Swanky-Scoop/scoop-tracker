@@ -130,6 +130,18 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
       $where_clauses[] = "state != 'Emptied'";
     }
 
+    // DateActivity-only tub bundles should not scan every historical tub.
+    // When other grids are present, keep active tubs in scope for their views.
+    $requesting_types   = $ctx['requesting_types'] ?? [];
+    $has_date_activity = in_array( 'DateActivity', $requesting_types, true );
+    $has_other_grids   = ! empty( array_diff( $requesting_types, [ 'DateActivity' ] ) );
+    $modified_since_ts = strtotime( $ctx['modified_since'] ?? '' );
+
+    if ( $has_date_activity && ! $has_other_grids && $modified_since_ts ) {
+      $modified_since_sql = esc_sql( date( 'Y-m-d H:i:s', $modified_since_ts ) );
+      $where_clauses[] = "t.post_modified >= '{$modified_since_sql}'";
+    }
+
     // Push location into SQL for tubs — location is a plain int column here.
     if ( $loc_id > 0 && array_key_exists( 'location', $spec_fields ) ) {
       $where_clauses[] = "location = {$loc_id}";
@@ -286,6 +298,16 @@ function scoop_bundle_fetch_type( string $needType, \WP_REST_Request $req, array
   $include_empty = $req->get_param( 'include_empty_tubs' );
   if ( $include_empty !== null && $include_empty !== '' ) {
     $ctx['include_empty_tubs'] = (bool) $include_empty;
+  }
+
+  $modified_since = $req->get_param( 'modified_since' );
+  if ( $modified_since !== null && $modified_since !== '' ) {
+    $ctx['modified_since'] = (string) $modified_since;
+  }
+
+  $modified_range = $req->get_param( 'modified_range' );
+  if ( $modified_range !== null && $modified_range !== '' ) {
+    $ctx['modified_range'] = (string) $modified_range;
   }
 
   if ( ! empty( $bundle_ctx['requesting_types'] ) ) {
