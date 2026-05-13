@@ -22,7 +22,10 @@ export default class ScoopAPI {
     // Grid/page state
     this.gridTypes = new Set();
     this.typesKey  = "";
+    this._pageTypes = [];
     this.bundleUrl = new URL(this.baseUrl);
+    this._bundleGrids = [];
+    this._bundleFilterParams = {};
 
     // Domain state
     this._hosts    = null;
@@ -135,23 +138,29 @@ export default class ScoopAPI {
   // --- BUNDLE LOADING ---
 
   _setPageTypes() {
-    this.typesKey = this._typesKey(this.types);
-    this.bundleUrl = this._bundleUrlForTypes(this.types); // URL object
+    this._pageTypes = [...(this.gridTypes ?? [])].map(String).filter(Boolean);
+    this.typesKey = this._typesKey(this._pageTypes);
+    this.bundleUrl = this._bundleUrlForTypes(this._pageTypes); // URL object
   }
 
 
-  _typesKey() {
-    const arr = [...(this.gridTypes ?? [])].map(String).filter(Boolean);
+  _typesKey(types = this.gridTypes) {
+    const source = types instanceof Set ? [...types] : (Array.isArray(types) ? types : [...(this.gridTypes ?? [])]);
+    const arr = source.map(String).filter(Boolean);
     arr.sort();
     return arr.join(",");
   }
 
-  _bundleUrlForTypes() {
+  _bundleUrlForTypes(types = this._pageTypes) {
     const base = new URL(this.route("Bundle").toString());
-    const key = this._typesKey();
+    const source = types instanceof Set ? [...types] : (Array.isArray(types) ? types : [...(this.gridTypes ?? [])]);
+    const key = this._typesKey(source);
     base.searchParams.set("types", key);
-    if (this.gridTypes?.has('DateActivity')) {
+    if (source.includes('DateActivity')) {
       base.searchParams.set('include_empty_tubs', '1');
+    }
+    for (const [param, value] of Object.entries(this._bundleFilterParams ?? {})) {
+      if (value != null && value !== '') base.searchParams.set(param, String(value));
     }
     return base;
   }
@@ -196,21 +205,27 @@ export default class ScoopAPI {
   }
 
   // Returns full bundle JSON: { ok, types, needs, data }
-  async getBundleForTypes(types, { cache = true, modifiedSince = null } = {}) {
+  _bundleCacheKey(types = this._pageTypes) {
+    const params = new URLSearchParams();
+    Object.entries(this._bundleFilterParams ?? {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([key, value]) => {
+        if (value != null && value !== '') params.set(key, String(value));
+      });
+
+    return `${this._typesKey(types)}|${params.toString()}`;
+  }
+
+  async getBundleForTypes(types = this._pageTypes, { cache = true } = {}) {
     const key = this._typesKey(types);
     if (!key) throw new Error("getBundleForTypes: no types");
 
-    if (cache && !modifiedSince && this._bundleCache.has(key)) {
-        return this._bundleCache.get(key);
+    const cacheKey = this._bundleCacheKey(types);
+    if (cache && this._bundleCache.has(cacheKey)) {
+        return this._bundleCache.get(cacheKey);
     }
 
     const url = this._bundleUrlForTypes(types);
-    
-    // Add modified_since parameter if provided
-    if (modifiedSince) {
-        url.searchParams.set('modified_since', modifiedSince.toISOString());
-    }
-    
     const bundle = await this.getJson(url);
 
     // Minimal guards so models can safely assume arrays exist.
@@ -226,10 +241,11 @@ export default class ScoopAPI {
       // if these exist later, keep them without forcing structure:
       batch  : Array.isArray(data.batch)   ? data.batch   : (data.batch ?? []),
       closeout: Array.isArray(data.closeout) ? data.closeout : (data.closeout ?? []),
-      ...data
+      ...data,
+      _date_filters: bundle?.date_filters ?? data._date_filters ?? {},
     };
 
-    if (cache) this._bundleCache.set(key, bundle);
+    if (cache) this._bundleCache.set(cacheKey, bundle);
     return bundle;
   }
 
@@ -268,26 +284,69 @@ export default class ScoopAPI {
     return this._domain ?? {};
   }
 
-
-  _modifiedSinceForRange(range = 'last_48_hours') {
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const day = 24 * 60 * 60 * 1000;
-
-    switch (range) {
-      case 'today':
-        return startOfToday;
-      case 'yesterday':
-        return new Date(startOfToday.getTime() - day);
-      case 'last_7_days':
-        return new Date(now.getTime() - (7 * day));
-      case 'this_week':
-        return new Date(startOfToday.getTime() - (now.getDay() * day));
-      case 'last_48_hours':
-      default:
-        return new Date(now.getTime() - (48 * 60 * 60 * 1000));
-    }
+  _normalizeDateFilterKey(value) {
+    return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, '_')
+      .replace(/[^a-z0-9_]/g, '');
   }
+
+  _dateFiltersFromDataset(dom) {
+    const raw = dom?.dataset?.dateFilters ?? '';
+    const values = raw
+      ? raw.split(',')
+      : (dom?.dataset?.gridType === 'DateActivity' ? ['activity'] : []);
+
+    const out = [];
+    const seen = new Set();
+    values.forEach(value => {
+      const key = this._normalizeDateFilterKey(value);
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        out.push(key);
+      }
+    });
+
+    return out;
+  }
+
+  _filterValuesFromDataset(dom, dateFilters = []) {
+    const values = {};
+
+    dateFilters.forEach(key => {
+      const attr = `data-filter-${key.replace(/_/g, '-')}`;
+      const value = dom.getAttribute(attr);
+      if (value != null && value !== '') values[key] = value;
+    });
+
+    if (!values.activity && dom?.dataset?.modifiedRange) {
+      values.activity = dom.dataset.modifiedRange;
+    }
+
+    return values;
+  }
+
+  _bundleFilterParamsForGrids(grids = this._bundleGrids) {
+    const params = {};
+
+    grids.forEach(grid => {
+      const model = grid?.modelInstance;
+      if (typeof model?.getServerFilterParams !== 'function') return;
+
+      Object.assign(params, model.getServerFilterParams());
+    });
+
+    return params;
+  }
+
+  async refreshGridFilters(grid = null) {
+    this._bundleFilterParams = this._bundleFilterParamsForGrids();
+    this._bundleCache.clear();
+    document.body.classList.add('TS_GRID-UPDATING');
+    return this.refreshPageDomain({ force: true, info: { name: grid?.name ?? 'filters' } });
+  }
+
 
   // --- MOUNTING ---
   async mountAllGrids({ root = document, formCodec = FormCodec } = {}) {
@@ -335,11 +394,15 @@ export default class ScoopAPI {
         const name = dom.dataset.gridType;
         const location = Number(dom.dataset.location || 0);
         const ModelClass = this.getModelsBom()[name];
+        const dateFilters = this._dateFiltersFromDataset(dom);
+        const filterValues = this._filterValuesFromDataset(dom, dateFilters);
 
         const modelInstance = new ModelClass(name, null, {
             location,
             metaData: SCOOP.metaData?.[name],
-            modifiedRange: dom.dataset.modifiedRange || 'last_48_hours'
+            dateFilters,
+            filterValues,
+            modifiedRange: dom.dataset.modifiedRange || filterValues.activity || 'last_48_hours'
         });
 
         return new Grid(dom, name, {
@@ -350,21 +413,9 @@ export default class ScoopAPI {
         });
       });
 
-      // Fetch domain with date filtering if needed
-      const needsDateFilter = this.gridTypes.has('DateActivity');
-
-      if (needsDateFilter) {
-          const dateActivityHost = bundleHosts.find(dom => dom.dataset.gridType === 'DateActivity');
-          const modifiedRange = dateActivityHost?.dataset?.modifiedRange || 'last_48_hours';
-          const url = this._bundleUrlForTypes();
-          url.searchParams.set('modified_range', modifiedRange);
-          url.searchParams.set('modified_since', this._modifiedSinceForRange(modifiedRange).toISOString());
-
-          const bundle = await this.getJson(url);
-          this._domain = bundle?.data ?? {};
-      } else {
-          await this.refreshPageDomain({ force: true });
-      }
+      this._bundleGrids = bundleGrids;
+      this._bundleFilterParams = this._bundleFilterParamsForGrids(bundleGrids);
+      await this.refreshPageDomain({ force: true });
 
       // Set domain on each bundle grid
       bundleGrids.forEach(g => {

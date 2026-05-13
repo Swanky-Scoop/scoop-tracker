@@ -69,20 +69,38 @@ function scoop_entity_specs(string $key = ''): array {
           // empties should be keyed off opened_on/emptied_at instead of the
           // tub's current state snapshot.
           if ($has_date_activity) {
-            $modified_since = strtotime($ctx['modified_since'] ?? '') ?: (time() - (48 * 60 * 60));
-            $candidates = [
-              $row['opened_on'] ?? '',
-              $row['emptied_at'] ?? '',
-              $row['created_on'] ?? '',
-            ];
+            $date_filters = $ctx['date_filters'] ?? ['activity'];
+            $date_ranges  = $ctx['date_filter_ranges'] ?? [];
 
-            if (($row['state'] ?? '') === '__override__') {
-              $candidates[] = $row['post_modified'] ?? '';
-            }
+            foreach ($date_filters as $filter_key) {
+              $range = $date_ranges[$filter_key] ?? [];
+              if (!$range) continue;
 
-            foreach ($candidates as $candidate) {
-              $modified = strtotime($candidate);
-              if ($modified && $modified >= $modified_since) return true;
+              if ($filter_key === 'activity') {
+                $candidates = [
+                  $row['opened_on'] ?? '',
+                  $row['emptied_at'] ?? '',
+                  $row['created_on'] ?? '',
+                ];
+
+                if (($row['state'] ?? '') === '__override__') {
+                  $candidates[] = $row['post_modified'] ?? '';
+                }
+              } else {
+                $field_map = [
+                  'created_on'    => 'created_on',
+                  'opened_on'     => 'opened_on',
+                  'emptied_at'    => 'emptied_at',
+                  'post_modified' => 'post_modified',
+                ];
+
+                $field = $field_map[$filter_key] ?? '';
+                $candidates = $field ? [ $row[$field] ?? '' ] : [];
+              }
+
+              foreach ($candidates as $candidate) {
+                if (scoop_date_filter_value_in_range($candidate, $range)) return true;
+              }
             }
           }
 
@@ -107,8 +125,8 @@ function scoop_entity_specs(string $key = ''): array {
           'envelope'     => ['data_type' => 'string', 'hidden' => true],
           'mode'         => ['data_type' => 'string', 'hidden' => true],
           'phase'        => ['data_type' => 'string'],
-          'source'       => ['data_type' => 'string'],
-          'problem'      => ['data_type' => 'string'],
+          //'source'       => ['data_type' => 'string'],
+          //'problem'      => ['data_type' => 'string'],
           'tubs'         => ['data_type' => 'ids',    'control' => 'find', 'titleMap' => 'tub', 'hidden' => true],
           'flavors'      => ['data_type' => 'ids',    'control' => 'find', 'titleMap' => 'flavor', 'hidden' => true],
           'details'      => ['data_type' => 'string', 'hidden' => true],
@@ -124,10 +142,13 @@ function scoop_entity_specs(string $key = ''): array {
             return false;
           }
 
-          $modified = strtotime($row['post_modified'] ?? $row['post_date'] ?? '');
-          $modified_since = strtotime($ctx['modified_since'] ?? '') ?: (time() - (48 * 60 * 60));
+          $date_filters = $ctx['date_filters'] ?? ['activity'];
+          if (!in_array('activity', $date_filters, true)) {
+            return false;
+          }
 
-          return $modified && $modified >= $modified_since;
+          $range = $ctx['date_filter_ranges']['activity'] ?? [];
+          return scoop_date_filter_value_in_range($row['post_date'] ?? $row['post_modified'] ?? '', $range);
         },
         'writeable' => []
       ],

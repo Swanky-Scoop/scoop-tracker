@@ -65,6 +65,7 @@ export default class Grid extends El{
       this.setColumns(state.columns, true);
     }
     
+    this._buildFilters(state);
     this._rebuildBodies(state);
     this._filter = (state?.filter) ? new FindInGrid(this.FORM, { root: this.TABLE }) : this.filter;
 
@@ -100,6 +101,7 @@ export default class Grid extends El{
   async refresh(state) {
     if (!this._isInit) throw new Error("Grid.refresh() called before init()");
     this.state = state;
+    this._buildFilters(state);
     this._rebuildBodies(state);
     this._captureBaseline();
     this.FORM.dispatchEvent(new Event("ts:grid:close-overlays"));
@@ -131,6 +133,7 @@ export default class Grid extends El{
   _build(){
     const el = this.el;
     this.FORM   = el( 'form',  { classes:['zGRID-form'] } );
+    this.FILTERS = el( 'div',   { classes:['gridFilters'] } );
     this.SUBMIT = el( 'button',{ classes:['save'], text : 'save', attrs:{ type:'submit' }  }  );
     this.TABLE  = el( 'table', { classes:['zGRID'] } );
     this.THEAD  = el( 'thead' );
@@ -251,6 +254,51 @@ export default class Grid extends El{
     }
   }
 
+  _buildFilters(state = this.state) {
+    if (!this.FILTERS) return;
+
+    this.FILTERS.replaceChildren();
+
+    const defs = typeof state?.getFilterDefs === 'function' ? state.getFilterDefs() : [];
+    if (!defs.length) {
+      this.FILTERS.hidden = true;
+      return;
+    }
+
+    this.FILTERS.hidden = false;
+
+    defs.forEach(def => {
+      if (def?.type !== 'select') return;
+
+      const key = String(def.key ?? '');
+      if (!key) return;
+
+      const id = `${this.name}-${key}-filter`;
+      const label = this.el('label', { attrs: { for: id }, classes: ['gridFilter'] });
+      const labelText = this.el('span', { text: def.label ?? key.replace(/_/g, ' ') });
+      const select = this.el('select', {
+        attrs: { id },
+        data: { filterKey: key, filterMode: def.mode ?? 'client' },
+      });
+
+      const selected = typeof state?.getFilterValue === 'function'
+        ? state.getFilterValue(key)
+        : def.default;
+
+      (def.options ?? []).forEach(option => {
+        const opt = this.el('option', {
+          text: option.label ?? option.key,
+          attrs: { value: option.key },
+        });
+        if (String(option.key) === String(selected)) opt.selected = true;
+        select.append(opt);
+      });
+
+      label.append(labelText, select);
+      this.FILTERS.append(label);
+    });
+  }
+
   _getCellDom(col,data){
     // TODO: Decide if I am going to demand data types for all cells
     // TODO: Decide how I am going to swallow or reflect those types in the css class
@@ -286,6 +334,7 @@ export default class Grid extends El{
   }
 
   _attachCoreDom(){
+    if (!this.FORM.contains(this.FILTERS)) this.FORM.append(this.FILTERS);
     if (!this.FORM.contains(this.TABLE)) this.FORM.append(this.TABLE);
     if (!this.FORM.contains(this.SUBMIT)) this.FORM.append(this.SUBMIT);
     if (!this.target.contains(this.FORM)) this.target.append(this.FORM);
@@ -590,6 +639,30 @@ export default class Grid extends El{
     // Listen for BOTH FindIt and TextIt changes
     this.FORM.addEventListener('ts:findit-change', this._handleCellChange.bind(this));
     this.FORM.addEventListener('ts:textit-change', this._handleCellChange.bind(this));
+
+    this.FORM.addEventListener('change', async (e) => {
+      const select = e.target.closest('select[data-filter-key]');
+      if (!select || !this.FORM.contains(select)) return;
+
+      const key = select.dataset.filterKey;
+      const mode = select.dataset.filterMode;
+
+      if (typeof this.modelInstance?.setFilterValue === 'function') {
+        this.modelInstance.setFilterValue(key, select.value);
+      }
+
+      if (mode === 'server' && typeof this.api?.refreshGridFilters === 'function') {
+        select.disabled = true;
+        try {
+          await this.api.refreshGridFilters(this);
+        } finally {
+          select.disabled = false;
+        }
+      } else if (this.modelInstance) {
+        this.modelInstance._buildRows();
+        await this.refresh(this.modelInstance);
+      }
+    });
 
     this.FORM.addEventListener("keydown", (e) => {
 

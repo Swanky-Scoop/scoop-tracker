@@ -3,36 +3,125 @@ import Indexer       from "../data/indexer.js";
 
 export default class DateActivityGridModel extends BaseGridModel{
   constructor(name, domain, attrs = {}){
-    super(name, domain, attrs );
+    super(name, null, attrs );
     this.filter = true;
-    this.modifiedRange = attrs?.modifiedRange ?? 'last_48_hours';
+    this.dateFilters = this._normalizeDateFilters(attrs?.dateFilters);
+    this.filterValues = this._initialFilterValues(attrs?.filterValues, attrs?.modifiedRange);
+    this.modifiedRange = this.filterValues.activity ?? 'last_48_hours';
     this._build();
+    if (domain) this.setDomain(domain);
   }
 
   getFilterDefs() {
-    return [
-      {
-        key: 'modified_range',
-        label: 'Modified',
-        type: 'select',
-        mode: 'server',
-        default: 'last_48_hours',
-        options: [
-          { key: 'today', label: 'Today' },
-          { key: 'yesterday', label: 'Yesterday' },
-          { key: 'last_48_hours', label: 'Last 48 hours' },
-          { key: 'last_7_days', label: 'Last 7 days' },
-          { key: 'this_week', label: 'This week' },
-        ],
-      },
-    ];
+    return this.dateFilters.map(key => ({
+      key,
+      label: this._dateFilterLabel(key),
+      type: 'select',
+      mode: 'server',
+      default: 'last_48_hours',
+      options: [
+        { key: 'last_24_hours', label: 'Last 24 hours' },
+        { key: 'last_48_hours', label: 'Last 48 hours' },
+        { key: 'last_7_days', label: 'Last 7 days' },
+        { key: 'last_30_days', label: 'Last 30 days' },
+      ],
+    }));
+  }
+
+  getServerFilterParams() {
+    const params = { date_filters: this.dateFilters.join(',') };
+    this.dateFilters.forEach(key => {
+      params[`filter_${key}`] = this.getFilterValue(key);
+    });
+    return params;
+  }
+
+  setFilterValue(key, value) {
+    const normalized = this._normalizeDateFilterKey(key);
+    if (!normalized) return;
+
+    this.filterValues[normalized] = this._normalizePreset(value);
+    if (!this.dateFilters.includes(normalized)) this.dateFilters.push(normalized);
+    if (normalized === 'activity') this.modifiedRange = this.filterValues[normalized];
+  }
+
+  getFilterValue(key) {
+    const normalized = this._normalizeDateFilterKey(key);
+    return this.filterValues[normalized] ?? 'last_48_hours';
+  }
+
+  _normalizeDateFilters(raw) {
+    const values = Array.isArray(raw) ? raw : String(raw || 'activity').split(',');
+    const out = [];
+    const seen = new Set();
+
+    values.forEach(value => {
+      const key = this._normalizeDateFilterKey(value);
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        out.push(key);
+      }
+    });
+
+    return out.length ? out : ['activity'];
+  }
+
+  _normalizeDateFilterKey(value) {
+    return String(value ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, '_')
+      .replace(/[^a-z0-9_]/g, '');
+  }
+
+  _initialFilterValues(rawValues = {}, legacyModifiedRange = null) {
+    const values = {};
+    const source = rawValues && typeof rawValues === 'object' ? rawValues : {};
+
+    this.dateFilters.forEach(key => {
+      values[key] = this._normalizePreset(source[key] ?? (key === 'activity' ? legacyModifiedRange : null));
+    });
+
+    return values;
+  }
+
+  _normalizePreset(value) {
+    const raw = this._normalizeDateFilterKey(value);
+    const aliases = {
+      '24hrs': 'last_24_hours',
+      '24_hours': 'last_24_hours',
+      '48hrs': 'last_48_hours',
+      '48_hours': 'last_48_hours',
+      '1_week': 'last_7_days',
+      'week': 'last_7_days',
+      '1_month': 'last_30_days',
+      'month': 'last_30_days',
+      'today': 'last_24_hours',
+      'yesterday': 'last_48_hours',
+      'this_week': 'last_7_days',
+    };
+    const preset = aliases[raw] ?? raw;
+    return ['last_24_hours', 'last_48_hours', 'last_7_days', 'last_30_days'].includes(preset)
+      ? preset
+      : 'last_48_hours';
+  }
+
+  _dateFilterLabel(key) {
+    const labels = {
+      activity: 'Activity',
+      created_on: 'Created',
+      opened_on: 'Opened',
+      emptied_at: 'Emptied',
+      post_modified: 'Modified',
+    };
+    return labels[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
 
   buildCols() {
     this.columns = [
       { key: "phase",         label: "Flow",     type: "string" },
-      { key: "source",        label: "Source",   type: "string" },
-      { key: "problem",       label: "Problem",  type: "string" },
+     // { key: "source",        label: "Source",   type: "string" },
+     // { key: "problem",       label: "Problem",  type: "string" },
       { key: "tub",           label: "Tub",      type: "string" },
       { key: "state",         label: "State",    write: true, control: "find", type: "string" },
       { key: "use",           label: "Use",      write: true, control: "find", type: "use", titleMap: "use" },
@@ -122,7 +211,7 @@ export default class DateActivityGridModel extends BaseGridModel{
 
   _activityFromChange(change = {}, tub = null, flavorId = 0, index = 0) {
     const phase = change.phase || this._phaseForTub(tub || {});
-    const activityAt = change.post_modified || change.post_date || '';
+    const activityAt = change.post_date || change.post_modified || '';
     const id = -1 * ((Number(change.id || 0) * 1000) + Number(index || 0) + 1);
     const amount = tub ? Number(tub.amount ?? 1) : Number(change.change_count ?? 1);
 
@@ -183,28 +272,57 @@ export default class DateActivityGridModel extends BaseGridModel{
   }
 
   _filterModifiedItems(items = []) {
-    const { start, end } = this._modifiedWindow();
+    const windows = this._activeDateWindows();
 
     return items
       .filter(item => {
-        const modified = this._modifiedTime(item);
-        return modified >= start && modified <= end;
+        if (!windows.length) return true;
+
+        return windows.some(({ key, window }) => {
+          const modified = this._timeForDateFilter(item, key);
+          return modified >= window.start && modified <= window.end;
+        });
       })
       .sort((a, b) => this._modifiedTime(b) - this._modifiedTime(a));
   }
 
   _modifiedWindow() {
+    return this._filterWindow('activity') ?? this._fallbackWindowForPreset(this.getFilterValue('activity'));
+  }
+
+  _activeDateWindows() {
+    return this.dateFilters
+      .map(key => ({ key, window: this._filterWindow(key) ?? this._fallbackWindowForPreset(this.getFilterValue(key)) }))
+      .filter(item => item.window && Number.isFinite(item.window.start) && Number.isFinite(item.window.end));
+  }
+
+  _filterWindow(key) {
+    const range = this.domain?._date_filters?.ranges?.[key];
+    if (!range) return null;
+
+    const start = this._parseDateValue(range.start);
+    const end = this._parseDateValue(range.end);
+
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+    return { start, end };
+  }
+
+  _fallbackWindowForPreset(preset = 'last_48_hours') {
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const day = 24 * 60 * 60 * 1000;
 
-    switch (this.modifiedRange) {
+    switch (this._normalizePreset(preset)) {
       case 'today':
         return { start: startOfToday, end: now.getTime() };
       case 'yesterday':
         return { start: startOfToday - day, end: startOfToday - 1 };
+      case 'last_24_hours':
+        return { start: now.getTime() - day, end: now.getTime() };
       case 'last_7_days':
         return { start: now.getTime() - (7 * day), end: now.getTime() };
+      case 'last_30_days':
+        return { start: now.getTime() - (30 * day), end: now.getTime() };
       case 'this_week': {
         const dayOfWeek = now.getDay();
         return { start: startOfToday - (dayOfWeek * day), end: now.getTime() };
@@ -219,8 +337,26 @@ export default class DateActivityGridModel extends BaseGridModel{
     return this._activityTimeValue(item);
   }
 
+  _timeForDateFilter(item = {}, key = 'activity') {
+    const fieldMap = {
+      activity: '_activityAt',
+      created_on: 'created_on',
+      opened_on: 'opened_on',
+      emptied_at: 'emptied_at',
+      post_modified: 'post_modified',
+    };
+
+    if (key === 'activity') return this._activityTimeValue(item);
+    return this._parseDateValue(item[fieldMap[key] ?? key]);
+  }
+
   _activityTimeValue(item = {}) {
-    const time = new Date(item._activityAt || item.post_modified || item.post_date || '').getTime();
+    return this._parseDateValue(item._activityAt || item.post_modified || item.post_date || '');
+  }
+
+  _parseDateValue(value) {
+    if (!value) return 0;
+    const time = new Date(String(value).replace(' ', 'T')).getTime();
     return Number.isFinite(time) ? time : 0;
   }
 

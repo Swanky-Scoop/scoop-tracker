@@ -38,11 +38,20 @@ function scoop_bundle_cache_key( \WP_REST_Request $req ): string {
   $empty = (bool)( $req->get_param( 'include_empty_tubs' ) ?? false );
   $modified_range = (string)( $req->get_param( 'modified_range' ) ?? '' );
   $modified_since = (string)( $req->get_param( 'modified_since' ) ?? '' );
+  $date_filters   = (string)( $req->get_param( 'date_filters' ) ?? '' );
+  $filter_params  = [];
+
+  foreach ( $req->get_params() as $key => $value ) {
+    if ( strpos( (string) $key, 'filter_' ) !== 0 ) continue;
+    $filter_params[ (string) $key ] = (string) $key . '=' . ( is_array( $value ) ? wp_json_encode( $value ) : (string) $value );
+  }
+
+  ksort( $filter_params );
 
   $v = scoop_cache_version();
 
   // WordPress transient keys max out at 172 chars; this stays well under that
-  return 'scoop_b_' . md5( $v . '|' . implode( ',', $types ) . '|' . $loc . '|' . ( $empty ? '1' : '0' ) . '|' . $modified_range . '|' . $modified_since );
+  return 'scoop_b_' . md5( $v . '|' . implode( ',', $types ) . '|' . $loc . '|' . ( $empty ? '1' : '0' ) . '|' . $date_filters . '|' . implode( ',', $filter_params ) . '|' . $modified_range . '|' . $modified_since );
 }
 
 /**

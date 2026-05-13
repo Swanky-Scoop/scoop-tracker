@@ -53,16 +53,21 @@ function scoop_bundle_get( \WP_REST_Request $req ) {
 
   $needTypes = array_keys( $needs );
   $data      = [];
+  $date_filters = scoop_bundle_date_filter_context( $req, $types );
 
   foreach ( $needTypes as $needType ) {
-    $data[ $needType ] = scoop_bundle_fetch_type( $needType, $req, [ 'requesting_types' => $types ] );
+    $data[ $needType ] = scoop_bundle_fetch_type( $needType, $req, [
+      'requesting_types'    => $types,
+      'date_filter_context' => $date_filters,
+    ] );
   }
 
   $body = [
-    'ok'    => true,
-    'types' => $types,
-    'needs' => $needTypes,
-    'data'  => $data,
+    'ok'           => true,
+    'types'        => $types,
+    'needs'        => $needTypes,
+    'date_filters' => $date_filters,
+    'data'         => $data,
   ];
 
   // ── Cache write ───────────────────────────────────────────────────────────

@@ -59,6 +59,160 @@ function scoop_relation_ids_out( $v ): array {
   return array_values( $ids );
 }
 
+function scoop_normalize_date_filter_key( $key ): string {
+  $key = strtolower( trim( (string) $key ) );
+  $key = str_replace( '-', '_', $key );
+  return preg_replace( '/[^a-z0-9_]/', '', $key );
+}
+
+function scoop_parse_date_filter_keys( $raw ): array {
+  $values = is_array( $raw ) ? $raw : explode( ',', (string) $raw );
+  $out    = [];
+
+  foreach ( $values as $value ) {
+    $key = scoop_normalize_date_filter_key( $value );
+    if ( $key !== '' ) $out[ $key ] = $key;
+  }
+
+  return array_values( $out );
+}
+
+function scoop_date_filter_presets(): array {
+  $hour = defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600;
+  $day  = defined( 'DAY_IN_SECONDS' ) ? DAY_IN_SECONDS : 86400;
+
+  return [
+    'last_24_hours' => 24 * $hour,
+    'last_48_hours' => 48 * $hour,
+    'last_7_days'   => 7 * $day,
+    'last_30_days'  => 30 * $day,
+  ];
+}
+
+function scoop_normalize_date_filter_preset( $raw ): string {
+  $preset = scoop_normalize_date_filter_key( $raw );
+  $aliases = [
+    '24hrs'         => 'last_24_hours',
+    '24_hours'      => 'last_24_hours',
+    '48hrs'         => 'last_48_hours',
+    '48_hours'      => 'last_48_hours',
+    '1_week'        => 'last_7_days',
+    'week'          => 'last_7_days',
+    '1_month'       => 'last_30_days',
+    'month'         => 'last_30_days',
+    'today'         => 'last_24_hours',
+    'yesterday'     => 'last_48_hours',
+    'this_week'     => 'last_7_days',
+  ];
+
+  $preset = $aliases[ $preset ] ?? $preset;
+  return array_key_exists( $preset, scoop_date_filter_presets() ) ? $preset : 'last_48_hours';
+}
+
+function scoop_date_filter_range_for_preset( string $preset ): array {
+  $presets = scoop_date_filter_presets();
+  $preset  = scoop_normalize_date_filter_preset( $preset );
+  $end_ts  = time();
+  $start_ts = $end_ts - ( $presets[ $preset ] ?? $presets['last_48_hours'] );
+  $format_date = function ( int $ts ): string {
+    return function_exists( 'wp_date' ) ? wp_date( 'Y-m-d H:i:s', $ts ) : date( 'Y-m-d H:i:s', $ts );
+  };
+
+  return [
+    'preset'   => $preset,
+    'start'    => $format_date( $start_ts ),
+    'end'      => $format_date( $end_ts ),
+    'start_ts' => $start_ts,
+    'end_ts'   => $end_ts,
+  ];
+}
+
+function scoop_bundle_date_filter_context( \WP_REST_Request $req, array $requesting_types = [] ): array {
+  $keys = scoop_parse_date_filter_keys( $req->get_param( 'date_filters' ) );
+
+  if ( empty( $keys ) && in_array( 'DateActivity', $requesting_types, true ) ) {
+    $keys = [ 'activity' ];
+  }
+
+  $ranges = [];
+  foreach ( $keys as $key ) {
+    $preset = $req->get_param( 'filter_' . $key );
+
+    if ( ( $preset === null || $preset === '' ) && $key === 'activity' ) {
+      $preset = $req->get_param( 'modified_range' );
+    }
+
+    $preset = scoop_normalize_date_filter_preset( $preset );
+    $ranges[ $key ] = scoop_date_filter_range_for_preset( $preset );
+  }
+
+  return [
+    'enabled' => $keys,
+    'ranges'  => $ranges,
+  ];
+}
+
+function scoop_date_filter_sql_clause( string $field, array $range ): string {
+  if ( empty( $range['start'] ) || empty( $range['end'] ) ) return '';
+
+  $start = esc_sql( $range['start'] );
+  $end   = esc_sql( $range['end'] );
+
+  return "{$field} >= '{$start}' AND {$field} <= '{$end}'";
+}
+
+function scoop_date_filter_value_in_range( $value, array $range ): bool {
+  if ( empty( $value ) || empty( $range['start'] ) || empty( $range['end'] ) ) return false;
+
+  $candidate = str_replace( 'T', ' ', trim( (string) $value ) );
+  if ( $candidate === '' || strpos( $candidate, '0000-00-00' ) === 0 ) return false;
+
+  if ( preg_match( '/^\d{4}-\d{2}-\d{2}/', $candidate ) ) {
+    $candidate = substr( $candidate, 0, 19 );
+  } else {
+    $ts = strtotime( $candidate );
+    if ( ! $ts ) return false;
+    $candidate = function_exists( 'wp_date' ) ? wp_date( 'Y-m-d H:i:s', $ts ) : date( 'Y-m-d H:i:s', $ts );
+  }
+
+  return $candidate >= $range['start'] && $candidate <= $range['end'];
+}
+
+function scoop_tub_date_filter_sql_clauses( array $date_filters, array $ranges ): array {
+  $clauses = [];
+
+  foreach ( $date_filters as $filter_key ) {
+    $range = $ranges[ $filter_key ] ?? null;
+    if ( ! is_array( $range ) ) continue;
+
+    if ( $filter_key === 'activity' ) {
+      $event_clauses = array_filter( [
+        scoop_date_filter_sql_clause( 'opened_on', $range ),
+        scoop_date_filter_sql_clause( 'emptied_at', $range ),
+        scoop_date_filter_sql_clause( 'created_on', $range ),
+      ] );
+      $override_clause = scoop_date_filter_sql_clause( 't.post_modified', $range );
+      if ( $override_clause !== '' ) $event_clauses[] = "(state = '__override__' AND {$override_clause})";
+      if ( $event_clauses ) $clauses[] = '(' . implode( ' OR ', $event_clauses ) . ')';
+      continue;
+    }
+
+    $field_map = [
+      'created_on'    => 'created_on',
+      'opened_on'     => 'opened_on',
+      'emptied_at'    => 'emptied_at',
+      'post_modified' => 't.post_modified',
+    ];
+
+    if ( ! empty( $field_map[ $filter_key ] ) ) {
+      $clause = scoop_date_filter_sql_clause( $field_map[ $filter_key ], $range );
+      if ( $clause !== '' ) $clauses[] = '(' . $clause . ')';
+    }
+  }
+
+  return $clauses;
+}
+
 function scoop_cast( $v, $desc ) {
   $type = scoop_field_type( $desc );
   switch ( $type ) {
@@ -150,11 +304,16 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     $requesting_types   = $ctx['requesting_types'] ?? [];
     $has_date_activity = in_array( 'DateActivity', $requesting_types, true );
     $has_other_grids   = ! empty( array_diff( $requesting_types, [ 'DateActivity' ] ) );
-    $modified_since_ts = strtotime( $ctx['modified_since'] ?? '' );
+    $date_filters      = $ctx['date_filters'] ?? [];
+    $date_ranges       = $ctx['date_filter_ranges'] ?? [];
 
-    if ( $has_date_activity && ! $has_other_grids && $modified_since_ts ) {
-      $modified_since_sql = esc_sql( date( 'Y-m-d H:i:s', $modified_since_ts ) );
-      $where_clauses[] = "(opened_on >= '{$modified_since_sql}' OR emptied_at >= '{$modified_since_sql}' OR created_on >= '{$modified_since_sql}' OR (state = '__override__' AND t.post_modified >= '{$modified_since_sql}'))";
+    if ( $has_date_activity && ! $has_other_grids ) {
+      $date_clauses = scoop_tub_date_filter_sql_clauses( $date_filters, $date_ranges );
+      if ( $date_clauses ) {
+        $where_clauses[] = '(' . implode( ' OR ', $date_clauses ) . ')';
+      } else {
+        $where_clauses[] = '1=0';
+      }
     }
 
     // Push location into SQL for tubs — location is a plain int column here.
@@ -168,11 +327,16 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
   if ( $key === 'inventory_change' ) {
     $requesting_types   = $ctx['requesting_types'] ?? [];
     $has_date_activity = in_array( 'DateActivity', $requesting_types, true );
-    $modified_since_ts = strtotime( $ctx['modified_since'] ?? '' );
+    $date_filters      = $ctx['date_filters'] ?? [];
+    $date_ranges       = $ctx['date_filter_ranges'] ?? [];
 
-    if ( $has_date_activity && $modified_since_ts ) {
-      $modified_since_sql = esc_sql( date( 'Y-m-d H:i:s', $modified_since_ts ) );
-      $where_clauses[] = "t.post_modified >= '{$modified_since_sql}'";
+    if ( $has_date_activity ) {
+      if ( in_array( 'activity', $date_filters, true ) ) {
+        $activity_clause = scoop_date_filter_sql_clause( 't.post_date', $date_ranges['activity'] ?? [] );
+        $where_clauses[] = $activity_clause !== '' ? $activity_clause : '1=0';
+      } else {
+        $where_clauses[] = '1=0';
+      }
     }
   }
 
@@ -340,6 +504,10 @@ function scoop_bundle_fetch_type( string $needType, \WP_REST_Request $req, array
   if ( ! empty( $bundle_ctx['requesting_types'] ) ) {
     $ctx['requesting_types'] = $bundle_ctx['requesting_types'];
   }
+
+  $date_filter_context = $bundle_ctx['date_filter_context'] ?? scoop_bundle_date_filter_context( $req, $ctx['requesting_types'] ?? [] );
+  $ctx['date_filters']       = $date_filter_context['enabled'];
+  $ctx['date_filter_ranges'] = $date_filter_context['ranges'];
 
   // Only the entries that are actually reachable from bundle specs.
   // Capitalized keys like 'Flavor' => 'flavor' are never sent as needType —
