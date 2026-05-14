@@ -1,0 +1,109 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Deploy target"
+        required: true
+        default: "test"
+        type: choice
+        options:
+          - test
+          - ops
+
+env:
+  REMOTE_HOST: swankyscoop.net
+  REMOTE_PORT: "21098"
+  REMOTE_USER: swannvoe
+  # rsync flags. No --delete: matches current VS Code SFTP behavior
+  # (local deletions don't remove remote files).
+  RSYNC_ARGS: "-rltvz"
+
+jobs:
+  deploy-test:
+    name: Deploy to TEST
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'test')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-test
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load SSH key into agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SFTP_SSH_KEY }}
+          ssh-passphrase: ${{ secrets.SFTP_SSH_PASSPHRASE }}
+
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 10 -p "$REMOTE_PORT" "$REMOTE_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy to test.swankyscoop.net via rsync
+        run: |
+          rsync $RSYNC_ARGS \
+            --exclude='.git' \
+            --exclude='.gitignore' \
+            --exclude='.gitattributes' \
+            --exclude='.github' \
+            --exclude='.vscode' \
+            --exclude='.claude' \
+            --exclude='triage' \
+            --exclude='data-exports' \
+            --exclude='*.md' \
+            --exclude='_domain.json' \
+            --exclude='response.json' \
+            --exclude='*_response.json' \
+            --exclude='dump.txt' \
+            --exclude='.prittierrc' \
+            -e "ssh -p $REMOTE_PORT" \
+            ./ "$REMOTE_USER@$REMOTE_HOST:/home/swannvoe/test.swankyscoop.net/wp-content/plugins/scoop_rest/"
+
+  deploy-ops:
+    name: Deploy to OPS (production)
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'ops'
+    runs-on: ubuntu-latest
+    environment: ops
+    concurrency:
+      group: deploy-ops
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load SSH key into agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SFTP_SSH_KEY }}
+          ssh-passphrase: ${{ secrets.SFTP_SSH_PASSPHRASE }}
+
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 10 -p "$REMOTE_PORT" "$REMOTE_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy to ops.swankyscoop.net via rsync
+        run: |
+          rsync $RSYNC_ARGS \
+            --exclude='.git' \
+            --exclude='.gitignore' \
+            --exclude='.gitattributes' \
+            --exclude='.github' \
+            --exclude='.vscode' \
+            --exclude='.claude' \
+            --exclude='triage' \
+            --exclude='data-exports' \
+            --exclude='*.md' \
+            --exclude='_domain.json' \
+            --exclude='response.json' \
+            --exclude='*_response.json' \
+            --exclude='dump.txt' \
+            --exclude='.prittierrc' \
+            -e "ssh -p $REMOTE_PORT" \
+            ./ "$REMOTE_USER@$REMOTE_HOST:/home/swannvoe/ops.swankyscoop.net/wp-content/plugins/scoop_rest/"

@@ -1,0 +1,75 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+A WordPress plugin (`scoop_rest.php`) for tracking ice cream tub/flavor inventory at Swanky Scoop. It is "nearly headless": WordPress renders the page shell and a `[scoop_grid type="..."]` shortcode, then a vanilla-ESM JavaScript client takes over and talks to a custom REST API backed by [Pods](https://podsfoundation.org/) custom post types.
+
+The repository root maps directly to `wp-content/plugins/scoop_rest/` on the server.
+
+## Build / run / test
+
+There is **no build step, no package manager, no test suite**. JS files are loaded directly as ES modules by the browser (`script_loader_tag` filter rewrites the `scoop-grid` handle to `type="module"`).
+
+Deployment is by SFTP-on-save via the VS Code SFTP extension — `.vscode/sftp.json` defines `TEST` (default, `test.swankyscoop.net`) and `OPS` (`ops.swankyscoop.net`) profiles. Saving a file in the editor uploads it; there is no CI.
+
+To exercise changes, save the file (uploads to TEST) and reload a page that contains a `[scoop_grid ...]` shortcode while logged in. When debugging server-side, set `define('SCOOP_DEBUG_LOG', true)` in `wp-config.php` to enable `scoop_debug_log()` output to the PHP error log.
+
+## Architecture
+
+### Request lifecycle for a grid page
+
+1. WordPress renders a post containing `[scoop_grid type="FlavorTub" location="935"]`. `includes/shortcode.php` emits a `<div class="scoop-grid" data-grid-type="FlavorTub" data-location="935">` and `includes/enqueue.php` enqueues `assets/app.js` as a module along with a `SCOOP` global containing `routes`, `metaData`, `nonce`, and `user`.
+2. `assets/app.js` constructs `ScoopAPI` and calls `mountAllGrids()`, which scans the DOM for all `.scoop-grid[data-grid-type]` hosts.
+3. `ScoopAPI.refreshPageDomain()` requests **one** bundle from `GET /wp-json/scoop/v1/bundle?types=Cabinet,FlavorTub,...` that returns every entity any grid on the page needs.
+4. Each host gets a `Grid` (`assets/ui/grid.js`) + a per-type `*GridModel` (`assets/models/*-grid-model.js`). The model receives the full domain via `setDomain()` and builds its own rows.
+5. Edits POST to a per-type write endpoint (e.g. `POST /wp-json/scoop/v1/tubs`) with a `{ "<envelope_key>": { cells: [...] } }` payload — see `ScoopAPI.postJson` and `scoop_handle_request`.
+
+### Bundle: one request, many entities
+
+`scoop_bundle_specs()` (in `includes/_specs.php`) declares which raw entities each grid type "needs":
+
+```
+Cabinet      => cabinet, slot, flavor
+FlavorTub    => tub, flavor, use, slot
+Batch        => flavor
+Closeout     => flavor, use
+DateActivity => tub, inventory_change, flavor, use, location, slot, cabinet
+```
+
+`includes/bundle-fetch.php` bulk-fetches each entity with `pods()->find()` and resolves relationships via `$pod->field()`. The bundle is cached in a WP transient keyed by a global integer version (`scoop_cache_version` option). Any `save_post`/`trashed_post`/`untrashed_post`/`deleted_post` increments that version, instantly invalidating every cached key (`includes/_cache.php`). `inventory_change` post saves are excluded — they fire too often and don't change grid data the client cares about.
+
+### Route configuration is single-sourced
+
+`scoop_routes_config()` in `includes/_config.php` is the one place that maps a grid type to its URL path, allowed methods, write mode (`create` vs `update`), pod name, and an `allowed_fields_cb`. From this one config:
+
+- `includes/_routes.php` registers the REST routes
+- `includes/enqueue.php`'s `scoop_client_routes()` builds the JS `SCOOP.routes` map
+- `includes/rest.php`'s `scoop_handle_request()` dispatches creates vs updates
+- `scoop_client_metadata()` builds the per-field column definitions sent to the JS
+
+When adding a new grid type, you typically need to touch: `_config.php`, `_specs.php` (entity needs + field defs), an `allowed_fields_cb` (often in `_write_fields.php`), and add a new `*GridModel` class registered in `ScoopAPI.getModelsBom()`.
+
+### Permissions are two-layer
+
+- **Route-level**: `scoop_user_can_route()` in `includes/_policy.php` — can this role GET/POST this route at all?
+- **Field-level**: the writable set for a row is `spec.writeable ∩ scoop_user_writeable_fields(user, entity)`. `scoop_client_metadata()` in `enqueue.php` computes this intersection per-user-per-entity and ships it to the client as the `write` flag on each column, so the JS already knows what's editable for the current user.
+
+Roles checked in priority order: `administrator` → `editor` → `author` → `_default`.
+
+### Pods hooks enforce write rules
+
+The files in `includes/hooks/` register `pods_api_pre_save_pod_item_*` filters that enforce business rules at the data layer regardless of which write path was used (REST API, WP admin, direct Pods call). The activation hook registers `scoop_enforce_tub_rules` on `pods_api_pre_save_pod_item`. When changing tub/slot/batch/closeout write behavior, prefer adding to these hooks over patching the REST layer, so the rule holds for all save mechanisms.
+
+### Analytics is the odd one out
+
+The `Analytics` grid bypasses the bundle pattern entirely. `mountAllGrids()` separates analytics hosts and lets `AnalyticsGridModel` fetch its own data from `scoop/v1/analytics`. The grid is read-only (no save button — hidden via CSS). See `INTEGRATION.md` for the rationale and the registration steps.
+
+## Conventions
+
+- **Write envelopes**: every POST body is `{ "<EnvelopeKey>": payload }` where `EnvelopeKey` matches the route key in `scoop_routes_config()` (`Cabinet`, `FlavorTub`, etc.). `ScoopAPI.postJson(payload, type)` does this wrapping automatically.
+- **Cache-busting on GET**: `ScoopAPI._fetch` appends `_ts=<now>` and sets `Cache-Control: no-cache` on every GET. Don't try to "fix" what looks like over-fetching here — the WP transient layer is what actually saves the round trip.
+- **Underscored PHP files** (`_config.php`, `_specs.php`, `_policy.php`, etc.) are the configuration/contract layer; non-prefixed files are runtime. Underscored JS files (`_base-grid-model.js`, `_flavor.js`, `_column-provider.js`) are abstract bases / helpers, not concrete grid types.
+- **Prettier** config (`.prittierrc` — note the typo in the filename) is `tabWidth: 2`, `useTabs: false`, `singleQuote: true`.
+- `assets/Main.js`, `dump.txt`, `_domain.json`, `response.json`, `1_response.json`, `fast_response.json`, `post_response.json` at the root are scratch/debug artifacts, not part of the runtime.

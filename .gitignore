@@ -1,0 +1,11 @@
+# Local-only / secret config
+.vscode/sftp.json
+.vscode/sftp.local.json
+
+# Scratch / debug artifacts
+_domain.json
+response.json
+1_response.json
+fast_response.json
+post_response.json
+dump.txt

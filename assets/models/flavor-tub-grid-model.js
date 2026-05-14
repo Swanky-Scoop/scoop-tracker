@@ -7,13 +7,14 @@ const DESIGNATION_FIELDS = [
   { field: "next_flavor", label: "next" },
 ];
 
+const FRONT_OF_HOUSE_USE_ID = 1863;
+
 export default class FlavorTubGridModel extends BaseGridModel{
   constructor(name = 'FlavorTub', domain, attrs = {}) 
   {
     super(name, domain, attrs );
     this.filter = true;    
-    this._addDerivedColumns();
-    this.setShowList(['designation', 'state', 'use', 'amount', 'author_name', 'date', 'post_modified']);
+    this.setShowList(['state', 'use', 'amount', 'author_name', 'post_modified']);
   }
 
   buildRows() {
@@ -37,31 +38,16 @@ export default class FlavorTubGridModel extends BaseGridModel{
         getGroupBadges: (items, flavorId) => [
           ...this.getBadges(flavorId, 'flavor'),
           this._designationBadge(designationsByFlavorId.get(Number(flavorId)) ?? []),
-        ],
+          this._useBadge(items),
+        ].filter(Boolean),
         fillRow       : (row, item, i) => {
           this.fillRowFromColumns(row, item, i);
-          this._fillDesignationCell(row, item, designationsByFlavorId);
         },
         collapsed     : true,
         groupType     :'flavor',
         rowType       :'tub',
         rowLabel      :'tub',
     });
-  }
-
-  _addDerivedColumns() {
-    this._allColumns ??= [];
-
-    if (!this._allColumns.some(col => col.key === "designation")) {
-      this._allColumns.unshift({
-        key: "designation",
-        label: "Designation",
-        type: "string",
-        write: false,
-      });
-    }
-
-    this._applyColumnFilter();
   }
 
   _designationsByFlavorId(slots = []) {
@@ -81,20 +67,6 @@ export default class FlavorTubGridModel extends BaseGridModel{
     return out;
   }
 
-  _fillDesignationCell(row, item, designationsByFlavorId) {
-    const flavorId = Number(item?.flavor ?? 0);
-    const designations = designationsByFlavorId.get(flavorId) ?? [];
-
-    row.designation = {
-      rowId: item?.id ?? 0,
-      display: designations.length ? designations.join(", ") : "none",
-      value: designations,
-      type: "string",
-      colKey: "designation",
-      write: false,
-    };
-  }
-
   _designationBadge(designations = []) {
     const text = designations.length ? designations.join("/") : "none";
     return {
@@ -102,6 +74,42 @@ export default class FlavorTubGridModel extends BaseGridModel{
       text,
       title: "Designation",
     };
+  }
+
+  _useBadge(items = []) {
+    const labels = [];
+
+    for (const item of items ?? []) {
+      const useId = Number(item?.use ?? 0);
+      if (!useId || this._isFrontOfHouseUse(useId)) continue;
+
+      const label = this.titleFrom(useId, { titleMap: "use" }) || `Use ${useId}`;
+      if (label && !labels.includes(label)) labels.push(label);
+    }
+
+    if (!labels.length) return null;
+
+    return {
+      key: "use",
+      text: labels.join("/"),
+      title: "Uses other than Front-of-House",
+    };
+  }
+
+  _isFrontOfHouseUse(useId) {
+    if (Number(useId) === FRONT_OF_HOUSE_USE_ID) return true;
+
+    const normalized = this._normalizeUseLabel(this.titleFrom(useId, { titleMap: "use" }));
+    return normalized === "front of house";
+  }
+
+  _normalizeUseLabel(label = "") {
+    return String(label)
+      .toLowerCase()
+      .replace(/&amp;/g, "&")
+      .replace(/[-_]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
 }

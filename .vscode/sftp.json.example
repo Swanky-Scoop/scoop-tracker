@@ -1,0 +1,23 @@
+[
+{   "name": "Swanky Scoop",
+    "context": "./",
+    "host": "swankyscoop.net",
+    "protocol": "sftp",
+    "port": 21098,
+    "username": "swannvoe",
+    "password": "REPLACE_WITH_YOUR_SFTP_PASSWORD",
+    "uploadOnSave": true,
+    "useTempFile": true,
+    "openSsh": false,
+    "connectTimeout": 30000,
+    "defaultProfile": "TEST",
+    "profiles": {
+        "OPS": {
+            "remotePath": "/home/swannvoe/ops.swankyscoop.net/wp-content/plugins/scoop_rest"
+        },
+        "TEST":{
+            "remotePath": "/home/swannvoe/test.swankyscoop.net/wp-content/plugins/scoop_rest"
+        }
+    }
+}
+]

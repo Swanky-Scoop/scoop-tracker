@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"C:\\\\Users\\\\gus reiber\\\\OneDrive\\\\Documents\\\\git\\\\scoop-tracker\" remote -v)",
+      "Bash(git -C \"C:\\\\Users\\\\gus reiber\\\\OneDrive\\\\Documents\\\\git\\\\scoop-tracker\" ls-files .vscode)"
+    ]
+  }
+}
