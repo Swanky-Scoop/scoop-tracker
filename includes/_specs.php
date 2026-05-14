@@ -50,7 +50,7 @@ function scoop_entity_specs(string $key = ''): array {
           'location'      => ['data_type' => 'int',      'control' => 'find', 'titleMap' => 'location', 'hidden' => true],
           'batch'         => ['data_type' => 'int',      'control' => 'find', 'hidden' => true],
           'closeout'      => ['data_type' => 'int',      'control' => 'find', 'hidden' => true],
-          'index'         => ['data_type' => 'int',      'hidden'  => true],
+          'index'         => ['data_type' => 'int'],
         ],
         'post_fields' => [
           'author_name'   => 'string',
