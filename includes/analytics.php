@@ -368,9 +368,9 @@ function scoop_analytics_aggregate_tubs(
 }
 
 /**
- * Compute average sellthrough time per flavor.
+ * Compute average time-to-empty per flavor.
  *
- * Sellthrough = tub.emptied_at - batch.post_date (the batch the tub came from).
+ * Time-to-empty = tub.emptied_at - tub.opened_on.
  * Only considers tubs emptied within the analysis period.
  *
  * @param string $period_start
@@ -388,7 +388,7 @@ function scoop_analytics_sellthrough(
   if ( ! $pod ) return [];
 
   // We need emptied tubs with a valid emptied_at timestamp within the period.
-  // emptied_at is stored as a string/datetime field on the tub.
+  // opened_on and emptied_at are stored as string/datetime fields on the tub.
   $where = [
     "t.post_status NOT IN ('trash', 'auto-draft')",
     "state = 'Emptied'",
@@ -421,25 +421,17 @@ function scoop_analytics_sellthrough(
       if ( $tub_loc !== $location_id ) continue;
     }
 
+    $opened_on  = $pod->row['opened_on'] ?? '';
     $emptied_at = $pod->row['emptied_at'] ?? '';
+    if ( scoop_nodate( $opened_on ) ) continue;
     if ( scoop_nodate( $emptied_at ) ) continue;
 
-    // Resolve the batch relationship to get the batch's post_date
-    $batch_id = scoop_rel_id( $pod->field( 'batch' ) );
-    if ( $batch_id <= 0 ) continue;
-
-    $batch_post = get_post( $batch_id );
-    if ( ! $batch_post ) continue;
-
-    $batch_date = $batch_post->post_date;
-    if ( scoop_nodate( $batch_date ) ) continue;
-
-    $batch_ts   = strtotime( $batch_date );
+    $opened_ts  = strtotime( $opened_on );
     $emptied_ts = strtotime( $emptied_at );
 
-    if ( $batch_ts <= 0 || $emptied_ts <= 0 || $emptied_ts < $batch_ts ) continue;
+    if ( $opened_ts <= 0 || $emptied_ts <= 0 || $emptied_ts < $opened_ts ) continue;
 
-    $days = ( $emptied_ts - $batch_ts ) / 86400.0;
+    $days = ( $emptied_ts - $opened_ts ) / 86400.0;
 
     if ( ! isset( $by_flavor[ $flavor_id ] ) ) {
       $by_flavor[ $flavor_id ] = [];

@@ -370,7 +370,7 @@ export default class ScoopAPI {
     for (const dom of analyticsHosts) {
       const location = Number(dom.dataset.location || 0);
       const days     = Number(dom.dataset.days || 30);
-      const model    = new AnalyticsGridModel("Analytics", {
+      const model    = new AnalyticsGridModel("Analytics", null, {
         location,
         days,
         nonce: this.nonce,

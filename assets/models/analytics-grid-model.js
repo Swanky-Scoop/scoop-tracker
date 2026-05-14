@@ -50,7 +50,7 @@ export default class AnalyticsGridModel extends BaseGridModel {
       { key: "flavor_name",          label: "Flavor",           type: "string" },
       { key: "total_sold",           label: "Total Sold",       type: "number" },
       { key: "sell_rate_per_day",    label: "Rate (tubs/day)",  type: "number" },
-      { key: "avg_sellthrough_days", label: "Avg Days to Sell", type: "number" },
+      { key: "avg_sellthrough_days", label: "Avg Days to Empty", type: "number" },
       { key: "current_stock",        label: "Current Stock",    type: "number" },
       { key: "days_of_supply",       label: "Days of Supply",   type: "number" },
       { key: "trend",                label: "Trend",            type: "string" },
@@ -97,7 +97,7 @@ export default class AnalyticsGridModel extends BaseGridModel {
         value:   f.sell_rate_per_day ?? 0,
       };
 
-      // Average days from batch to emptied
+      // Average days from opened to emptied
       row.avg_sellthrough_days = {
         display: f.avg_sellthrough_days != null
           ? this._fmtNum( f.avg_sellthrough_days, 1 )

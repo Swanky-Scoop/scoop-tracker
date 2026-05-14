@@ -10,6 +10,7 @@ add_shortcode('scoop_grid', function ($atts) {
     $atts = shortcode_atts([
         'type'     => 'Cabinet', // Cabinet | tub | etc
         'location'       => null,
+        'days'           => null,
         'date_filters'   => null,
         'modified_range' => null,
     ], $raw_atts, 'scoop_grid');
@@ -64,6 +65,9 @@ add_shortcode('scoop_grid', function ($atts) {
     class="scoop-grid <?php echo esc_attr($atts['type']); ?>"
     data-grid-type="<?php echo esc_attr($atts['type']); ?>"
     data-location="<?php echo esc_attr($atts['location']); ?>"
+    <?php if (!empty($atts['days'])) : ?>
+    data-days="<?php echo esc_attr($atts['days']); ?>"
+    <?php endif; ?>
     <?php if (!empty($date_filters)) : ?>
     data-date-filters="<?php echo esc_attr(implode(',', $date_filters)); ?>"
     <?php endif; ?>
