@@ -880,6 +880,204 @@ form table {
 .scoop-grid[data-grid-type="Analytics"] button.save {
   display: none;
 }
+
+/* ============================================
+   POPULAR - Scatter plot view
+   ============================================ */
+
+.scoop-grid[data-grid-type="Popular"] {
+  width: 100%;
+}
+
+.popularView {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem);
+  gap: 1rem;
+  align-items: stretch;
+  margin: 1rem 0;
+}
+
+.popularPlotShell,
+.popularKey {
+  border: 1px solid var(--color-border-light);
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 1px 3px var(--shadow-light);
+}
+
+.popularPlotShell {
+  min-width: 0;
+  padding: 0.75rem;
+}
+
+.popularSvg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 22rem;
+  overflow: visible;
+}
+
+.popularGridLines line {
+  stroke: rgba(50, 100, 50, 0.18);
+  stroke-width: 1;
+}
+
+.popularAxis {
+  stroke: var(--color-border-main);
+  stroke-width: 1.5;
+}
+
+.popularTick,
+.popularAxisLabel {
+  fill: var(--color-text-base);
+  font-size: 0.78rem;
+}
+
+.popularAxisLabel {
+  fill: var(--color-green-dark);
+  font-weight: 700;
+}
+
+.popularPoint {
+  fill: #0b6fa4;
+  stroke: white;
+  stroke-width: 1.5;
+  cursor: pointer;
+  opacity: 0.82;
+  transition: opacity 120ms ease, r 120ms ease, stroke-width 120ms ease;
+}
+
+.popularPoint.trend-rising {
+  fill: var(--color-green-dark);
+}
+
+.popularPoint.trend-falling {
+  fill: #b5483d;
+}
+
+.popularPoint.is-active,
+.popularPoint:focus {
+  opacity: 1;
+  stroke: #ffefb0;
+  stroke-width: 4;
+  outline: none;
+}
+
+.popularActiveLabel rect {
+  fill: rgba(255, 255, 255, 0.96);
+  stroke: var(--color-border-light);
+}
+
+.popularActiveLabel text {
+  fill: var(--color-text-base);
+  font-size: 0.75rem;
+}
+
+.popularActiveLabel .popularLabelName {
+  fill: var(--color-green-dark);
+  font-weight: 700;
+}
+
+.popularActiveLabel .popularLabelMetric {
+  fill: var(--color-text-base);
+}
+
+.popularKey {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.popularKeyHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--color-border-light);
+  color: var(--color-green-dark);
+}
+
+.popularKeyHeader span {
+  color: var(--color-text-base);
+  font-size: 0.78rem;
+}
+
+.popularKeyList {
+  max-height: 31rem;
+  overflow: auto;
+  padding: 0.35rem;
+}
+
+.popularKeyItem {
+  display: grid;
+  grid-template-columns: 0.75rem minmax(0, 1fr) auto auto;
+  gap: 0.45rem;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--color-text-base);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 0.4rem;
+  text-align: left;
+}
+
+.popularKeyItem:hover,
+.popularKeyItem:focus,
+.popularKeyItem.is-active {
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--color-green-dark);
+  outline: 1px solid var(--color-border-light);
+}
+
+.popularKeySwatch {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: #0b6fa4;
+  box-shadow: 0 0 0 1px white;
+}
+
+.popularKeyItem.trend-rising .popularKeySwatch {
+  background: var(--color-green-dark);
+}
+
+.popularKeyItem.trend-falling .popularKeySwatch {
+  background: #b5483d;
+}
+
+.popularKeyName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.popularKeyMetric {
+  color: inherit;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.popularEmpty {
+  padding: 1rem;
+  color: var(--color-text-base);
+}
+
+@media (max-width: 820px) {
+  .popularView {
+    grid-template-columns: 1fr;
+  }
+
+  .popularKeyList {
+    max-height: 18rem;
+  }
+}
 /* ============================================
    DATE ACTIVITY - flow/problem indicators
    ============================================ */

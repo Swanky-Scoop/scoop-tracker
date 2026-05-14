@@ -7,6 +7,8 @@ import CloseoutGridModel     from "../models/closeout-grid-model.js";
 import FlavorTubGridModel    from "../models/flavor-tub-grid-model.js";
 import DateActivityGridModel from "../models/date-activity-grid-model.js";
 import AnalyticsGridModel    from "../models/analytics-grid-model.js";
+import PopularGridModel      from "../models/popular-grid-model.js";
+import PopularPlot           from "../ui/popular-plot.js";
 
 
 export default class ScoopAPI {
@@ -75,6 +77,7 @@ export default class ScoopAPI {
       "Closeout"     : CloseoutGridModel,
       "DateActivity" : DateActivityGridModel,
       "Analytics"    : AnalyticsGridModel,
+      "Popular"      : PopularGridModel,
     };
   }
 
@@ -355,9 +358,10 @@ export default class ScoopAPI {
     // Separate analytics grids from bundle-based grids
     const analyticsHosts = [];
     const bundleHosts    = [];
+    const analyticsTypes = new Set(["Analytics", "Popular"]);
 
     for (const dom of this._hosts) {
-      if (dom.dataset.gridType === "Analytics") {
+      if (analyticsTypes.has(dom.dataset.gridType)) {
         analyticsHosts.push(dom);
       } else {
         bundleHosts.push(dom);
@@ -368,8 +372,27 @@ export default class ScoopAPI {
 
     // ── Analytics grids: self-fetching, bypass the bundle ──
     for (const dom of analyticsHosts) {
+      const type     = dom.dataset.gridType;
       const location = Number(dom.dataset.location || 0);
       const days     = Number(dom.dataset.days || 30);
+      if (type === "Popular") {
+        const model = new PopularGridModel("Popular", null, {
+          location,
+          days,
+          nonce: this.nonce,
+        });
+
+        await model.fetch();
+
+        const plot = new PopularPlot(dom, "Popular", {
+          api: this,
+          modelInstance: model,
+        });
+        plot.init(model);
+        allGrids.push(plot);
+        continue;
+      }
+
       const model    = new AnalyticsGridModel("Analytics", null, {
         location,
         days,

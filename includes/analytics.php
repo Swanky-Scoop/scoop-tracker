@@ -306,8 +306,6 @@ function scoop_analytics_aggregate_tubs(
     "t.post_status NOT IN ('trash', 'auto-draft')",
     "state = 'Emptied'",
     "emptied_at IS NOT NULL",
-    "emptied_at != ''",
-    "emptied_at != '0000-00-00 00:00:00'",
     "emptied_at >= '{$period_start}'",
   ];
 
@@ -393,8 +391,6 @@ function scoop_analytics_sellthrough(
     "t.post_status NOT IN ('trash', 'auto-draft')",
     "state = 'Emptied'",
     "emptied_at IS NOT NULL",
-    "emptied_at != ''",
-    "emptied_at != '0000-00-00 00:00:00'",
     "emptied_at >= '{$period_start}'",
   ];
 
