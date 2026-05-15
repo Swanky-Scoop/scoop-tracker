@@ -118,6 +118,36 @@ html body {
         margin: 1rem 0 !important;
         width:auto !important;
       }
+
+      &.Popular{
+        max-width: none !important;
+        overflow: hidden;
+        border-color: var(--color-green-darkest);
+        background-color: var(--color-bg-cell);
+        overflow: hidden;
+
+        & .popularView {
+          gap:0;
+          margin: 0;
+          border-color: var(--color-green-darkest);
+          background-color: var(--color-bg-cell);
+
+          & .popularGridLines{}
+        }
+
+        & .popularKey{
+          padding: 0;
+          margin: 0;
+
+          & .zGRID-form{
+            width: 100%;
+
+            & .gridFilterInput{
+              top:0
+            }
+          }
+
+        }
     }
 
     & .scoop-grid thead {

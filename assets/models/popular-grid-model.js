@@ -6,9 +6,10 @@ export default class PopularGridModel extends AnalyticsGridModel {
     if (!Array.isArray(this.points)) this.points = [];
     if (this.excludedCount == null) this.excludedCount = 0;
 
-    // Opt the Grid's built-in filter UI in (this.filter is read by Grid.init).
+    // Allergen select is rendered via getFilterDefs(); no need to set
+    // this.filter = true (that flag enables Grid's built-in FindInGrid text
+    // widget, which would duplicate PopularPlot._mountFilter()'s input).
     // _allergenOptions is populated from the data each time buildRows runs.
-    this.filter = true;
     this.filterValues = { allergen: 'all' };
     this._allergenOptions = [];
   }
