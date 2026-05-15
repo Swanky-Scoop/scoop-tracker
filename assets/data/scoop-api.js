@@ -420,10 +420,21 @@ export default class ScoopAPI {
       this.gridTypes = new Set(bundleHosts.map(dom => dom.dataset.gridType).filter(Boolean));
       this._setPageTypes();
 
+      const modelsBom = this.getModelsBom();
       const bundleGrids = bundleHosts.map(dom => {
         const name = dom.dataset.gridType;
+        const ModelClass = modelsBom[name];
+
+        // An unknown type (usually a shortcode typo like type="popular" vs
+        // "Popular") would otherwise throw "ModelClass is not a constructor"
+        // and kill every grid on the page. Skip it with a console warning so
+        // the rest of the page still renders.
+        if (typeof ModelClass !== 'function') {
+          console.warn(`ScoopAPI.mountAllGrids: no model for grid type "${name}", skipping host`, dom);
+          return null;
+        }
+
         const location = Number(dom.dataset.location || 0);
-        const ModelClass = this.getModelsBom()[name];
         const dateFilters = this._dateFiltersFromDataset(dom);
         const filterValues = this._filterValuesFromDataset(dom, dateFilters);
 
@@ -441,7 +452,7 @@ export default class ScoopAPI {
             formCodec,
             columns: modelInstance.columns
         });
-      });
+      }).filter(Boolean);
 
       this._bundleGrids = bundleGrids;
       this._bundleFilterParams = this._bundleFilterParamsForGrids(bundleGrids);
