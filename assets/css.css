@@ -891,7 +891,7 @@ form table {
 
 .popularView {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem);
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, 26rem);
   gap: 1rem;
   align-items: stretch;
   margin: 1rem 0;
@@ -914,7 +914,7 @@ form table {
   display: block;
   width: 100%;
   height: auto;
-  min-height: 22rem;
+  min-height: 38rem;
   overflow: visible;
 }
 
@@ -985,84 +985,22 @@ form table {
 
 .popularKey {
   min-width: 0;
-  overflow: hidden;
-}
-
-.popularKeyHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  align-items: center;
-  padding: 0.75rem;
-  border-bottom: 1px solid var(--color-border-light);
-  color: var(--color-green-dark);
-}
-
-.popularKeyHeader span {
-  color: var(--color-text-base);
-  font-size: 0.78rem;
-}
-
-.popularKeyList {
-  max-height: 31rem;
   overflow: auto;
+  max-height: 46rem;
   padding: 0.35rem;
 }
 
-.popularKeyItem {
-  display: grid;
-  grid-template-columns: 0.75rem minmax(0, 1fr) auto auto;
-  gap: 0.45rem;
-  align-items: center;
-  width: 100%;
-  border: 0;
-  border-radius: 0.25rem;
-  background: transparent;
-  color: var(--color-text-base);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.78rem;
-  padding: 0.4rem;
-  text-align: left;
-}
-
-.popularKeyItem:hover,
-.popularKeyItem:focus,
-.popularKeyItem.is-active {
+/* The key is the existing Grid widget; this isn't a savable form so hide the
+   default save button, and use sortable headers as the sort affordance. */
+.popularKey .zGRID-form > button.save { display: none; }
+.popularKey .zGRID-form { margin: 0; }
+.popularKey .zGRID th.sortable { cursor: pointer; }
+.popularKey .zGRID tr.row.is-active td {
   background: rgba(255, 255, 255, 0.7);
-  color: var(--color-green-dark);
   outline: 1px solid var(--color-border-light);
 }
-
-.popularKeySwatch {
-  width: 0.65rem;
-  height: 0.65rem;
-  border-radius: 999px;
-  background: #0b6fa4;
-  box-shadow: 0 0 0 1px white;
-}
-
-.popularKeyItem.trend-rising .popularKeySwatch {
-  background: var(--color-green-dark);
-}
-
-.popularKeyItem.trend-falling .popularKeySwatch {
-  background: #b5483d;
-}
-
-.popularKeyName {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-}
-
-.popularKeyMetric {
-  color: inherit;
-  font-size: 0.72rem;
-  white-space: nowrap;
-}
+.popularKey .zGRID td.avg_sellthrough_days.trend-rising  { color: var(--color-green-dark); }
+.popularKey .zGRID td.avg_sellthrough_days.trend-falling { color: #b5483d; }
 
 .popularEmpty {
   padding: 1rem;
@@ -1074,8 +1012,8 @@ form table {
     grid-template-columns: 1fr;
   }
 
-  .popularKeyList {
-    max-height: 18rem;
+  .popularKey {
+    max-height: 22rem;
   }
 }
 /* ============================================

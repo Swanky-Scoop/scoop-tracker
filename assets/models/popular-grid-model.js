@@ -5,12 +5,58 @@ export default class PopularGridModel extends AnalyticsGridModel {
     super(name, domain, options);
     if (!Array.isArray(this.points)) this.points = [];
     if (this.excludedCount == null) this.excludedCount = 0;
+
+    // Opt the Grid's built-in filter UI in (this.filter is read by Grid.init).
+    // _allergenOptions is populated from the data each time buildRows runs.
+    this.filter = true;
+    this.filterValues = { allergen: 'all' };
+    this._allergenOptions = [];
   }
 
+  // Three columns are enough to support sort-by-popularity (total_sold)
+  // and sort-by-speed (avg_sellthrough_days); both are what the plot's
+  // axes show, so the key Grid mirrors the plot's data exactly.
   buildCols() {
-    this._allColumns = [];
-    this.columns = [];
+    this._allColumns = [
+      { key: "flavor_name",          label: "Flavor",    type: "string" },
+      { key: "total_sold",           label: "Tubs Sold", type: "number" },
+      { key: "avg_sellthrough_days", label: "Avg Days",  type: "number" },
+    ];
+    this._applyColumnFilter();
     return this.columns;
+  }
+
+  getFilterDefs() {
+    return [
+      {
+        key: 'allergen',
+        label: 'Allergen',
+        type: 'select',
+        mode: 'client',
+        default: 'all',
+        options: [
+          { key: 'all',  label: 'All flavors' },
+          { key: 'none', label: 'Allergen-free' },
+          ...this._allergenOptions.map(slug => ({
+            key: `has:${slug}`,
+            label: `Contains ${slug}`,
+          })),
+          ...this._allergenOptions.map(slug => ({
+            key: `not:${slug}`,
+            label: `Without ${slug}`,
+          })),
+        ],
+      },
+    ];
+  }
+
+  setFilterValue(key, value) {
+    if (!key) return;
+    this.filterValues[key] = String(value ?? 'all');
+  }
+
+  getFilterValue(key) {
+    return this.filterValues?.[key] ?? 'all';
   }
 
   buildRows() {
@@ -20,26 +66,34 @@ export default class PopularGridModel extends AnalyticsGridModel {
     if (!a?.ok || !Array.isArray(a.flavors)) {
       this.points = [];
       this.rows = [];
+      this._allergenOptions = [];
       this.excludedCount = 0;
       return this.rows;
     }
 
     const points = [];
+    const allergenSet = new Set();
     let excludedCount = 0;
 
     a.flavors.forEach((f, i) => {
       const totalSold = this._finiteNumber(f.total_sold);
-      const avgDays = this._finiteNumber(f.avg_sellthrough_days);
+      const avgDays   = this._finiteNumber(f.avg_sellthrough_days);
 
       if (totalSold === null || avgDays === null || totalSold <= 0) {
         excludedCount++;
         return;
       }
 
+      const id        = String(f.flavor_id ?? i);
+      const name      = f.flavor_name ?? "";
+      const allergens = Array.isArray(f.allergens) ? f.allergens.map(String) : [];
+      allergens.forEach(slug => allergenSet.add(slug));
+
       points.push({
-        id: String(f.flavor_id ?? i),
+        id,
         flavorId: f.flavor_id ?? i,
-        flavorName: f.flavor_name ?? "",
+        flavorName: name,
+        allergens,
         totalSold,
         avgDays,
         sellRatePerDay: this._finiteNumber(f.sell_rate_per_day),
@@ -56,8 +110,38 @@ export default class PopularGridModel extends AnalyticsGridModel {
 
     this.points = points;
     this.excludedCount = excludedCount;
-    this.rows = points;
+    this._allergenOptions = [...allergenSet].sort((a, b) => a.localeCompare(b));
+
+    this.rows = points
+      .filter(p => this._passesFilters(p))
+      .map(p => this._rowFor(p));
+
     return this.rows;
+  }
+
+  _rowFor(p) {
+    return {
+      id: p.id,
+      flavor_name:          { display: p.flavorName,            value: p.flavorName },
+      total_sold:           { display: this._fmtNum(p.totalSold, 1), value: p.totalSold },
+      avg_sellthrough_days: { display: this._fmtNum(p.avgDays,   1), value: p.avgDays,
+                              alertCase: `trend-${p.trend}` },
+    };
+  }
+
+  _passesFilters(point) {
+    const filter = this.getFilterValue('allergen');
+    if (filter === 'all') return true;
+    const allergens = point.allergens ?? [];
+    if (filter === 'none') return allergens.length === 0;
+    if (filter.startsWith('has:')) return allergens.includes(filter.slice(4));
+    if (filter.startsWith('not:')) return !allergens.includes(filter.slice(4));
+    return true;
+  }
+
+  // Plot consumes this to mirror grid-side filtering onto the SVG circles.
+  getVisiblePointIds() {
+    return new Set((this.rows ?? []).map(r => String(r.id)));
   }
 
   getPlotData() {

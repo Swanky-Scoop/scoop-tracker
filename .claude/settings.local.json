@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(git -C \"C:\\\\Users\\\\gus reiber\\\\OneDrive\\\\Documents\\\\git\\\\scoop-tracker\" remote -v)",
-      "Bash(git -C \"C:\\\\Users\\\\gus reiber\\\\OneDrive\\\\Documents\\\\git\\\\scoop-tracker\" ls-files .vscode)"
+      "Bash(git -C \"C:\\\\Users\\\\gus reiber\\\\OneDrive\\\\Documents\\\\git\\\\scoop-tracker\" ls-files .vscode)",
+      "Bash(git -C \"C:\\\\Users\\\\gus reiber\\\\OneDrive\\\\Documents\\\\git\\\\scoop-tracker\" log --oneline -20)",
+      "Bash(git -C \"C:\\\\Users\\\\gus reiber\\\\OneDrive\\\\Documents\\\\git\\\\scoop-tracker\" status)",
+      "Bash(git *)",
+      "PowerShell(& \"C:\\\\Users\\\\gus reiber\\\\AppData\\\\Local\\\\Programs\\\\Local\\\\resources\\\\extraResources\\\\lightning-services\\\\php-8.2.29+0\\\\bin\\\\win64\\\\php.exe\" -l \"C:\\\\Users\\\\gus reiber\\\\OneDrive\\\\Documents\\\\git\\\\scoop-tracker\\\\includes\\\\analytics.php\")"
     ]
   }
 }

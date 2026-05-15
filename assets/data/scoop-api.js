@@ -413,6 +413,13 @@ export default class ScoopAPI {
 
     // ── Bundle-based grids: existing behavior ──
     if (bundleHosts.length) {
+      // getTypesFromGridHosts() stuffed every grid type into this.gridTypes,
+      // including the analytics ones. The bundle endpoint 400s on unknown
+      // types like "Popular", so re-scope to only the bundle hosts before
+      // refreshPageDomain() builds the request URL.
+      this.gridTypes = new Set(bundleHosts.map(dom => dom.dataset.gridType).filter(Boolean));
+      this._setPageTypes();
+
       const bundleGrids = bundleHosts.map(dom => {
         const name = dom.dataset.gridType;
         const location = Number(dom.dataset.location || 0);

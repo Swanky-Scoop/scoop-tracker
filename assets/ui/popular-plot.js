@@ -1,3 +1,6 @@
+import Grid      from "./grid.js";
+import FormCodec from "../data/form-codec.js";
+
 export default class PopularPlot {
   constructor(target, name = "Popular", config = {}) {
     this.target = target;
@@ -7,11 +10,14 @@ export default class PopularPlot {
     this.state = null;
     this.root = null;
     this.svg = null;
+    this.keyGrid = null;
     this.activeLabel = null;
     this.activeId = null;
-    this.width = 920;
-    this.height = 560;
-    this.margin = { top: 28, right: 28, bottom: 68, left: 78 };
+    this.filterInput = null;
+    this.filterStyle = null;
+    this.width = 1280;
+    this.height = 780;
+    this.margin = { top: 36, right: 36, bottom: 84, left: 96 };
   }
 
   init(state = this.modelInstance) {
@@ -41,19 +47,12 @@ export default class PopularPlot {
     }
 
     const plotShell = this._el("div", { classes: ["popularPlotShell"] });
-    const keyShell = this._el("aside", { classes: ["popularKey"], attrs: { "aria-label": "Flavor key" } });
-    const keyHeader = this._el("div", { classes: ["popularKeyHeader"] });
-    keyHeader.append(
-      this._el("strong", { text: "Flavors" }),
-      this._el("span", { text: `${points.length} plotted` })
-    );
-
-    const keyList = this._el("div", { classes: ["popularKeyList"] });
-    keyShell.append(keyHeader, keyList);
+    const keyShell  = this._el("aside", { classes: ["popularKey"], attrs: { "aria-label": "Flavor key" } });
 
     this.svg = this._svg("svg", {
       attrs: {
         viewBox: `0 0 ${this.width} ${this.height}`,
+        preserveAspectRatio: "xMidYMid meet",
         role: "img",
         "aria-label": "Scatter plot of total tubs sold by average days to empty",
       },
@@ -61,11 +60,121 @@ export default class PopularPlot {
     });
 
     this._drawPlot(points);
-    this._drawKey(points, keyList);
 
     plotShell.append(this.svg);
     this.root.append(plotShell, keyShell);
     this.target.append(this.root);
+
+    // The key reuses the existing Grid so its sortable headers do the
+    // sort-by-tubs-sold and sort-by-avg-days work for us; the plot itself
+    // stays static — only the key rows reorder when the user clicks a header.
+    this._mountKeyGrid(keyShell);
+    this._mountFilter();
+  }
+
+  _mountFilter() {
+    const form = this.keyGrid?.FORM;
+    if (!form) return;
+
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.autocomplete = "off";
+    inp.placeholder = "Filter…";
+    inp.classList.add("gridFilterInput");
+    form.prepend(inp);
+    inp.addEventListener("input", () => this._applyFilter());
+
+    this.filterInput = inp;
+
+    // Filter via a <style> rule rather than per-element `hidden`/display so
+    // it survives the Grid's sort-rebuild (sorting tears down and rebuilds
+    // the tbodies). The same rule hides plot circles in lockstep.
+    this.filterStyle = document.createElement("style");
+    this.root.append(this.filterStyle);
+
+    // Grid fires this event at the end of refresh(), which runs whenever a
+    // select filter (e.g. allergen) changes. Reapply so the SVG circles
+    // hide in step with the rows the model just filtered out.
+    form.addEventListener("ts:grid:close-overlays", () => this._applyFilter());
+  }
+
+  _applyFilter() {
+    const term = String(this.filterInput?.value ?? "").normalize("NFKC").toLowerCase().trim();
+    const points = this.state?.points ?? [];
+
+    // Combines: (a) text match against flavor name, and (b) row membership
+    // from the model — which already reflects allergen-style select filters
+    // because Grid calls model._buildRows() before refresh.
+    const visibleByModel = typeof this.state?.getVisiblePointIds === "function"
+      ? this.state.getVisiblePointIds()
+      : null;
+
+    const hideIds = [];
+    for (const point of points) {
+      const matchesText  = !term || String(point.flavorName ?? "").toLowerCase().includes(term);
+      const matchesModel = !visibleByModel || visibleByModel.has(String(point.id));
+      if (!matchesText || !matchesModel) hideIds.push(point.id);
+    }
+
+    if (this.activeId && hideIds.includes(this.activeId)) this._clearActive();
+
+    if (!this.filterStyle) return;
+    if (!hideIds.length) {
+      this.filterStyle.textContent = "";
+      return;
+    }
+
+    // Flavor IDs are numeric strings, safe to inline as attribute values.
+    const selectors = hideIds.flatMap(id => [
+      `.popularView tr.row[data-row-id="${id}"]`,
+      `.popularView circle[data-popular-id="${id}"]`,
+    ]).join(",");
+    this.filterStyle.textContent = `${selectors}{display:none !important;}`;
+  }
+
+  _mountKeyGrid(host) {
+    // formCodec is required even for read-only Grids — _captureBaseline()
+    // calls into it during init() regardless of whether the form will ever
+    // be submitted.
+    this.keyGrid = new Grid(host, "PopularKey", {
+      api: this.api,
+      modelInstance: this.state,
+      formCodec: FormCodec,
+    });
+    this.keyGrid.init(this.state);
+
+    // Grid subscribes every instance to "ts:domain:updated" so it can
+    // re-render when the bundle reloads. PopularKey self-fetches from
+    // /scoop/v1/analytics; the bundle's domain has no `analytics` key, so
+    // a bundle refresh would feed empty data to buildRows() and wipe the
+    // table the instant any neighboring bundle grid finishes loading.
+    if (this.keyGrid._onDomainUpdated) {
+      document.removeEventListener("ts:domain:updated", this.keyGrid._onDomainUpdated);
+      this.keyGrid._onDomainUpdated = null;
+      this.keyGrid._docListenerBound = false;
+    }
+
+    const table = this.keyGrid.TABLE;
+    if (!table) return;
+
+    // Bidirectional highlight: hovering a key row lights up the plot point,
+    // hovering a plot point (handled in _activate) lights up the key row.
+    // Use delegation with a relatedTarget check so the highlight doesn't
+    // flicker as the cursor moves between <td>s within the same row.
+    table.addEventListener("mouseover", (e) => {
+      const tr = e.target.closest("tr.row");
+      if (!tr) return;
+      if (e.relatedTarget && tr.contains(e.relatedTarget)) return;
+      const id = tr.dataset.rowId;
+      if (id) this._activate(String(id));
+    });
+    table.addEventListener("mouseout", (e) => {
+      const tr = e.target.closest("tr.row");
+      if (!tr) return;
+      if (e.relatedTarget && tr.contains(e.relatedTarget)) return;
+      const id = tr.dataset.rowId;
+      if (id) this._deactivate(String(id));
+    });
   }
 
   _drawPlot(points) {
@@ -174,27 +283,6 @@ export default class PopularPlot {
     this.svg.append(grid, axes, pointLayer, this.activeLabel);
   }
 
-  _drawKey(points, keyList) {
-    points.forEach(point => {
-      const item = this._el("button", {
-        attrs: { type: "button" },
-        classes: ["popularKeyItem", `trend-${point.trend}`],
-        data: { popularId: point.id },
-      });
-      item.append(
-        this._el("span", { classes: ["popularKeySwatch"] }),
-        this._el("span", { text: point.flavorName, classes: ["popularKeyName"] }),
-        this._el("span", { text: `${this._fmt(point.totalSold)} sold`, classes: ["popularKeyMetric"] }),
-        this._el("span", { text: `${this._fmt(point.avgDays)} days`, classes: ["popularKeyMetric"] })
-      );
-      item.addEventListener("mouseenter", () => this._activate(point.id));
-      item.addEventListener("mouseleave", () => this._deactivate(point.id));
-      item.addEventListener("focus", () => this._activate(point.id));
-      item.addEventListener("blur", () => this._deactivate(point.id));
-      keyList.append(item);
-    });
-  }
-
   _activate(id) {
     if (!id || this.activeId === id) return;
     this._clearActive();
@@ -204,6 +292,11 @@ export default class PopularPlot {
     this.root?.querySelectorAll("[data-popular-id]").forEach(el => {
       if (el.dataset.popularId === id) el.classList.add("is-active");
     });
+
+    const tr = this.keyGrid?.TABLE?.querySelector(
+      `tr.row[data-row-id="${CSS.escape(id)}"]`
+    );
+    if (tr) tr.classList.add("is-active");
 
     if (point) this._showActiveLabel(point);
   }
