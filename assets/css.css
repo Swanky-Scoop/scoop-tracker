@@ -907,7 +907,8 @@ form table {
    ANALYTICS - Hide save button (read-only grid)
    ============================================ */
 
-.scoop-grid[data-grid-type="Analytics"] button.save {
+.scoop-grid[data-grid-type="Analytics"] button.save,
+.scoop-grid[data-grid-type="Flavors"] button.save {
   display: none;
 }
 
