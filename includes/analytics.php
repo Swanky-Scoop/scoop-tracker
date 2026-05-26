@@ -68,6 +68,25 @@ function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
     ? (int) $location_id
     : 0;
 
+  // Only compute the stages this grid actually consumes. Unknown or missing
+  // grid_type → all stages (backwards-compatible). See
+  // scoop_analytics_stages_for_grid_type() for the per-grid stage map.
+  $grid_type     = (string) ( $req->get_param( 'grid_type' ) ?? '' );
+  $active_stages = scoop_analytics_stages_for_grid_type( $grid_type );
+
+  // Cache read — keyed by version + days + location + grid_type. The version
+  // is bumped on any relevant save_post (see _cache.php), so writes invalidate
+  // every cached analytics response at once. The TTL is just a safety net.
+  $cache_key = scoop_analytics_cache_key( $req );
+  $cached    = get_transient( $cache_key );
+  if ( $cached !== false && is_array( $cached ) ) {
+    // Re-stamp trace_id so each cache-hit response still has a unique ID for
+    // log correlation. _cache=hit is what distinguishes it from a fresh compute.
+    $cached['trace_id'] = $trace_id;
+    $cached['_cache']   = 'hit';
+    return new \WP_REST_Response( $cached, 200 );
+  }
+
   $now         = current_time( 'mysql' );
   $period_start = date( 'Y-m-d H:i:s', strtotime( "-{$period_days} days", strtotime( $now ) ) );
 
@@ -117,13 +136,16 @@ function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
     ], 500 );
   }
   if ( empty( $flavors_map ) ) {
-    return new \WP_REST_Response( [
-      'ok'          => true,
-      'period_days' => $period_days,
+    $body = [
+      'ok'           => true,
+      'period_days'  => $period_days,
       'generated_at' => gmdate( 'Y-m-d\TH:i:s' ),
-      'flavors'     => [],
-      'trace_id'    => $trace_id,
-    ], 200 );
+      'flavors'      => [],
+      'trace_id'     => $trace_id,
+    ];
+    set_transient( $cache_key, $body, SCOOP_CACHE_TTL );
+    $body['_cache'] = 'miss';
+    return new \WP_REST_Response( $body, 200 );
   }
 
   // ── Step 2: Aggregate tub sales (authoritative) ────────────────────────────
@@ -135,25 +157,33 @@ function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
   // ends in a tub being flipped to Emptied (enforced by
   // includes/hooks/tub-state.php and includes/hooks/closeout.php).
 
-  $sales = $run( 'aggregate_tubs', function () use ( $period_start, $now, $half_start, $location_id ) {
-    return scoop_analytics_aggregate_tubs( $period_start, $now, $half_start, $location_id );
-  } ) ?? [];
+  $sales = in_array( 'aggregate_tubs', $active_stages, true )
+    ? ( $run( 'aggregate_tubs', function () use ( $period_start, $now, $half_start, $location_id ) {
+        return scoop_analytics_aggregate_tubs( $period_start, $now, $half_start, $location_id );
+      } ) ?? [] )
+    : [];
 
   // ── Step 3: Compute sellthrough times from tub lifecycle ───────────────────
 
-  $sellthrough = $run( 'sellthrough', function () use ( $period_start, $now, $location_id ) {
-    return scoop_analytics_sellthrough( $period_start, $now, $location_id );
-  } ) ?? [];
+  $sellthrough = in_array( 'sellthrough', $active_stages, true )
+    ? ( $run( 'sellthrough', function () use ( $period_start, $now, $location_id ) {
+        return scoop_analytics_sellthrough( $period_start, $now, $location_id );
+      } ) ?? [] )
+    : [];
 
   // ── Step 4: Current stock per flavor ───────────────────────────────────────
 
-  $stock = $run( 'current_stock', function () use ( $location_id ) {
-    return scoop_analytics_current_stock( $location_id );
-  } ) ?? [];
+  $stock = in_array( 'current_stock', $active_stages, true )
+    ? ( $run( 'current_stock', function () use ( $location_id ) {
+        return scoop_analytics_current_stock( $location_id );
+      } ) ?? [] )
+    : [];
 
   // ── Step 5: Last batch date per flavor ─────────────────────────────────────
 
-  $last_batch = $run( 'last_batch', 'scoop_analytics_last_batch' ) ?? [];
+  $last_batch = in_array( 'last_batch', $active_stages, true )
+    ? ( $run( 'last_batch', 'scoop_analytics_last_batch' ) ?? [] )
+    : [];
 
   // ── Step 6: Assemble per-flavor results ────────────────────────────────────
 
@@ -235,7 +265,43 @@ function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
     ) );
   }
 
+  // Cache write — degraded responses are cached too, since the next save_post
+  // bumps the version and retries the failed stage. The TTL is a safety net
+  // in case version-bump invalidation is missed.
+  set_transient( $cache_key, $response, SCOOP_CACHE_TTL );
+  $response['_cache'] = 'miss';
   return new \WP_REST_Response( $response, 200 );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stage map — which aggregates each grid type actually consumes.
+// Skipping unused stages is the main perf win behind this endpoint, since each
+// stage that touches the `tub` table is a full scan.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns the list of analytics stages a given grid type needs.
+ * Unknown or empty type → every stage (backwards-compatible).
+ *
+ * @param string $grid_type  e.g. "Analytics", "Popular", "Flavors"
+ * @return array<int,string> stage names: aggregate_tubs, sellthrough, current_stock, last_batch
+ */
+function scoop_analytics_stages_for_grid_type( string $grid_type ): array {
+  $all = [ 'aggregate_tubs', 'sellthrough', 'current_stock', 'last_batch' ];
+
+  $map = [
+    // Full dashboard — needs everything.
+    'Analytics' => $all,
+    // Popular scatter plot — needs tub aggregates + sellthrough + current stock
+    // (skips last_batch entirely).
+    'Popular'   => [ 'aggregate_tubs', 'sellthrough', 'current_stock' ],
+    // Flavors list — only needs current stock + days-since-last-batch
+    // (skips both tub-table scans for sales/sellthrough).
+    'Flavors'   => [ 'current_stock', 'last_batch' ],
+  ];
+
+  return $map[ $grid_type ] ?? $all;
 }
 
 

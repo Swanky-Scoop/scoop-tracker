@@ -29,6 +29,15 @@ function scoop_cache_bust(?int $post_id = null, array $ctx = []): void {
   update_option( 'scoop_cache_version', scoop_cache_version() + 1, false );
 }
 
+function scoop_analytics_cache_key( \WP_REST_Request $req ): string {
+  $days = max( 1, (int) ( $req->get_param( 'days' ) ?? 30 ) );
+  $loc  = (int) ( $req->get_param( 'location' )  ?? 0 );
+  $grid = (string) ( $req->get_param( 'grid_type' ) ?? '' );
+  $v    = scoop_cache_version();
+
+  return 'scoop_a_' . md5( $v . '|' . $days . '|' . $loc . '|' . $grid );
+}
+
 function scoop_bundle_cache_key( \WP_REST_Request $req ): string {
   // Sort types so ?types=Batch,Cabinet and ?types=Cabinet,Batch share a cache entry
   $types = scoop_parse_types_param( $req->get_param( 'types' ) );

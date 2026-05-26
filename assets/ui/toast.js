@@ -14,9 +14,17 @@ export default class Toast {
   static _ensureHost(){
     let TOASTER = document.querySelector('body > .TOASTER'); 
     if(TOASTER) return TOASTER;
-
-    TOASTER = Toast._el('div', '', 'TOASTER');
+    
+    TOASTER         = Toast._el('div', '', 'TOASTER');
+    const SCROLLER  = Toast._el('div', '', 'SCROLLER');
+    const TOGGLER   = Toast._el('button', 'x', 'TOGGLER');
+    TOGGLER.addEventListener('click', (e)=>{
+      TOASTER.classList.toggle('show');
+    });
+    TOASTER.append(TOGGLER);
+    TOASTER.append(SCROLLER);
     document.body.append(TOASTER);
+
     return TOASTER;
   }
 
@@ -46,7 +54,7 @@ export default class Toast {
     TOAST.append(CLOSE);
     TOAST.update = Toast.update;
     if(id) TOAST.id = id;
-    TOASTER.append(TOAST);
+    TOASTER.querySelector('.SCROLLER').append(TOAST);
     TOASTER.classList.add('show');
 
     return TOAST;

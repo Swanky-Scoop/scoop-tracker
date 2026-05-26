@@ -4,6 +4,23 @@ Curated, reverse-chronological log of notable changes — what changed and why. 
 
 ## 2026-05-26
 
+### Performance: analytics transient cache
+
+**What:** The `/scoop/v1/analytics` endpoint now caches responses in a WP transient. New `scoop_analytics_cache_key()` in [includes/_cache.php](includes/_cache.php) keys on `version | days | location | grid_type`; [includes/analytics.php](includes/analytics.php) checks at the top of the handler and writes on both success paths. Cache hits re-stamp `trace_id` so log correlation still works per-request, and `_cache: 'hit'|'miss'` is added to the response so cache behavior is visible in devtools.
+
+**Why:** This is finding #1 from [performance.md](performance.md) — the single biggest perf win available. Invalidation rides on the existing version-bump (`save_post` etc. in [_cache.php](includes/_cache.php)), so the analytics cache stays consistent with the bundle cache for free. Combined with the stage map landed earlier today, a warm Flavors page now serves analytics from the transient and never touches Pods.
+
+### Performance: analytics stage map
+
+**What:** The `/scoop/v1/analytics` endpoint now accepts a `grid_type` query param and only runs the aggregate stages each grid actually consumes. New helper `scoop_analytics_stages_for_grid_type()` in [includes/analytics.php](includes/analytics.php) declares the mapping:
+- `Analytics` → all four stages (full dashboard)
+- `Popular` → `aggregate_tubs`, `sellthrough`, `current_stock` (skips `last_batch`)
+- `Flavors` → `current_stock`, `last_batch` (skips both tub-table scans for sales/sellthrough)
+
+Client side, [assets/models/analytics-grid-model.js](assets/models/analytics-grid-model.js) sends `grid_type` automatically based on `this.name`, so every analytics-pattern model picks it up without further work.
+
+**Why:** The analytics handler previously ran every stage for every caller, even though Flavors only reads `current_stock` and `last_batch_date`. Each skipped stage is a full scan of the `tub` table, so for the Flavors grid this cuts the cold path by ~2-3×. Unknown/missing `grid_type` falls through to all stages, so the change is backwards-compatible. See [performance.md](performance.md) finding #2 for the related (still-open) merge-duplicate-scans work.
+
 ### Performance audit
 
 **What:** Added [performance.md](performance.md) — a prioritized punch list of concrete performance issues across the server and client hot paths, each with `file:line`, root cause, and a specific proposed fix. Ten findings total, grouped High / Medium / Low.

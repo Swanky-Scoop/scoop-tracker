@@ -17,6 +17,8 @@ Each finding has:
 
 ### 1. Analytics endpoint has no transient cache
 
+**Status (2026-05-26):** *Addressed.* `scoop_analytics_cache_key()` lives in [includes/_cache.php](includes/_cache.php) and is keyed by `version | days | location | grid_type`. [includes/analytics.php](includes/analytics.php) reads the transient at the top of `scoop_analytics_handler()` and writes on both success paths (empty-flavors and main). Cache hits re-stamp `trace_id` so each response still has a unique debug ID; `_cache: 'hit'|'miss'` distinguishes the path. Invalidation rides on the same version-bump as the bundle cache.
+
 **Location:** [includes/analytics.php](includes/analytics.php) (whole file)
 
 **What:** Per-flavor aggregates are deterministic given `(days, location, cache_version)`, but every call recomputes from scratch. The client also cache-busts with `_ts=<now>` on every GET, so reloading the Popular or Flavors page always hits the heavy path.
@@ -26,6 +28,8 @@ Each finding has:
 **Fix:** Reuse the bundle's transient + version-bump pattern from [includes/_cache.php](includes/_cache.php). Cache key = `'scoop_a_' . md5($version . '|' . $days . '|' . $location)`, TTL = `SCOOP_CACHE_TTL`. Single biggest win available.
 
 ### 2. Three full `tub` table scans per analytics request
+
+**Status (2026-05-26):** *Partially addressed* by the stage-map optimization — narrow grids (Flavors, Popular) now skip scans they don't need. Merging the remaining duplicate scans for the `Analytics` grid (which still needs all three) is still open.
 
 **Location:** [scoop_analytics_aggregate_tubs](includes/analytics.php#L304), [scoop_analytics_sellthrough](includes/analytics.php#L467), [scoop_analytics_current_stock](includes/analytics.php#L572)
 

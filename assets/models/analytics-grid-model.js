@@ -178,6 +178,11 @@ export default class AnalyticsGridModel extends BaseGridModel {
     if ( this.location ) {
       url.searchParams.set( "location", String( this.location ) );
     }
+    // Tells the server which aggregate stages this grid actually consumes,
+    // so it can skip the others. See scoop_analytics_stages_for_grid_type().
+    if ( this.name ) {
+      url.searchParams.set( "grid_type", String( this.name ) );
+    }
     // Cache-bust
     url.searchParams.set( "_ts", String( Date.now() ) );
 
