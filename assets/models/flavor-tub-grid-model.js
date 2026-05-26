@@ -16,6 +16,7 @@ export default class FlavorTubGridModel extends BaseGridModel{
     this.filter = true;
     this.filterValues = {
       designation: 'all',
+      allergens: 'all',
       use_badge: 'all',
     };
     this.setShowList(['index', 'state', 'use', 'amount', 'author_name', 'post_modified']);
@@ -35,6 +36,18 @@ export default class FlavorTubGridModel extends BaseGridModel{
           { key: 'current', label: 'Current' },
           { key: 'immediate', label: 'Immediate' },
           { key: 'next', label: 'Next' },
+        ],
+      },
+      {
+        key: 'allergens',
+        label: 'Allergens',
+        type: 'select',
+        mode: 'client',
+        default: 'all',
+        options: [
+          { key: 'all', label: 'Any allergens' },
+          { key: 'dairy', label: 'Dairy' },
+          { key: 'non-dairy', label: 'Non-Dairy' },
         ],
       },
       {
@@ -100,13 +113,13 @@ export default class FlavorTubGridModel extends BaseGridModel{
 
     for (const [flavorId, items] of groupsMap ?? new Map()) {
       const designations = designationsByFlavorId.get(Number(flavorId)) ?? [];
-      if (this._groupMatchesFilters(items, designations)) out.set(flavorId, items);
+      if (this._groupMatchesFilters(items, designations, flavorId)) out.set(flavorId, items);
     }
 
     return out;
   }
 
-  _groupMatchesFilters(items = [], designations = []) {
+  _groupMatchesFilters(items = [], designations = [], flavorId = 0) {
     const designationFilter = this.getFilterValue('designation');
     if (designationFilter !== 'all') {
       if (designationFilter === 'none') {
@@ -114,6 +127,13 @@ export default class FlavorTubGridModel extends BaseGridModel{
       } else if (!designations.includes(designationFilter)) {
         return false;
       }
+    }
+
+    const allergenFilter = this.getFilterValue('allergens');
+    if (allergenFilter !== 'all') {
+      const hasDairy = this._flavorAllergens(flavorId).includes('dairy');
+      if (allergenFilter === 'dairy'     && !hasDairy) return false;
+      if (allergenFilter === 'non-dairy' &&  hasDairy) return false;
     }
 
     const useFilter = this.getFilterValue('use_badge');
@@ -124,6 +144,11 @@ export default class FlavorTubGridModel extends BaseGridModel{
 
     const requestedUseId = Number(String(useFilter).replace(/^use:/, ''));
     return Number.isFinite(requestedUseId) && nonFrontUseIds.includes(requestedUseId);
+  }
+
+  _flavorAllergens(flavorId) {
+    const flavor = this._flavorsById?.get?.(Number(flavorId));
+    return Array.isArray(flavor?.allergens) ? flavor.allergens : [];
   }
 
   _designationsByFlavorId(slots = []) {
