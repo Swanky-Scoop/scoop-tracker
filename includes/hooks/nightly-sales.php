@@ -652,7 +652,13 @@ function scoop_nightly_sales_apply_weather(array &$pieces, array $weather): void
 add_action('admin_footer-post-new.php', 'scoop_nightly_sales_prefill_admin_form');
 function scoop_nightly_sales_prefill_admin_form(): void {
   $screen = function_exists('get_current_screen') ? get_current_screen() : null;
-  if (!$screen || $screen->post_type !== 'nightly_sales') return;
+  $screen_post_type = $screen ? (string)($screen->post_type ?? '') : '';
+  $screen_id = $screen ? (string)($screen->id ?? '') : '';
+  $request_post_type = isset($_GET['post_type']) ? sanitize_key((string)$_GET['post_type']) : '';
+
+  if ($screen_post_type !== 'nightly_sales' && $request_post_type !== 'nightly_sales' && strpos($screen_id, 'nightly_sales') === false) {
+    return;
+  }
 
   $today = current_time('Y-m-d');
   ?>
@@ -672,10 +678,28 @@ function scoop_nightly_sales_prefill_admin_form(): void {
       }
     };
 
+    const prefillEditorTitle = () => {
+      const wpData = window.wp?.data;
+      if (!wpData?.select || !wpData?.dispatch) return false;
+
+      const editor = wpData.select('core/editor');
+      const currentTitle = editor?.getEditedPostAttribute?.('title');
+      if (String(currentTitle || '').trim()) return true;
+
+      wpData.dispatch('core/editor')?.editPost?.({ title: today });
+      return true;
+    };
+
     const prefill = () => {
+      prefillEditorTitle();
+
       [
         document.querySelector('#title'),
-        document.querySelector('.editor-post-title__input')
+        document.querySelector('#post-title-0'),
+        document.querySelector('input[name="post_title"]'),
+        document.querySelector('textarea[name="post_title"]'),
+        document.querySelector('.editor-post-title__input'),
+        document.querySelector('[aria-label="Add title"]')
       ].forEach(setIfEmpty);
 
       [
@@ -693,8 +717,10 @@ function scoop_nightly_sales_prefill_admin_form(): void {
     } else {
       prefill();
     }
+    window.wp?.domReady?.(prefill);
     setTimeout(prefill, 250);
     setTimeout(prefill, 1000);
+    setTimeout(prefill, 2500);
   })();
   </script>
   <?php
