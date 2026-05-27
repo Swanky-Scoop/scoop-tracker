@@ -6,7 +6,7 @@ Curated, reverse-chronological log of notable changes — what changed and why. 
 
 ### Feature: nightly sales defaults and weather enrichment
 
-**What:** Added a `nightly_sales` Pods pre-save hook in [includes/hooks/nightly-sales.php](includes/hooks/nightly-sales.php). New records default their title/slug to the sale date, using incoming `sale_date` when present and today's WordPress-local date otherwise. The same hook fetches Woodinville daily weather from Open-Meteo and fills matching Pods fields such as `temperature_2m_max`, `temperature_2m_min`, and `weathercode` when those fields exist.
+**What:** Added a `nightly_sales` Pods pre-save hook in [includes/hooks/nightly-sales.php](includes/hooks/nightly-sales.php). New records default their title/slug to the sales date, using incoming `sales_date`/`sale_date` when present and today's WordPress-local date otherwise. The Add New wp-admin form now pre-fills the title and sales date visually before save. The same hook fetches Woodinville daily weather from Open-Meteo and fills matching Pods fields such as `temperature_2m_max`, `temperature_2m_min`, and `weathercode` when those fields exist.
 
 **Why:** Cone sales entries need stable date-based labels for both daily entry and historical import, and the weather data is useful context for demand/forecast work without requiring staff to enter it manually.
 

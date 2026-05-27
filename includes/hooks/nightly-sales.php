@@ -15,8 +15,9 @@ function scoop_prepare_nightly_sales($pieces, $is_new_item, $id = 0) {
   if ($is_new_item) {
     scoop_nightly_sales_set_title($pieces, $sale_date);
 
-    if (!isset($pieces['fields']['sale_date']['value']) || scoop_nodate($pieces['fields']['sale_date']['value'])) {
-      scoop_nightly_sales_set_field($pieces, 'sale_date', $sale_date);
+    $date_field = scoop_nightly_sales_date_field();
+    if ($date_field && (!isset($pieces['fields'][$date_field]['value']) || scoop_nodate($pieces['fields'][$date_field]['value']))) {
+      scoop_nightly_sales_set_field($pieces, $date_field, $sale_date);
     }
   }
 
@@ -31,19 +32,35 @@ function scoop_prepare_nightly_sales($pieces, $is_new_item, $id = 0) {
 }
 
 function scoop_nightly_sales_resolve_sale_date(array $pieces, int $id = 0): string {
-  $incoming = $pieces['fields']['sale_date']['value'] ?? '';
-  $date = scoop_nightly_sales_normalize_date($incoming);
-  if ($date !== '') return $date;
+  foreach (scoop_nightly_sales_date_fields() as $field) {
+    $incoming = $pieces['fields'][$field]['value'] ?? '';
+    $date = scoop_nightly_sales_normalize_date($incoming);
+    if ($date !== '') return $date;
+  }
 
   if ($id > 0 && function_exists('pods')) {
     $pod = pods('nightly_sales', $id);
     if ($pod && $pod->exists()) {
-      $date = scoop_nightly_sales_normalize_date($pod->field('sale_date'));
-      if ($date !== '') return $date;
+      foreach (scoop_nightly_sales_date_fields() as $field) {
+        $date = scoop_nightly_sales_normalize_date($pod->field($field));
+        if ($date !== '') return $date;
+      }
     }
   }
 
   return current_time('Y-m-d');
+}
+
+function scoop_nightly_sales_date_fields(): array {
+  return ['sales_date', 'sale_date'];
+}
+
+function scoop_nightly_sales_date_field(): string {
+  foreach (scoop_nightly_sales_date_fields() as $field) {
+    if (scoop_nightly_sales_pod_has_field($field)) return $field;
+  }
+
+  return '';
 }
 
 function scoop_nightly_sales_normalize_date($value): string {
@@ -168,4 +185,55 @@ function scoop_nightly_sales_apply_weather(array &$pieces, array $weather): void
     if (!array_key_exists($weather_key, $weather)) continue;
     scoop_nightly_sales_set_field($pieces, $field, $weather[$weather_key]);
   }
+}
+
+add_action('admin_footer-post-new.php', 'scoop_nightly_sales_prefill_admin_form');
+function scoop_nightly_sales_prefill_admin_form(): void {
+  $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+  if (!$screen || $screen->post_type !== 'nightly_sales') return;
+
+  $today = current_time('Y-m-d');
+  ?>
+  <script>
+  (() => {
+    const today = <?php echo wp_json_encode($today); ?>;
+
+    const setIfEmpty = (el) => {
+      if (!el || String(el.value || el.textContent || '').trim()) return;
+      if ('value' in el) {
+        el.value = today;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        el.textContent = today;
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: today }));
+      }
+    };
+
+    const prefill = () => {
+      [
+        document.querySelector('#title'),
+        document.querySelector('.editor-post-title__input')
+      ].forEach(setIfEmpty);
+
+      [
+        'input[name="pods_meta_sales_date"]',
+        'input[name="pods_meta_sale_date"]',
+        'input[name="sales_date"]',
+        'input[name="sale_date"]',
+        '#pods-form-ui-pods-meta-sales-date',
+        '#pods-form-ui-pods-meta-sale-date'
+      ].forEach((selector) => setIfEmpty(document.querySelector(selector)));
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', prefill, { once: true });
+    } else {
+      prefill();
+    }
+    setTimeout(prefill, 250);
+    setTimeout(prefill, 1000);
+  })();
+  </script>
+  <?php
 }
