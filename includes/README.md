@@ -75,7 +75,8 @@ These files register `pods_api_pre_save_pod_item_*` filters that fire on **every
 
 | File | Role |
 |---|---|
-| `cli.php` | WP-CLI commands. Registers `wp scoop audit`, which runs the orphan-tub + bidirectional-drift integrity checks documented in the project README. Early-returns when `WP_CLI` isn't defined, so zero overhead in normal HTTP/REST requests. |
+| `cli.php` | WP-CLI commands. Registers `wp scoop audit` (orphan-tub + bidirectional-drift integrity checks) and `wp scoop cache-refresh` (manual trigger for the periodic Pods cache flush). Early-returns when `WP_CLI` isn't defined, so zero overhead in normal HTTP/REST requests. |
+| `cron.php` | Registers a 2-hour WP-Cron event (`scoop_periodic_cache_refresh`) that clears Pods's per-item cache for every Pod listed in `scoop_cron_pods_to_refresh()`. Safety net for plugins (Admin Columns and similar) that read through a layer caching Pods's cached value — direct-write paths don't invalidate Pods caches naturally, and this keeps drift bounded. |
 | `pods.php` | Custom role definitions registered with WordPress at plugin activation. |
 | `admin-page.php` | Adds a wp-admin command-test page for poking at the REST endpoints from inside the dashboard. Restricted to `edit_posts` capability. |
 | `dump.php` | Debug helper for dumping the bundle JSON to disk. Used during development; not wired into the runtime. |

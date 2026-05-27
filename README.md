@@ -262,6 +262,27 @@ If anything is off, the command prints a table of the affected rows and exits wi
 
 **Without wp-cli:** paste the two SQL queries above into Adminer / phpMyAdmin / the `mysql` CLI. Same checks, same expected zero-row result.
 
+### Periodic Pods cache refresh
+
+The direct-write paths (e.g. `scoop_create_batch_tubs_direct`) bypass Pods's normal save flow, so Pods's per-item relationship cache for the affected batches/flavors/locations is not invalidated when a row is written. Most consumers refresh on next read, but a few (notably **Admin Columns**) read through a layer that caches Pods's cached value — so they keep displaying pre-write state until someone re-saves the affected record by hand.
+
+[includes/cron.php](includes/cron.php) registers a WP-Cron event `scoop_periodic_cache_refresh` that runs **every 2 hours** and clears `pods_items_<pod>` for every Pod listed in `scoop_cron_pods_to_refresh()`. Pods covered today: `tub`, `batch`, `flavor`, `slot`, `cabinet`, `closeout`, `location`, `use`, `nightly_sales`, `inventory_change`. Add new CPTs to that list when they ship.
+
+**Manual trigger** (no waiting for the next cron tick):
+
+```bash
+wp scoop cache-refresh
+```
+
+Output:
+```
+Cleared Pods caches for: tub, batch, flavor, slot, cabinet, closeout, location, use, nightly_sales, inventory_change
+Bumped scoop_cache_version (bundle + analytics cache invalidated).
+Success: Cache refresh complete.
+```
+
+**Caveat:** WP-Cron only fires when there's inbound traffic to the site. On a low-traffic install the actual cadence drifts. If a hard 2-hour cadence matters operationally, replace WP-Cron with a real system cron that hits `wp-cron.php` from the OS — or run `wp scoop cache-refresh` from a normal Unix `crontab` entry instead.
+
 ---
 
 ## Schema-related active issues

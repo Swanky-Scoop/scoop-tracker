@@ -57,6 +57,13 @@ scoop_require('includes/shortcode.php');
 scoop_require('includes/admin-page.php');
 
 /**
+ * Periodic cache refresh (WP-Cron). Registers a 2hr schedule that clears
+ * Pods's per-item caches; safety net for plugins that read through Pods's
+ * resolver and don't see invalidations from our direct-write paths.
+ */
+scoop_require('includes/cron.php');
+
+/**
  * WP-CLI commands (no-op outside CLI; the file early-returns if WP_CLI isn't defined)
  */
 scoop_require('includes/cli.php');

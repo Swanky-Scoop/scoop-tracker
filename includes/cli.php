@@ -167,3 +167,49 @@ class Scoop_CLI_Audit {
 }
 
 WP_CLI::add_command('scoop audit', 'Scoop_CLI_Audit');
+
+
+class Scoop_CLI_Cache_Refresh {
+
+  /**
+   * Manually trigger the periodic Pods cache refresh.
+   *
+   * Runs the same callback as the `scoop_periodic_cache_refresh` WP-Cron
+   * event (every 2 hours by default). Useful when:
+   *   - Plugins like Admin Columns are showing stale relationship data after
+   *     a direct-write batch creation.
+   *   - You want to verify the cron handler works without waiting for the
+   *     next scheduled tick.
+   *   - You've just edited scoop_cron_pods_to_refresh() and want to confirm
+   *     the new Pod is flushed.
+   *
+   * See includes/cron.php for the underlying function.
+   *
+   * ## EXAMPLES
+   *
+   *     wp scoop cache-refresh
+   *
+   * @when after_wp_load
+   */
+  public function __invoke($args, $assoc_args) {
+    if (!function_exists('scoop_run_periodic_cache_refresh')) {
+      \WP_CLI::error('scoop_run_periodic_cache_refresh() is not loaded. Is the plugin active?');
+    }
+
+    $result = scoop_run_periodic_cache_refresh();
+
+    if (empty($result['cleared'])) {
+      \WP_CLI::warning('No Pods caches were cleared (is the Pods plugin active?).');
+    } else {
+      \WP_CLI::log('Cleared Pods caches for: ' . implode(', ', $result['cleared']));
+    }
+
+    if (!empty($result['bumped_bundle'])) {
+      \WP_CLI::log('Bumped scoop_cache_version (bundle + analytics cache invalidated).');
+    }
+
+    \WP_CLI::success('Cache refresh complete.');
+  }
+}
+
+WP_CLI::add_command('scoop cache-refresh', 'Scoop_CLI_Cache_Refresh');

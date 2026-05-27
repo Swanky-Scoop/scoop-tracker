@@ -4,6 +4,18 @@ Curated, reverse-chronological log of notable changes — what changed and why. 
 
 ## 2026-05-27
 
+### Feature: 2-hour periodic Pods cache refresh + `wp scoop cache-refresh`
+
+**What:** New file [includes/cron.php](includes/cron.php) registers a WP-Cron event `scoop_periodic_cache_refresh` on a 2-hour schedule. Each tick calls `pods_cache_clear(false, 'pods_items_<pod>')` for `tub`, `batch`, `flavor`, `slot`, `cabinet`, `closeout`, `location`, `use`, `nightly_sales`, `inventory_change`, then bumps the bundle cache version. The Pod list lives in `scoop_cron_pods_to_refresh()` — add new CPTs there as they ship.
+
+Paired CLI command `wp scoop cache-refresh` (in [includes/cli.php](includes/cli.php)) calls the same callback for manual triggering — useful when Admin Columns is showing stale data right now and you don't want to wait for the next tick.
+
+**Why:** Confirmed today that the user's earlier observation ("Admin Columns doesn't show tubs on direct-write batches even though Pods edit GUI does") was a Pods per-item cache that the direct-write paths don't invalidate. Manually re-saving the batch from wp-admin fixed it because Pods's full save flow clears caches as a side effect. Decision: rather than inline cache-clear calls on every direct-write (which would couple the persistence layer to a particular caching plugin's quirks), use a periodic flush. Cadence chosen to keep cache hit rate high while bounding staleness; the cadence is a tunable.
+
+**Caveat:** WP-Cron only fires on inbound traffic. On a low-traffic site the actual cadence drifts. README documents the system-cron fallback (`wp scoop cache-refresh` from an OS crontab) if hard cadence is needed.
+
+Docs: README "Periodic Pods cache refresh" subsection added under "Integrity audit queries"; includes/README.md per-file table now lists `cron.php`.
+
 ### Feature: `wp scoop audit` WP-CLI command
 
 **What:** New file [includes/cli.php](includes/cli.php) registers a `wp scoop audit` command that runs the integrity checks documented in the project [README.md](README.md) and exits non-zero if any issue is found. Two checks today:
