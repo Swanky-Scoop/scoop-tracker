@@ -39,6 +39,7 @@ scoop_require('includes/hooks/cabinet-slot.php');
 scoop_require('includes/hooks/batch-tub.php');
 scoop_require('includes/hooks/tub-state.php');
 scoop_require('includes/hooks/closeout.php');
+scoop_require('includes/hooks/nightly-sales.php');
 
 /**
  * REST + bundle

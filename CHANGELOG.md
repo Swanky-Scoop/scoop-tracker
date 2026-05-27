@@ -4,6 +4,12 @@ Curated, reverse-chronological log of notable changes — what changed and why. 
 
 ## 2026-05-26
 
+### Feature: nightly sales defaults and weather enrichment
+
+**What:** Added a `nightly_sales` Pods pre-save hook in [includes/hooks/nightly-sales.php](includes/hooks/nightly-sales.php). New records default their title/slug to the sale date, using incoming `sale_date` when present and today's WordPress-local date otherwise. The same hook fetches Woodinville daily weather from Open-Meteo and fills matching Pods fields such as `temperature_2m_max`, `temperature_2m_min`, and `weathercode` when those fields exist.
+
+**Why:** Cone sales entries need stable date-based labels for both daily entry and historical import, and the weather data is useful context for demand/forecast work without requiring staff to enter it manually.
+
 ### Docs: GUI planning document
 
 **What:** Added [GUI-planning.md](GUI-planning.md) — a working document for the client-side UI evolution. Currently holds the two framing decisions from today's discussion (stay vanilla / lean on CSS tokens; tabs via wrapper shortcode with eager mount + CSS toggle) and a structured backlog ready for use-case dumps.
