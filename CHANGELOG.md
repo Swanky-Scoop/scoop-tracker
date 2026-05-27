@@ -4,6 +4,12 @@ Curated, reverse-chronological log of notable changes — what changed and why. 
 
 ## 2026-05-26
 
+### Docs: GUI planning document
+
+**What:** Added [GUI-planning.md](GUI-planning.md) — a working document for the client-side UI evolution. Currently holds the two framing decisions from today's discussion (stay vanilla / lean on CSS tokens; tabs via wrapper shortcode with eager mount + CSS toggle) and a structured backlog ready for use-case dumps.
+
+**Why:** Use cases are arriving faster than the architecture can absorb them, so we wanted a single place to dump raw use cases and incrementally cluster them into functional areas → workflows → tasks without locking in premature structure.
+
 ### Performance: analytics transient cache
 
 **What:** The `/scoop/v1/analytics` endpoint now caches responses in a WP transient. New `scoop_analytics_cache_key()` in [includes/_cache.php](includes/_cache.php) keys on `version | days | location | grid_type`; [includes/analytics.php](includes/analytics.php) checks at the top of the handler and writes on both success paths. Cache hits re-stamp `trace_id` so log correlation still works per-request, and `_cache: 'hit'|'miss'` is added to the response so cache behavior is visible in devtools.

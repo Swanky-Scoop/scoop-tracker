@@ -138,4 +138,26 @@ assets/
   css.css                   ← All styles
 ```
 
-See [CLAUDE.md](CLAUDE.md) for deeper architectural detail, [INTEGRATION.md](INTEGRATION.md) for the historical reference on how the Analytics pattern was added, [CHANGELOG.md](CHANGELOG.md) for a curated log of notable changes with the "why" behind each, and [performance.md](performance.md) for the standing performance punch list.
+---
+
+## Data sources
+
+Files in `data-exports/` are not part of the runtime — they are external reference data that informs forecasting and UI design.
+
+### [data-exports/Waffle Cone (in store) Sales.csv](data-exports/Waffle%20Cone%20(in%20store)%20Sales.csv)
+
+Three years (2023–2025, with a tail of Dec 2022) of daily in-store cone sales. The basis for forecasting expected cone demand — and by extension, expected tubs of ice cream needed in production, since cone sales correlate tightly with tub consumption.
+
+**Layout:**
+- Pivot table — each year occupies its own block, stacked vertically.
+- Days of the week run **vertically** (Monday … Sunday + Totals row) so day-of-week trends are easy to read at a glance.
+- Columns are pairs across the weeks of the year: each week has **two numeric values**:
+  - first number = **regular waffle cone** sales (usually the larger)
+  - second number = **gluten-free waffle cone** sales
+- The `Totals` row carries both per-week sums and a per-year grand total in column 2, making year-over-year growth easy to see.
+
+**Intended use:** drives the "expected tubs/cones needed this week" widget in the planned kitchen production dashboard — see [GUI-planning.md](GUI-planning.md). Translating cones-sold to tubs-needed requires a scoops-per-tub × cones-per-scoop conversion factor that has not yet been pinned down.
+
+---
+
+See [CLAUDE.md](CLAUDE.md) for deeper architectural detail, [INTEGRATION.md](INTEGRATION.md) for the historical reference on how the Analytics pattern was added, [CHANGELOG.md](CHANGELOG.md) for a curated log of notable changes with the "why" behind each, [performance.md](performance.md) for the standing performance punch list, and [GUI-planning.md](GUI-planning.md) for in-flight UI direction and the use-case backlog.
