@@ -11,7 +11,10 @@
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" run view 25900951883 --log)",
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" run view 25900894541 --log)",
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" run view 25903207799 --log-failed)",
-      "Bash(/c/Program Files/GitHub CLI/gh.exe secret *)"
+      "Bash(/c/Program Files/GitHub CLI/gh.exe secret *)",
+      "PowerShell($phps = Get-ChildItem -Path \"$env:LOCALAPPDATA\\\\Programs\\\\Local\\\\resources\\\\extraResources\" -Recurse -Filter \"php.exe\" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName; $phps | Select-Object -First 5)",
+      "PowerShell(Get-ChildItem -Path \"$env:LOCALAPPDATA\\\\Programs\\\\Local\\\\resources\\\\extraResources\\\\lightning-services\" -Recurse -Filter \"mysqldump.exe\" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)",
+      "Bash(grep -E \"^CREATE TABLE \\\\`wp_pods\" \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/schema.sql\")"
     ]
   }
 }

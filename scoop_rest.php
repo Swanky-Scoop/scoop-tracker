@@ -56,6 +56,11 @@ scoop_require('includes/enqueue.php');
 scoop_require('includes/shortcode.php');
 scoop_require('includes/admin-page.php');
 
+/**
+ * WP-CLI commands (no-op outside CLI; the file early-returns if WP_CLI isn't defined)
+ */
+scoop_require('includes/cli.php');
+
 //error_log("========== SCOOP REST PLUGIN LOADED ==========");
 
 register_activation_hook(__FILE__, 'scoop_readonly');

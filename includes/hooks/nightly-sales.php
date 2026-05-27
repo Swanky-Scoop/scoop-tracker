@@ -322,11 +322,20 @@ function scoop_nightly_sales_import_data(array $row): array {
     }
   }
 
-  if (scoop_nightly_sales_pod_has_field('location') && defined('SCOOP_DEFAULT_LOCATION_ID')) {
-    $data['location'] = (int)SCOOP_DEFAULT_LOCATION_ID;
-  } elseif (scoop_nightly_sales_pod_has_field('location') && function_exists('scoop_get_default_location_id')) {
-    $location_id = (int)scoop_get_default_location_id();
-    if ($location_id) $data['location'] = $location_id;
+  // Location always defaults to Woodinville (935) for historical CSV imports.
+  // Three-tier cascade so the field is set regardless of which order plugin
+  // files were loaded: prefer the SCOOP_DEFAULT_LOCATION_ID constant, then the
+  // accessor function (both defined in includes/hooks/batch-tub.php), then a
+  // hard-coded fallback so this branch CAN NEVER silently skip the location.
+  if (scoop_nightly_sales_pod_has_field('location')) {
+    if (defined('SCOOP_DEFAULT_LOCATION_ID')) {
+      $data['location'] = (int)SCOOP_DEFAULT_LOCATION_ID;
+    } elseif (function_exists('scoop_get_default_location_id')) {
+      $location_id = (int)scoop_get_default_location_id();
+      $data['location'] = $location_id ?: 935;
+    } else {
+      $data['location'] = 935; // Woodinville — match SCOOP_DEFAULT_LOCATION_ID
+    }
   }
 
   return $data;
@@ -444,16 +453,16 @@ function scoop_nightly_sales_pod_has_field(string $field): bool {
 
 function scoop_nightly_sales_weather_field_map(): array {
   return [
-    'tempature'         => 'tempature',
-    'weather_quality'   => 'weather_quality',
+    'temperature'        => 'temperature',
+    'weather_quality'    => 'weather_quality',
     'temperature_2m_max' => 'temperature_2m_max',
     'temperature_2m_min' => 'temperature_2m_min',
-    'weathercode'       => 'weathercode',
-    'weather_code'      => 'weathercode',
-    'temp_max'          => 'temperature_2m_max',
-    'temp_min'          => 'temperature_2m_min',
-    'high_temp'         => 'temperature_2m_max',
-    'low_temp'          => 'temperature_2m_min',
+    'weathercode'        => 'weathercode',
+    'weather_code'       => 'weathercode',
+    'temp_max'           => 'temperature_2m_max',
+    'temp_min'           => 'temperature_2m_min',
+    'high_temp'          => 'temperature_2m_max',
+    'low_temp'           => 'temperature_2m_min',
   ];
 }
 
@@ -510,7 +519,7 @@ function scoop_nightly_sales_fetch_weather(string $sale_date): array {
   }
 
   if (isset($out['temperature_2m_max']) && is_numeric($out['temperature_2m_max'])) {
-    $out['tempature'] = (int)round((float)$out['temperature_2m_max']);
+    $out['temperature'] = (int)round((float)$out['temperature_2m_max']);
   }
 
   if (isset($out['weathercode']) && is_numeric($out['weathercode'])) {
@@ -559,7 +568,7 @@ function scoop_nightly_sales_fetch_weather_dates(array $dates): array {
           $weather['weathercode'] = $daily['weather_code'][$idx];
         }
         if (isset($weather['temperature_2m_max']) && is_numeric($weather['temperature_2m_max'])) {
-          $weather['tempature'] = (int)round((float)$weather['temperature_2m_max']);
+          $weather['temperature'] = (int)round((float)$weather['temperature_2m_max']);
         }
         if (isset($weather['weathercode']) && is_numeric($weather['weathercode'])) {
           $weather['weather_quality'] = scoop_nightly_sales_weather_quality((int)$weather['weathercode']);

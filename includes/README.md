@@ -75,6 +75,7 @@ These files register `pods_api_pre_save_pod_item_*` filters that fire on **every
 
 | File | Role |
 |---|---|
+| `cli.php` | WP-CLI commands. Registers `wp scoop audit`, which runs the orphan-tub + bidirectional-drift integrity checks documented in the project README. Early-returns when `WP_CLI` isn't defined, so zero overhead in normal HTTP/REST requests. |
 | `pods.php` | Custom role definitions registered with WordPress at plugin activation. |
 | `admin-page.php` | Adds a wp-admin command-test page for poking at the REST endpoints from inside the dashboard. Restricted to `edit_posts` capability. |
 | `dump.php` | Debug helper for dumping the bundle JSON to disk. Used during development; not wired into the runtime. |

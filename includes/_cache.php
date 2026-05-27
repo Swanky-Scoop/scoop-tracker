@@ -18,6 +18,10 @@ function scoop_cache_version(): int {
 }
 
 function scoop_cache_bust(?int $post_id = null, array $ctx = []): void {
+  // Suppression flag — lets bulk writers (e.g. batch tub creation) skip the
+  // per-row bump and call scoop_cache_bust() exactly once at the end.
+  if ( ! empty( $GLOBALS['scoop_suppress_cache_bust'] ) ) return;
+
   if ( $post_id ) {
     if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) return;
 

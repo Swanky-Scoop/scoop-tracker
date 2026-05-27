@@ -69,6 +69,11 @@
       return new \WP_REST_Response(['ok'=>false,'error'=>'Misconfigured endpoint (missing pod_name).'], 500);
     }
 
+    $request_start = microtime(true);
+    if (function_exists('scoop_debug_log')) {
+      scoop_debug_log("create {$pod_name}: starting save");
+    }
+
     $new_id = scoop_create_pod_item($pod_name, $allowed_fields, $row);
     
     if (is_wp_error($new_id)) {
@@ -81,7 +86,18 @@
       ], 400);
     }
 
+    if (function_exists('scoop_debug_log')) {
+      $elapsed = (int)round((microtime(true) - $request_start) * 1000);
+      scoop_debug_log("create {$pod_name}: saved id=" . (int)$new_id . " in {$elapsed}ms; starting audit log");
+    }
+
+    $audit_start = microtime(true);
     scoop_log_post($req, $cfg, $row, [], (int)$new_id);
+    if (function_exists('scoop_debug_log')) {
+      $audit_elapsed = (int)round((microtime(true) - $audit_start) * 1000);
+      $total_elapsed = (int)round((microtime(true) - $request_start) * 1000);
+      scoop_debug_log("create {$pod_name}: audit log finished in {$audit_elapsed}ms; total {$total_elapsed}ms");
+    }
 
     return new \WP_REST_Response([
       'ok' => true,
