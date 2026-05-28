@@ -47,7 +47,6 @@ function scoop_access_policy(): array {
     ],
   ];
   
-  scoop_debug_log('🔍 TRACE: scoop_access_policy() returning policy with routes: ' . implode(', ', array_keys($policy['_default']['routes'])));
   return $policy;
 }
 
@@ -57,43 +56,33 @@ function scoop_get_user_policy(\WP_User $user): array {
   
   // Check roles in priority order
   if (in_array('administrator', $user->roles)) {
-    scoop_debug_log("🔍 TRACE: User is administrator - using _default policy");
     return $policy['_default'];
   }
   
   if (in_array('editor', $user->roles)) {
-    scoop_debug_log("🔍 TRACE: User is editor - using editor policy");
     return $policy['editor'];
   }
   
   if (in_array('author', $user->roles)) {
-    scoop_debug_log("🔍 TRACE: User is author - using author policy");
     return $policy['author'];
   }
   
   // Default policy
-  scoop_debug_log("🔍 TRACE: User has no matching role - using _default policy");
   return $policy['_default'];
 }
 
 function scoop_user_writeable_fields(\WP_User $user, string $entity): array {
-  scoop_debug_log("🔍 TRACE: scoop_user_writeable_fields() called for entity: $entity, user: " . $user->user_login);
   
   $policy = scoop_get_user_policy($user);
   $fields = $policy['entities'][$entity] ?? [];
-  
-  scoop_debug_log("🔍 TRACE: Writeable fields for $entity: " . print_r($fields, true));
   
   return $fields;
 }
 
 function scoop_user_can_route(\WP_User $user, string $route, string $method): bool {
-  scoop_debug_log("🔍 TRACE: scoop_user_can_route() called - route: $route, method: $method, user: " . $user->user_login);
   
   $policy = scoop_get_user_policy($user);
   $can = $policy['routes'][$route][$method] ?? false;
-  
-  scoop_debug_log("🔍 TRACE: Permission result for $route $method: " . ($can ? 'ALLOWED' : 'DENIED'));
   
   return $can;
 }

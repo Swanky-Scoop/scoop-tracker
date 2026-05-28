@@ -4,6 +4,12 @@ Curated, reverse-chronological log of notable changes — what changed and why. 
 
 ## 2026-05-27
 
+### Fix: add `closeout` entity to `scoop_entity_specs()` to silence per-page-load warning
+
+**What:** Added a `closeout` entry to the `$cache` in [includes/_specs.php](includes/_specs.php) alongside the other Pod entities (tub, inventory_change, slot, cabinet, flavor, batch, use, location). Fields mirror `scoop_closeouts_allowed_fields()` — `tubs_emptied`, `flavor`, `use`, `location`, `order` — with `data_type` + `control` set so the column metadata shipped to the client is correct. Removed the diagnostic `error_log("scoop_entity_specs: Fetching specs for key: …")` on every lookup (noisy) and the TODO `error_log` about closeout being missing (now done).
+
+**Why:** The user observed `scoop_entity_specs: WARNING - key not found: closeout` firing on every page load — even on pages that didn't include `[scoop_grid type="Closeout"]`. Cause: `scoop_client_metadata()` in [includes/enqueue.php](includes/enqueue.php) iterates the entire `scoop_routes_config()` to build the per-user metadata package shipped as `SCOOP.metaData`. Since the `Closeout` route exists, the metadata builder always asks for its entity spec, regardless of which grids are on the current page. With the spec missing, every page that loaded `app.js` logged the warning. Adding the spec silences it and also lets the metadata system serve correct column defs if the JS ever wants to consume them.
+
 ### Fix: BatchHistory default reverted to 48 hours; shortcode example minimized
 
 **What:** Reverted `BatchHistoryGridModel`'s default date window from `last_7_days` (a transient change earlier today) back to `last_48_hours` per the operational note that 48hr is the typical view and a week is the upper-typical, with 30 days the outside. The four select options (24h / 48h / 7d / 30d) remain — user can still extend the window via the widget. Updated [SHORTCODES.md](SHORTCODES.md) to lead with the minimal form `[scoop_grid type="BatchHistory"]` and show the `filter_created` override as a secondary example. Rewrote the model's docblock to make the optional-attribute behavior explicit (both `date_filters` and `filter_created` are optional; server and client each default independently to `created` / `last_48_hours`).
