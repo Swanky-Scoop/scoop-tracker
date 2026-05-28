@@ -57,6 +57,18 @@ scoop_require('includes/shortcode.php');
 scoop_require('includes/admin-page.php');
 
 /**
+ * RCC importer — see RCC_IMPORT_README.md
+ */
+scoop_require('includes/rcc-import/_config.php');
+scoop_require('includes/rcc-import/csv.php');
+scoop_require('includes/rcc-import/mapper.php');
+scoop_require('includes/rcc-import/importer.php');
+scoop_require('includes/rcc-import/_ui.php');
+scoop_require('includes/rcc-import/reconciler.php');
+scoop_require('includes/rcc-import/reconciler-ui.php');
+scoop_require('includes/admin-menu.php');
+
+/**
  * Periodic cache refresh (WP-Cron). Registers a 2hr schedule that clears
  * Pods's per-item caches; safety net for plugins that read through Pods's
  * resolver and don't see invalidations from our direct-write paths.

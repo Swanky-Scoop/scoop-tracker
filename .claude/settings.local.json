@@ -14,7 +14,12 @@
       "Bash(/c/Program Files/GitHub CLI/gh.exe secret *)",
       "PowerShell($phps = Get-ChildItem -Path \"$env:LOCALAPPDATA\\\\Programs\\\\Local\\\\resources\\\\extraResources\" -Recurse -Filter \"php.exe\" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName; $phps | Select-Object -First 5)",
       "PowerShell(Get-ChildItem -Path \"$env:LOCALAPPDATA\\\\Programs\\\\Local\\\\resources\\\\extraResources\\\\lightning-services\" -Recurse -Filter \"mysqldump.exe\" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)",
-      "Bash(grep -E \"^CREATE TABLE \\\\`wp_pods\" \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/schema.sql\")"
+      "Bash(grep -E \"^CREATE TABLE \\\\`wp_pods\" \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/schema.sql\")",
+      "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/admin-menu.php\")",
+      "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/_config.php\")",
+      "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/csv.php\")",
+      "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/mapper.php\")",
+      "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/importer.php\")"
     ]
   }
 }
