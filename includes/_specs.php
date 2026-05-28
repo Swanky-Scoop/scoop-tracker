@@ -6,6 +6,7 @@ function scoop_bundle_specs(): array {
     'Cabinet'      => ['needs' => ['cabinet','slot','flavor']],
     'FlavorTub'    => ['needs' => ['tub','flavor','use','slot']],
     'Batch'        => ['needs' => ['flavor']],
+    'BatchHistory' => ['needs' => ['batch','flavor']],
     'Closeout'     => ['needs' => ['flavor','use']],
     'DateActivity' => ['needs' => ['tub','inventory_change','flavor','use','location','slot','cabinet']],
   ];
@@ -186,6 +187,24 @@ function scoop_entity_specs(string $key = ''): array {
         'fields'    => [
           'web_id'    => ['data_type' => 'int'],
           'allergens' => ['data_type' => 'post_names'],
+        ],
+        'writeable' => []
+      ],
+
+      // Read-only batch entity used by the BatchHistory grid.
+      // Date filter on t.post_date is applied in scoop_fetch_entities() below
+      // when BatchHistory is among the requested grid types.
+      'batch' => [
+        'post_type' => 'batch',
+        'pod'       => 'batch',
+        'title'     => true,
+        'fields'    => [
+          'count'  => ['data_type' => 'float'],
+          'flavor' => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'flavor'],
+        ],
+        'post_fields' => [
+          'author_name' => 'string',
+          'post_date'   => 'datetime',
         ],
         'writeable' => []
       ],

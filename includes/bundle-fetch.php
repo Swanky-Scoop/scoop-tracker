@@ -133,6 +133,9 @@ function scoop_bundle_date_filter_context( \WP_REST_Request $req, array $request
   if ( empty( $keys ) && in_array( 'DateActivity', $requesting_types, true ) ) {
     $keys = [ 'activity' ];
   }
+  if ( empty( $keys ) && in_array( 'BatchHistory', $requesting_types, true ) ) {
+    $keys = [ 'created' ];
+  }
 
   $ranges = [];
   foreach ( $keys as $key ) {
@@ -334,6 +337,26 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
       if ( in_array( 'activity', $date_filters, true ) ) {
         $activity_clause = scoop_date_filter_sql_clause( 't.post_date', $date_ranges['activity'] ?? [] );
         $where_clauses[] = $activity_clause !== '' ? $activity_clause : '1=0';
+      } else {
+        $where_clauses[] = '1=0';
+      }
+    }
+  }
+
+  if ( $key === 'batch' ) {
+    // Date-range filter for the BatchHistory grid. Defaults to the 'created'
+    // filter key (set in scoop_bundle_date_filter_context above), bound to
+    // t.post_date. If no filter is enabled, fall back to "1=0" so we never
+    // ship every batch ever made — the grid is intended to be windowed.
+    $requesting_types   = $ctx['requesting_types'] ?? [];
+    $has_batch_history  = in_array( 'BatchHistory', $requesting_types, true );
+    $date_filters       = $ctx['date_filters'] ?? [];
+    $date_ranges        = $ctx['date_filter_ranges'] ?? [];
+
+    if ( $has_batch_history ) {
+      if ( in_array( 'created', $date_filters, true ) ) {
+        $created_clause  = scoop_date_filter_sql_clause( 't.post_date', $date_ranges['created'] ?? [] );
+        $where_clauses[] = $created_clause !== '' ? $created_clause : '1=0';
       } else {
         $where_clauses[] = '1=0';
       }

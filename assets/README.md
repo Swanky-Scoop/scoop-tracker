@@ -58,6 +58,7 @@ Each grid type has one `*GridModel` class. Its job: take the domain (or analytic
 | `analytics-grid-model.js` | Base class for **read-only analytics-pattern grids**. Constructs the standalone fetch (`GET /scoop/v1/analytics`), parses the response into rows. Subclass and override `buildCols()` / `buildRows()` to project the same response into a different view. |
 | `cabinet-grid-model.js` | Slot rows grouped by cabinet. Bundle pattern. |
 | `batch-grid-model.js` | Batch creation rows. Bundle pattern, `mode: 'create'`. |
+| `batch-history-grid-model.js` | Read-only listing of past batches with a server-side date-range filter (`last_24_hours` / `last_48_hours` / `last_7_days` / `last_30_days`). Bundle pattern, no write route. Columns: Created, Flavor, Tubs, Author. |
 | `flavor-tub-grid-model.js` | Tub rows with use/state/amount editing. Bundle pattern. The grid most users spend the most time in. |
 | `closeout-grid-model.js` | Closeout entry rows. Bundle pattern, `mode: 'create'`. |
 | `date-activity-grid-model.js` | Inventory-change activity grouped by flavor, scoped to a date window. Bundle pattern, read-mostly. |

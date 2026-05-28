@@ -3,6 +3,7 @@ import ColumnsProvider    from "../models/_column-provider.js";
 import FormCodec          from "./form-codec.js";
 import CabinetGridModel      from "../models/cabinet-grid-model.js";
 import BatchGridModel        from "../models/batch-grid-model.js";
+import BatchHistoryGridModel from "../models/batch-history-grid-model.js";
 import CloseoutGridModel     from "../models/closeout-grid-model.js";
 import FlavorTubGridModel    from "../models/flavor-tub-grid-model.js";
 import DateActivityGridModel from "../models/date-activity-grid-model.js";
@@ -75,6 +76,7 @@ export default class ScoopAPI {
       "Cabinet"      : CabinetGridModel,
       "FlavorTub"    : FlavorTubGridModel,
       "Batch"        : BatchGridModel,
+      "BatchHistory" : BatchHistoryGridModel,
       "Closeout"     : CloseoutGridModel,
       "DateActivity" : DateActivityGridModel,
       "Analytics"    : AnalyticsGridModel,

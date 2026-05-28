@@ -4,6 +4,34 @@ Curated, reverse-chronological log of notable changes — what changed and why. 
 
 ## 2026-05-27
 
+### Docs: `SHORTCODES.md` — catalog of grid variants
+
+**What:** New top-level [SHORTCODES.md](SHORTCODES.md) listing every `[scoop_grid type="..."]` variant currently available, grouped by workflow (Daily ops, Planning, Insight, Audit). Each entry has a one-line description, a copy-paste shortcode example, and a note on filterable attributes. Also documents the common attributes (`type`, `location`, `days`, `date_filters`, `filter_<key>`) and the patterns to remember (case-sensitivity, bundle sharing, location defaults).
+
+The doc is intentionally short — workflow grouping + one line per grid + one example each. Anyone landing in the repo for the first time should be able to read it in under two minutes and know what each grid does. Linked from [README.md](README.md)'s footer.
+
+**Why:** The grid catalog had been spreading across `assets/README.md`, `CLAUDE.md`, and CHANGELOG entries. A single reference list makes adding a new variant easy to keep up to date and gives non-developer users (e.g. shop managers configuring WordPress pages) one place to look for "what's available."
+
+### Docs: `EZ-TYPE-2-GRID.md` cookbook + BatchHistory default tweak
+
+**What:** New top-level [EZ-TYPE-2-GRID.md](EZ-TYPE-2-GRID.md) — a focused cookbook for spinning up a new grid from a Pods content type in minimal steps. Two paths documented: read-only listing (4 files) and read+write CRUD (Path A + 3 more things). Includes a complete copy-paste-ready JS model template, the `data_type` reference table, common gotchas (tables-mode integrity rule, bidirectional relationships, Pods cache), and a final checklist. Cross-linked from [README.md](README.md)'s footer.
+
+Also bumped the `BatchHistory` grid's default date window from `last_48_hours` to `last_7_days` per the operational note that "a week is the typical scope; a month is the outside." The select still offers 24h / 48h / 7d / 30d.
+
+**Why:** Even with the per-directory READMEs and CLAUDE.md, finding the minimum steps for "I just want a grid over this CPT" required reading three docs and one example file. The cookbook condenses that to a single page with concrete tokens to replace. It's also the right place to capture the gotchas that have repeatedly bitten direct-write work (tables-mode invariants, bidirectional rows, Pods cache) without burying them in the architecture docs.
+
+### Feature: `BatchHistory` grid — read-only list of past batches
+
+**What:** New bundle-pattern grid type `[scoop_grid type="BatchHistory" date_filters="created" filter_created="last_30_days"]`. Read-only listing of `batch` posts with four columns: **Created** (post_date), **Flavor**, **Tubs** (count), **Author**. Newest-first by post_date. Date-range filter offers presets `last_24_hours` / `last_48_hours` / `last_7_days` / `last_30_days` via a `mode: 'server'` select widget — changing it triggers a bundle refresh so the SQL window slides.
+
+Files touched:
+- New: [assets/models/batch-history-grid-model.js](assets/models/batch-history-grid-model.js) — extends `BaseGridModel`, hardcodes columns, sorts by post_date desc, implements the `getFilterDefs() / getServerFilterParams()` pattern matching `DateActivityGridModel`.
+- Edited: [assets/data/scoop-api.js](assets/data/scoop-api.js) — imports the new model and registers it in `getModelsBom()`.
+- Edited: [includes/_specs.php](includes/_specs.php) — added `BatchHistory` to `scoop_bundle_specs()` (`needs: ['batch','flavor']`) and a new `batch` entity to `scoop_entity_specs()` with the `count` + `flavor` fields plus `author_name` + `post_date` from post_fields.
+- Edited: [includes/bundle-fetch.php](includes/bundle-fetch.php) — defaults the `created` date_filter key when BatchHistory is requested without one, and adds a `t.post_date` WHERE clause in `scoop_fetch_entities('batch', ...)` so the bundle never ships the entire batch history.
+
+**Why:** Spec'd by ops as "show me batches filterable by date range with author, count, flavor, created date." The bundle pattern fits naturally — same shortcut JS authors use for other grids, server-side SQL windowing for scalability, and the read-only nature means no write route or `_config.php` change. The model is also a useful reference template for any future "read-only, filterable, listing" grid.
+
 ### Feature: 2-hour periodic Pods cache refresh + `wp scoop cache-refresh`
 
 **What:** New file [includes/cron.php](includes/cron.php) registers a WP-Cron event `scoop_periodic_cache_refresh` on a 2-hour schedule. Each tick calls `pods_cache_clear(false, 'pods_items_<pod>')` for `tub`, `batch`, `flavor`, `slot`, `cabinet`, `closeout`, `location`, `use`, `nightly_sales`, `inventory_change`, then bumps the bundle cache version. The Pod list lives in `scoop_cron_pods_to_refresh()` — add new CPTs there as they ship.

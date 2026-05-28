@@ -400,4 +400,4 @@ Three years (2023–2025, with a tail of Dec 2022) of daily in-store cone sales.
 
 ---
 
-See [CLAUDE.md](CLAUDE.md) for deeper architectural detail, [INTEGRATION.md](INTEGRATION.md) for the historical reference on how the Analytics pattern was added, [CHANGELOG.md](CHANGELOG.md) for a curated log of notable changes with the "why" behind each, [performance.md](performance.md) for the standing performance punch list, and [GUI-planning.md](GUI-planning.md) for in-flight UI direction and the use-case backlog.
+See [CLAUDE.md](CLAUDE.md) for deeper architectural detail, [INTEGRATION.md](INTEGRATION.md) for the historical reference on how the Analytics pattern was added, [CHANGELOG.md](CHANGELOG.md) for a curated log of notable changes with the "why" behind each, [performance.md](performance.md) for the standing performance punch list, [GUI-planning.md](GUI-planning.md) for in-flight UI direction and the use-case backlog, [EZ-TYPE-2-GRID.md](EZ-TYPE-2-GRID.md) for a minimal-steps cookbook for spinning up a new grid from a Pods content type, and [SHORTCODES.md](SHORTCODES.md) for the list of available `[scoop_grid]` types and their attributes.
