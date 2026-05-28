@@ -42,11 +42,21 @@ Single-row form to enter end-of-shift emptied-tub counts. Auto-matches against o
 ```
 
 #### `BatchHistory` — past batches, filterable by date
-Read-only listing with columns Created / Flavor / Tubs / Author. Default window is 7 days; widget at the top of the grid switches between `last_24_hours` / `last_48_hours` / `last_7_days` / `last_30_days`.
+Read-only listing with columns Created / Flavor / Tubs / Author. Default window is **48 hours**; the widget at the top of the grid switches between `last_24_hours` / `last_48_hours` / `last_7_days` / `last_30_days`. Use cases rarely go past a week; 30 days is the outside.
+
+Minimal form (defaults to last 48 hours):
+
+```
+[scoop_grid type="BatchHistory"]
+```
+
+Set a different starting window via the shortcode:
 
 ```
 [scoop_grid type="BatchHistory" date_filters="created" filter_created="last_7_days"]
 ```
+
+The user can still change it via the widget regardless.
 
 ### Planning
 

@@ -4,6 +4,12 @@ Curated, reverse-chronological log of notable changes — what changed and why. 
 
 ## 2026-05-27
 
+### Fix: BatchHistory default reverted to 48 hours; shortcode example minimized
+
+**What:** Reverted `BatchHistoryGridModel`'s default date window from `last_7_days` (a transient change earlier today) back to `last_48_hours` per the operational note that 48hr is the typical view and a week is the upper-typical, with 30 days the outside. The four select options (24h / 48h / 7d / 30d) remain — user can still extend the window via the widget. Updated [SHORTCODES.md](SHORTCODES.md) to lead with the minimal form `[scoop_grid type="BatchHistory"]` and show the `filter_created` override as a secondary example. Rewrote the model's docblock to make the optional-attribute behavior explicit (both `date_filters` and `filter_created` are optional; server and client each default independently to `created` / `last_48_hours`).
+
+**Also fixed:** the earlier global rename of `last_7_days` → `last_48_hours` had over-replaced into the model's `options` array and `allowed` list, which would have made `last_7_days` reject as an invalid preset. Both occurrences restored to `last_7_days`. (This was an unintended side effect of a `replace_all` edit; the affected lines were only briefly broken inside the same conversational turn.)
+
 ### Docs: `SHORTCODES.md` — catalog of grid variants
 
 **What:** New top-level [SHORTCODES.md](SHORTCODES.md) listing every `[scoop_grid type="..."]` variant currently available, grouped by workflow (Daily ops, Planning, Insight, Audit). Each entry has a one-line description, a copy-paste shortcode example, and a note on filterable attributes. Also documents the common attributes (`type`, `location`, `days`, `date_filters`, `filter_<key>`) and the patterns to remember (case-sensitivity, bundle sharing, location defaults).

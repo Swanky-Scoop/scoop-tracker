@@ -4,14 +4,20 @@ import Indexer       from "../data/indexer.js";
 /**
  * Read-only listing of past batches, filterable by creation date.
  *
- * Shortcode:
- *   [scoop_grid type="BatchHistory"
- *               date_filters="created"
- *               filter_created="last_30_days"]
+ * Minimal shortcode (uses 48hr default):
+ *   [scoop_grid type="BatchHistory"]
  *
- * If date_filters / filter_created are omitted, the server defaults
- * to a `created` filter at last_48_hours (see scoop_bundle_date_filter_context
- * in includes/bundle-fetch.php and scoop_normalize_date_filter_preset).
+ * Override starting window:
+ *   [scoop_grid type="BatchHistory" date_filters="created" filter_created="last_7_days"]
+ *
+ * Both `date_filters` and `filter_created` are optional. When omitted:
+ *   - JS model defaults `dateFilters` to `['created']` and the value to `last_48_hours`.
+ *   - Server-side, scoop_bundle_date_filter_context also defaults a missing
+ *     date_filters to ['created'] when BatchHistory is requested, and
+ *     scoop_normalize_date_filter_preset falls back to 'last_48_hours'.
+ *
+ * Filter widget at the top of the grid lets the user switch between
+ * 24h / 48h / 7d / 30d at runtime; selection triggers a fresh bundle fetch.
  *
  * Columns: Created, Flavor, Tubs (count), Author. Sorted newest-first.
  */
@@ -67,10 +73,10 @@ export default class BatchHistoryGridModel extends BaseGridModel {
       label: this._dateFilterLabel(key),
       type: 'select',
       mode: 'server',
-      default: 'last_7_days',
+      default: 'last_48_hours',
       options: [
         { key: 'last_24_hours', label: 'Last 24 hours' },
-        { key: 'last_7_days', label: 'Last 48 hours' },
+        { key: 'last_48_hours', label: 'Last 48 hours' },
         { key: 'last_7_days',   label: 'Last 7 days'   },
         { key: 'last_30_days',  label: 'Last 30 days'  },
       ],
@@ -94,7 +100,7 @@ export default class BatchHistoryGridModel extends BaseGridModel {
 
   getFilterValue(key) {
     const k = this._normalizeDateFilterKey(key);
-    return this.filterValues[k] ?? 'last_7_days';
+    return this.filterValues[k] ?? 'last_48_hours';
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -117,7 +123,7 @@ export default class BatchHistoryGridModel extends BaseGridModel {
       if (nk) out[nk] = this._normalizePreset(src[k]);
     });
     this.dateFilters.forEach(k => {
-      if (out[k] == null) out[k] = 'last_7_days';
+      if (out[k] == null) out[k] = 'last_48_hours';
     });
     return out;
   }
@@ -127,9 +133,9 @@ export default class BatchHistoryGridModel extends BaseGridModel {
   }
 
   _normalizePreset(value) {
-    const allowed = ['last_24_hours', 'last_7_days', 'last_7_days', 'last_30_days'];
+    const allowed = ['last_24_hours', 'last_48_hours', 'last_7_days', 'last_30_days'];
     const v = String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
-    return allowed.includes(v) ? v : 'last_7_days';
+    return allowed.includes(v) ? v : 'last_48_hours';
   }
 
   _dateFilterLabel(key) {
