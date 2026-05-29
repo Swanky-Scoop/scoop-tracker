@@ -497,10 +497,10 @@ export default class DateActivityGridModel extends BaseGridModel{
   _dateActivityBadges(items = [], flavorId, slotWarnings = new Set()) {
     const summary = this._summaryForFlavor(items);
     const badges = [
-      { key: 'created', text: `${summary.created} <u>created</u>` },
-      { key: 'opened',  text: `opened ${summary.opened}` },
-      { key: 'emptied', text: `emptied ${summary.emptied}` },
-      { key: 'active',  text: `active ${summary.active}` },
+      { key: 'created', text: `${summary.created} created` },
+      { key: 'opened',  text: `${summary.opened} opened` },
+      { key: 'emptied', text: `${summary.emptied} emptied` },
+      { key: 'active',  text: `${summary.active} active` },
     ];
 
     return badges;

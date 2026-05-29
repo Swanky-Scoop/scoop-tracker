@@ -807,6 +807,7 @@ table.zGRID tr .badges {
     text-align: center;
     border-top-left-radius: 0.45rem;
     min-width: 4.5rem;
+    text-align: right;
     font-weight: bold;
   }
 }
