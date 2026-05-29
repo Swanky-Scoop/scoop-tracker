@@ -39,25 +39,21 @@ function scoop_dairy_allergy_scan(): array {
     $to_add = [];
     $to_remove = [];
 
-    // Fetch all flavors. Pods find() returns an array of posts.
-    $flavors = $pod->find(['limit' => -1, 'orderby' => 'post_title ASC']);
-    if (!$flavors) {
-      $flavors = [];
-    }
+    // Set up the query and iterate using fetch()
+    $pod->find(['limit' => -1, 'orderby' => 'post_title ASC']);
 
-    foreach ($flavors as $flavor_post) {
-      $flavor_id = (int) $flavor_post->ID;
-      $flavor_title = (string) $flavor_post->post_title;
+    while ($pod->fetch()) {
+      $flavor_id = (int) $pod->id();
+      $flavor_title = (string) ($pod->row['post_title'] ?? '');
 
       if (empty($flavor_title)) {
         continue;
       }
 
       // Load the flavor pod to read allergens.
-      $flavor_pod = pods('flavor', $flavor_id);
-      $current_allergen_ids = scoop_dairy_allergy_get_allergen_ids($flavor_pod);
+      $current_allergen_ids = scoop_dairy_allergy_get_allergen_ids($pod);
 
-      $should_have_dairy = !preg_match('/\)|sorbet$/i', $flavor_title);
+      $should_have_dairy = !preg_match('/\)$|sorbet/i', $flavor_title);
       $has_dairy = in_array(1204, $current_allergen_ids, true);
 
       if ($should_have_dairy && !$has_dairy) {
@@ -148,10 +144,10 @@ function scoop_dairy_allergy_apply(array $scan_result, bool $remove_from_sorbet 
 /**
  * Get allergen post IDs (not slugs) for a flavor pod.
  *
- * @param \Pod $flavor_pod  A loaded flavor pod
+ * @param \Pods $flavor_pod  A loaded/iterated flavor Pods object
  * @return int[]  Array of allergen post IDs
  */
-function scoop_dairy_allergy_get_allergen_ids(\Pod $flavor_pod): array {
+function scoop_dairy_allergy_get_allergen_ids($flavor_pod): array {
 
   try {
     $allergen_posts = $flavor_pod->field('allergens');
@@ -159,21 +155,9 @@ function scoop_dairy_allergy_get_allergen_ids(\Pod $flavor_pod): array {
       return [];
     }
 
-    if (!is_array($allergen_posts)) {
-      $allergen_posts = [$allergen_posts];
-    }
+    // Use existing scoop helper to extract IDs from relationship data
+    return scoop_relation_ids_out($allergen_posts);
 
-    $ids = [];
-    foreach ($allergen_posts as $allergen_post) {
-      if (is_object($allergen_post) && isset($allergen_post->ID)) {
-        $ids[] = (int) $allergen_post->ID;
-      } elseif (is_array($allergen_post) && isset($allergen_post['ID'])) {
-        $ids[] = (int) $allergen_post['ID'];
-      } elseif (is_int($allergen_post)) {
-        $ids[] = $allergen_post;
-      }
-    }
-    return array_unique($ids);
   } catch (\Throwable $e) {
     return [];
   }

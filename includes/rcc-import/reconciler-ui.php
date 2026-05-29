@@ -49,7 +49,7 @@ function scoop_render_reconciler_page() {
         @set_time_limit(0);
         ignore_user_abort(true);
         $scan_result = isset($_POST['scoop_rcc_dairy_allergy_scan'])
-          ? maybe_unserialize(wp_unslash($_POST['scoop_rcc_dairy_allergy_scan']))
+          ? json_decode(wp_unslash($_POST['scoop_rcc_dairy_allergy_scan']), true)
           : scoop_dairy_allergy_scan();
         $remove_from_sorbet = !empty($_POST['scoop_rcc_dairy_remove_sorbet']);
         $apply_result = scoop_dairy_allergy_apply($scan_result, $remove_from_sorbet);
