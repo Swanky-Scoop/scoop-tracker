@@ -475,9 +475,9 @@ export default class DateActivityGridModel extends BaseGridModel{
   _flavorGroupLabel(flavorId, items = [], slotWarnings = new Set()) {
     const base = this.labelFromMap(Number(flavorId), this._flavorsById) ?? `Flavor ${flavorId}`;
     const summary = this._summaryForFlavor(items);
-    const slotNote = slotWarnings.has(Number(flavorId)) ? ' · slot needs opened tub' : '';
+    const slotNote = slotWarnings.has(Number(flavorId)) ? ' · slotted for front' : '';
 
-    return `${base} · Created ${summary.created} · Opened ${summary.opened} · Emptied ${summary.emptied} · Active ${summary.active}${slotNote}`;
+    return `${base}  ${slotNote}`;
   }
 
   _summaryForFlavor(items = []) {
@@ -497,15 +497,11 @@ export default class DateActivityGridModel extends BaseGridModel{
   _dateActivityBadges(items = [], flavorId, slotWarnings = new Set()) {
     const summary = this._summaryForFlavor(items);
     const badges = [
-      { key: 'created', text: `created ${summary.created}` },
+      { key: 'created', text: `${summary.created} <u>created</u>` },
       { key: 'opened',  text: `opened ${summary.opened}` },
       { key: 'emptied', text: `emptied ${summary.emptied}` },
       { key: 'active',  text: `active ${summary.active}` },
     ];
-
-    if (slotWarnings.has(Number(flavorId))) {
-      badges.push({ key: 'warning', text: 'slot/no opened tub' });
-    }
 
     return badges;
   }
