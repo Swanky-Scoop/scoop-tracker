@@ -108,9 +108,24 @@ body * {
       width: 4rem;
       display: flex;
       flex-direction: column;
-      font-size: 0.67em;
+      font-size: 0.5em;
       background-color: var(--color-green-dark);
-      color: var(--color-text-white);x`
+      color: var(--color-text-white) !important;
+      text-align: center;
+      box-shadow: 0 0 0 1px var(--color-green-darkest), 0.125rem 0.125rem 0.25rem var(--shadow-dark);
+      border-radius: .125rem;
+
+      &::first-letter{
+        font-size: 2rem;
+        font-weight: bold;
+        padding: .25rem;
+        opacity: .5;
+        filter:saturate(.5);
+        display: block;
+        mix-blend-mode: multiply;
+        line-height: 2.75rem;
+        text-shadow: 0 1px 0.125rem var(--color-green-darkest);
+      }
     }
    }
 
