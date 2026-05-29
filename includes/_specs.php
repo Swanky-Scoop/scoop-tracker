@@ -3,7 +3,7 @@
 function scoop_bundle_specs(): array {
   
   $specs = [
-    'Cabinet'      => ['needs' => ['cabinet','slot','flavor']],
+    'Cabinet'      => ['needs' => ['cabinet','slot','flavor','tub']],
     'FlavorTub'    => ['needs' => ['tub','flavor','use','slot']],
     'Batch'        => ['needs' => ['flavor']],
     'BatchHistory' => ['needs' => ['batch','flavor']],

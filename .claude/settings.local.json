@@ -19,7 +19,9 @@
       "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/_config.php\")",
       "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/csv.php\")",
       "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/mapper.php\")",
-      "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/importer.php\")"
+      "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/importer.php\")",
+      "Bash(node -e \"const d=require\\('./_domain.json'\\); const tubs=d.tub||d.tubs||[]; console.log\\('count:',tubs.length\\); console.log\\('first 3:',JSON.stringify\\(tubs.slice\\(0,3\\),null,2\\)\\);\")",
+      "PowerShell($d = Get-Content -Raw _domain.json | ConvertFrom-Json; $tubs = if \\($d.tub\\) { $d.tub } else { $d.tubs }; \"count: $\\($tubs.Count\\)\"; $tubs | Select-Object -First 3 | ConvertTo-Json -Depth 5)"
     ]
   }
 }
