@@ -793,9 +793,10 @@ table.zGRID .collapsible.closed {
 table.zGRID tr .badges {
   font-size: 0.6rem;
   position: absolute;
-  display: block;
+  display: flex;
   right: 0;
   bottom: 0;
+  gap:.5em;
 
   & .badge {
     display: inline-block;
