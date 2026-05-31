@@ -187,6 +187,26 @@ html body {
           box-shadow: 0 0 0 1px var(--color-green-darkest), 0.125rem 0.125rem 0.25rem var(--shadow-dark);
           border-radius: .125rem;
           border:none;
+          font-size: 0;
+          line-height: 0;
+          color: var(--color-text-white) !important;
+          font-weight: normal;
+
+          &::before{
+            content: '🍨';
+            font-size: 2rem;
+            opacity: .5;
+            filter: saturate(.5);
+            line-height: 2.75rem;
+            text-shadow: 0 1px 0.125rem var(--color-green-darkest);
+            margin: -.5rem 0 .5rem;
+            display: block;
+          }
+          &::after{
+            content: 'New Batch';
+            font-size: 0.5rem;
+            color: var(--color-text-white) !important;
+          }
         }
       }
 
