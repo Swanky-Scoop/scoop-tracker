@@ -23,6 +23,11 @@ export default class BaseGridModel {
       this.columns = [];
       this.rows = [];
       this.rowGroups = [];
+
+      this.dateFormat = {
+        month: "numeric",
+        day:   "numeric",
+      };
       
       // Phase 1: Build columns from metadata (no domain needed)
       if (this.metaData) {
@@ -427,18 +432,29 @@ export default class BaseGridModel {
     return title ?? String(id);
   }
   
-  fillRowFromColumns(row, rowData, i) {
+  fillRowFromColumns(row, rowData, i, dateFormat = this.dateFormat) {
     for (const col of this.columns) {
       const key = col?.key;
       if (!key) continue;
 
       const raw = rowData?.[key];
       const id = Number(raw ?? 0);
+
+      let display = col.titleMap
+        ? this.titleFrom(id, col)
+        : raw ?? "";
+
+      if (col.type === 'datetime') {
+        const date = new Date(raw);
+        display = Number.isFinite(date.getTime())
+          ? date.toLocaleDateString('en-US', this.dateFormat)
+          : '';
+      }
       
       row[key] = {
         id,
         rowId:     rowData?.id || i,
-        display:   (col.titleMap) ? this.titleFrom(id, col) : raw ?? "",
+        display:   display,
         type:      col.type,
         colKey:    col.key,
         options:   this.getOptions  (id, col.key),   // ← Changed from col.type

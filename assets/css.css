@@ -812,6 +812,11 @@ table.zGRID tr .badges {
     font-weight: bold;
   }
 }
+.Cabinet table.zGRID tr .badges{
+  & .badge {
+    min-width: 1rem;
+  }
+}
 
 /* ============================================
    TABLE - SPECIAL COLUMNS

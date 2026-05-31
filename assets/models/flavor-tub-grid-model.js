@@ -169,7 +169,7 @@ export default class FlavorTubGridModel extends BaseGridModel{
   }
 
   _designationBadge(designations = []) {
-    const text = designations.length ? designations.join("/") : "none";
+    const text = designations.length ? designations.join("/") : "front";
     return {
       key: designations.length ? "designation" : "designation-none",
       text,
