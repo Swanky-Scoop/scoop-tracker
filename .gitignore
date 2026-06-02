@@ -1,4 +1,4 @@
-# Local-only / secret config
+n# Local-only / secret config
 .vscode/sftp.json
 .vscode/sftp.local.json
 

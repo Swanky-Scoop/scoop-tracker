@@ -2,12 +2,19 @@ import BaseGridModel from "./_base-grid-model.js";
 import Indexer       from "../data/indexer.js";
 
 export default class DateActivityGridModel extends BaseGridModel{
+
   constructor(name, domain, attrs = {}){
     super(name, null, attrs );
     this.filter = true;
     this.dateFilters = this._normalizeDateFilters(attrs?.dateFilters);
     this.filterValues = this._initialFilterValues(attrs?.filterValues, attrs?.modifiedRange);
     this.modifiedRange = this.filterValues.activity ?? 'last_48_hours';
+
+    this.dateFormat = {
+      month: "numeric",
+      day:   "numeric",
+    }; 
+
     this._build();
     if (domain) this.setDomain(domain);
   }
@@ -48,6 +55,13 @@ export default class DateActivityGridModel extends BaseGridModel{
   getFilterValue(key) {
     const normalized = this._normalizeDateFilterKey(key);
     return this.filterValues[normalized] ?? 'last_48_hours';
+  }
+
+  _formatDateTime(value) {
+    const time = this._parseDateValue(value);
+    if (!time) return '';
+
+    return new Intl.DateTimeFormat('en-US', this.dateFormat ).format(new Date(time));
   }
 
   _normalizeDateFilters(raw) {
@@ -152,7 +166,7 @@ export default class DateActivityGridModel extends BaseGridModel{
       getGroupBadges: (items, flavorId) => this._dateActivityBadges(items, flavorId, slotWarnings),
       makeRowId     : (item) => item.id,
       fillRow       : (row, item, i) => { this._fillActivityRow(row, item, i, slotWarnings); },
-      collapsed     : false,
+      collapsed     : true,
       groupType     : 'flavor',
       rowType       : 'activity',
       rowLabel      : 'activity',
@@ -301,7 +315,7 @@ export default class DateActivityGridModel extends BaseGridModel{
     if (!range) return null;
 
     const start = this._parseDateValue(range.start);
-    const end = this._parseDateValue(range.end);
+    const end   = this._parseDateValue(range.end);
 
     if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
     return { start, end };
@@ -473,11 +487,14 @@ export default class DateActivityGridModel extends BaseGridModel{
   }
 
   _flavorGroupLabel(flavorId, items = [], slotWarnings = new Set()) {
-    const base = this.labelFromMap(Number(flavorId), this._flavorsById) ?? `Flavor ${flavorId}`;
-    const summary = this._summaryForFlavor(items);
-    const slotNote = slotWarnings.has(Number(flavorId)) ? ' · slot needs opened tub' : '';
+    const author = this._authorSummary(items);
+    const modified = this._mostRecentModified(items);
+    const flavor = this.labelFromMap(Number(flavorId), this._flavorsById) ?? `Flavor ${flavorId}`;
+    const when = modified ? `on ${modified}` : '';
+    const base = `${author} changed ${flavor} ${when}`;
+    const slotNote = slotWarnings.has(Number(flavorId)) ? ' · slotted for front' : '';
 
-    return `${base} · Created ${summary.created} · Opened ${summary.opened} · Emptied ${summary.emptied} · Active ${summary.active}${slotNote}`;
+    return `${base}  ${slotNote}`;
   }
 
   _summaryForFlavor(items = []) {
@@ -497,16 +514,37 @@ export default class DateActivityGridModel extends BaseGridModel{
   _dateActivityBadges(items = [], flavorId, slotWarnings = new Set()) {
     const summary = this._summaryForFlavor(items);
     const badges = [
-      { key: 'created', text: `created ${summary.created}` },
-      { key: 'opened',  text: `opened ${summary.opened}` },
-      { key: 'emptied', text: `emptied ${summary.emptied}` },
-      { key: 'active',  text: `active ${summary.active}` },
+      { key: 'created', text: `${summary.created} created` },
+      { key: 'opened',  text: `${summary.opened} opened` },
+      { key: 'emptied', text: `${summary.emptied} emptied` },
+      { key: 'active',  text: `${summary.active} active` },
     ];
 
-    if (slotWarnings.has(Number(flavorId))) {
-      badges.push({ key: 'warning', text: 'slot/no opened tub' });
-    }
-
     return badges;
+  }
+
+  _authorSummary(items = []) {
+    const named = items
+      .map(item => ({ name: String(item.author_name || '').trim(), time: this._modifiedTime(item) }))
+      .filter(entry => entry.name);
+
+    if (!named.length) return '';
+
+    const mostRecent = named.reduce((latest, entry) => (entry.time > latest.time ? entry : latest));
+    const uniqueAuthors = new Set(named.map(entry => entry.name));
+    const text = uniqueAuthors.size > 1 ? `${mostRecent.name} +` : mostRecent.name;
+
+    return text;
+  }
+
+  _mostRecentModified(items = []) {
+    const times = items
+      .map(item => this._modifiedTime(item))
+      .filter(time => Number.isFinite(time) && time > 0);
+
+    if (!times.length) return '';
+
+    const date = new Date(Math.max(...times));
+    return Number.isFinite(date.getTime()) ? `${date.getMonth() + 1}/${date.getDate()}` : '';
   }
 }

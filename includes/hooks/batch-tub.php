@@ -40,6 +40,32 @@ if (!function_exists('scoop_guard')) {
   }
 }
 
+if (!function_exists('scoop_batch_elapsed_ms')) {
+  function scoop_batch_elapsed_ms(float $start): int {
+    return (int)round((microtime(true) - $start) * 1000);
+  }
+}
+
+if (!function_exists('scoop_batch_debug')) {
+  function scoop_batch_debug(string $msg): void {
+    if (function_exists('scoop_debug_log')) {
+      scoop_debug_log($msg);
+      return;
+    }
+    scoop_log($msg);
+  }
+}
+
+if (!function_exists('scoop_batch_title_for_data')) {
+  function scoop_batch_title_for_data(int $flavor_id, float $count): string {
+    $flavor_name = (string)get_the_title($flavor_id);
+    if ($flavor_name === '') return '';
+
+    $date_str = current_time('Y-m-d H:i');
+    return "{$flavor_name} {$date_str}_{$count}";
+  }
+}
+
 if (!function_exists('scoop_rel_id')) {
   /**
    * Extract a single related item ID from a Pods relationship field value.
@@ -117,19 +143,17 @@ function scoop_set_batch_title($pieces, $is_new_item) {
     return $pieces;
   }
 
-  $flavor_name = (string)get_the_title($flavor_id);
-  if ($flavor_name === '') {
-    scoop_log("scoop_set_batch_title: could not resolve flavor title id={$flavor_id}");
-    return $pieces;
-  }
-
   $count = 1;
   $raw_count = $pieces['fields']['count']['value'] ?? null;
   if (is_numeric($raw_count)) {
     $count = max(1, (float)$raw_count);
   }
-  $date_str   = current_time('Y-m-d H:i');
-  $this_title = "{$flavor_name} {$date_str}_{$count}";
+
+  $this_title = scoop_batch_title_for_data($flavor_id, $count);
+  if ($this_title === '') {
+    scoop_log("scoop_set_batch_title: could not resolve flavor title id={$flavor_id}");
+    return $pieces;
+  }
 
   $pieces['object_fields']['post_title']['value'] = $this_title;
 
@@ -155,10 +179,12 @@ function scoop_set_batch_title($pieces, $is_new_item) {
  */
 add_filter('pods_api_post_save_pod_item_batch', 'scoop_create_tubs_for_new_batch', 30, 3);
 function scoop_create_tubs_for_new_batch($pieces, $is_new_item, $id) {
-  $batch_id = (int)$id;
+  $batch_id = scoop_batch_saved_id($pieces, $id);
   if (!$batch_id || !function_exists('pods')) return $pieces;
 
   return scoop_guard("create_tubs_for_batch:{$batch_id}", function() use ($pieces, $batch_id) {
+    $request_start = microtime(true);
+    $lap_start = $request_start;
 
     // Skip if tub already exist
     $existing = pods('tub', [
@@ -169,6 +195,8 @@ function scoop_create_tubs_for_new_batch($pieces, $is_new_item, $id) {
       scoop_log("scoop_create_tubs_for_new_batch: batch {$batch_id} already has tub");
       return $pieces;
     }
+    scoop_batch_debug("batch {$batch_id}: existing tub check " . scoop_batch_elapsed_ms($lap_start) . "ms");
+    $lap_start = microtime(true);
 
     $batch = pods('batch', $batch_id);
     if (!$batch || !$batch->exists()) {
@@ -178,6 +206,7 @@ function scoop_create_tubs_for_new_batch($pieces, $is_new_item, $id) {
 
     $count     = (float)$batch->field('count');
     $flavor_id = (int)$batch->field('flavor.ID');
+    scoop_batch_debug("batch {$batch_id}: loaded batch count={$count} flavor={$flavor_id} in " . scoop_batch_elapsed_ms($lap_start) . "ms");
 
     if ($count <= 0) {
       scoop_log("scoop_create_tubs_for_new_batch: count<=0 for batch {$batch_id}");
@@ -198,52 +227,336 @@ function scoop_create_tubs_for_new_batch($pieces, $is_new_item, $id) {
       return $pieces;
     }
     
-    $fraction = fmod($count, 1);
-    if($fraction > 0){
-      $last = ceil($count);
-      $tub_frac_args = [
-        'post_title'  => "{$batch_title}|{$last}",
-        'batch'       => $batch_id,
-        'flavor'      => $flavor_id,
-        'index'       => $last,
-        'amount'      => $fraction,
-        'post_status' => 'publish',
-      ];
-      if ($location_id) $tub_frac_args['location'] = $location_id;
-      $new_tub_frac_id = pods_api()->save_pod_item([
-        'pod'  => 'tub',
-        'data' => $tub_frac_args,
-      ]);
-      scoop_log("created tub id={$new_tub_frac_id} batch={$batch_id} flavor={$flavor_id} index={$last} amount={$fraction}");
+    $GLOBALS['scoop_suppress_batch_tub_flavor_bump'][$batch_id] = true;
+    $GLOBALS['scoop_suppress_cache_bust'] = true;
+    $created_count = 0;
+    $lap_start = microtime(true);
+
+    $use_direct = defined('SCOOP_DIRECT_TUB_CREATE') ? (bool)SCOOP_DIRECT_TUB_CREATE : true;
+
+    try {
+      if ($use_direct) {
+        $created_count = count(scoop_create_batch_tubs_direct(
+          $batch_id, $flavor_id, $count, $location_id, $batch_title
+        ));
+      } else {
+        $created_count = scoop_create_batch_tubs_via_pods_api(
+          $batch_id, $flavor_id, $count, $location_id, $batch_title
+        );
+      }
+    } finally {
+      unset($GLOBALS['scoop_suppress_batch_tub_flavor_bump'][$batch_id]);
+      unset($GLOBALS['scoop_suppress_cache_bust']);
     }
-    
+    scoop_batch_debug("batch {$batch_id}: created {$created_count} tub rows in " . scoop_batch_elapsed_ms($lap_start) . "ms" . ($use_direct ? ' (direct)' : ' (pods-api)'));
 
-    for ($i = 1; $i <= $count; $i++) {
-      $tub_args = [
-        'post_title'  => "{$batch_title}|{$i}",
-        'batch'       => $batch_id,
-        'flavor'      => $flavor_id,
-        'index'       => $i,
-        'post_status' => 'publish',
-      ];
-      if ($location_id) $tub_args['location'] = $location_id;
+    // The per-tub save_post fires were suppressed above — bump the cache version
+    // once now so bundle/analytics caches invalidate cleanly.
+    scoop_cache_bust();
 
-      $new_tub_id = pods_api()->save_pod_item([
-        'pod'  => 'tub',
-        'data' => $tub_args,
+    if (function_exists('pods_api') && is_object(pods_api())) {
+      $lap_start = microtime(true);
+      pods_api()->save_pod_item([
+        'pod'  => 'flavor',
+        'id'   => $flavor_id,
+        'data' => ['modified_date' => current_time('mysql')],
       ]);
-
-      scoop_log("created tub id={$new_tub_id} batch={$batch_id} flavor={$flavor_id} index={$i}");
+      scoop_batch_debug("batch {$batch_id}: bumped flavor {$flavor_id} once in " . scoop_batch_elapsed_ms($lap_start) . "ms");
     }
 
     // Ensure batch is published (optional)
-    wp_update_post([
-      'ID'          => $batch_id,
-      'post_status' => 'publish',
-    ]);
+    if (get_post_status($batch_id) !== 'publish') {
+      $lap_start = microtime(true);
+      wp_update_post([
+        'ID'          => $batch_id,
+        'post_status' => 'publish',
+      ]);
+      scoop_batch_debug("batch {$batch_id}: publish update " . scoop_batch_elapsed_ms($lap_start) . "ms");
+    }
+
+    scoop_batch_debug("batch {$batch_id}: post-save hook total " . scoop_batch_elapsed_ms($request_start) . "ms");
 
     return $pieces;
   }, $pieces);
+}
+
+/**
+ * Direct-write tub creation. Bypasses pods_api()->save_pod_item() because that
+ * function's PodsField_Pick->save → PodsAPI->save_relationships chain runs one
+ * DB round-trip per relationship field per tub (~9s/tub on dev as of 2026-05-27).
+ *
+ * Three explicit wpdb writes per batch (no per-tub pods_api round-trips):
+ *   1) wp_insert_post() per tub — creates the WP post row.
+ *   2) One multi-row INSERT into wp_pods_tub for ALL tubs' scalar fields
+ *      (id, state, index, amount, created_on, changed_on). Sets state='Freezing'
+ *      as the default to match what the Pods-API path produces (observed empirically
+ *      on the working Birthday Cake batch 8354). The Pods field default does NOT
+ *      apply when we bypass Pods, so we set it explicitly.
+ *   3) One multi-row INSERT into wp_podsrel for batch + flavor + location
+ *      relationships across every tub.
+ *   4) do_action('pods_api_post_save_pod_item_tub', ...) per tub so downstream
+ *      listeners still fire (e.g. scoop_bump_flavor_modified_date_on_tub_save,
+ *      which is suppressed via the per-batch flag the caller sets).
+ *
+ * History — why we don't use pods('tub', $id)->save() here anymore:
+ *   The earlier version of this function (pre-2026-05-27 late) tried to write
+ *   scalars via pods('tub', $id)->save() after wp_insert_post(). That treated
+ *   the call as an UPDATE on an existing post, which means Pods field DEFAULTS
+ *   (state='Freezing', etc.) did NOT get applied — only the fields we passed in
+ *   $args were written. The result: tub rows landed in wp_pods_tub but with
+ *   state=NULL, which made them invisible to the FlavorTub grid's standard
+ *   `state != 'Emptied'` filter. The fix is to write every needed column
+ *   ourselves rather than rely on Pods to fill in defaults.
+ *
+ * Reverting to the safe (slow) Pods-API path:
+ *   In wp-config.php (above the "stop editing!" line) add:
+ *     define( 'SCOOP_DIRECT_TUB_CREATE', false );
+ *   That routes scoop_create_tubs_for_new_batch() to
+ *   scoop_create_batch_tubs_via_pods_api() instead. The Pods-API path is
+ *   ~10× slower per tub (each save() walks the relationship-save machinery)
+ *   but is the canonical safeguard: full field validation, all hooks fire,
+ *   defaults are applied. Use it any time the direct path's schema assumptions
+ *   feel risky.
+ *
+ * Assumes:
+ *   - Pods is in tables mode (per-Pod table wp_pods_<podname> exists with the
+ *     columns documented in the project README).
+ *   - Relationships go through wp_podsrel (the default in non-simple configs).
+ *   - The tub Pod's "state" field accepts 'Freezing' as a valid value (it does;
+ *     this matches what the Pods-API path emits).
+ *
+ * Caller is expected to have set:
+ *   $GLOBALS['scoop_suppress_batch_tub_flavor_bump'][$batch_id] = true;
+ *   $GLOBALS['scoop_suppress_cache_bust'] = true;
+ *
+ * @return int[] IDs of the newly created tubs.
+ */
+function scoop_create_batch_tubs_direct(int $batch_id, int $flavor_id, float $count, int $location_id, string $batch_title): array {
+  global $wpdb;
+
+  // Plan tub specs: 1 fractional (if count has a fractional part) + N whole tubs.
+  // amount = 1.00 for whole tubs to match the Pods-API path; the fractional tub
+  // takes its actual fraction value.
+  $fraction = fmod($count, 1);
+  $whole    = (int)floor($count);
+  $specs    = [];
+  if ($fraction > 0) {
+    $specs[] = ['index' => (int)ceil($count), 'amount' => (float)$fraction];
+  }
+  for ($i = 1; $i <= $whole; $i++) {
+    $specs[] = ['index' => $i, 'amount' => 1.00];
+  }
+  if (empty($specs)) return [];
+
+  // ── Step 1: insert wp_posts rows ──────────────────────────────────────────
+  $now_mysql    = current_time('mysql');
+  $now_gmt      = current_time('mysql', true);
+  $current_user = get_current_user_id() ?: 1;
+
+  $created = [];
+  $step_start = microtime(true);
+  foreach ($specs as $spec) {
+    $post_id = wp_insert_post([
+      'post_type'      => 'tub',
+      'post_title'     => "{$batch_title}|{$spec['index']}",
+      'post_status'    => 'publish',
+      'post_author'    => $current_user,
+      'post_date'      => $now_mysql,
+      'post_date_gmt'  => $now_gmt,
+      'comment_status' => 'closed',
+      'ping_status'    => 'closed',
+    ], true);
+
+    if (is_wp_error($post_id) || !$post_id) {
+      $err = is_wp_error($post_id) ? $post_id->get_error_message() : 'unknown';
+      scoop_batch_debug("scoop_create_batch_tubs_direct: wp_insert_post failed index={$spec['index']}: {$err}");
+      continue;
+    }
+
+    $created[] = [
+      'id'     => (int)$post_id,
+      'index'  => $spec['index'],
+      'amount' => $spec['amount'],
+    ];
+  }
+  scoop_batch_debug("batch {$batch_id}: wp_insert_post x" . count($created) . " in " . scoop_batch_elapsed_ms($step_start) . "ms");
+
+  if (empty($created)) return [];
+
+  // ── Step 2: one multi-row INSERT into wp_pods_tub ─────────────────────────
+  // This is the row that makes the tub visible to Pods queries. Writing it
+  // directly (rather than via pods('tub', $id)->save()) is what's new in
+  // 2026-05-27 late — see the history note in the docblock.
+  $tub_table = $wpdb->prefix . 'pods_tub';
+  $step_start = microtime(true);
+  $values    = [];
+  foreach ($created as $tub) {
+    $values[] = $wpdb->prepare(
+      '(%d, %s, %d, %f, %s, %s)',
+      $tub['id'], 'Freezing', $tub['index'], $tub['amount'], $now_mysql, $now_mysql
+    );
+  }
+  $sql = "INSERT INTO {$tub_table} (id, state, `index`, amount, created_on, changed_on) VALUES "
+       . implode(',', $values);
+  $result = $wpdb->query($sql);
+  if ($result === false) {
+    scoop_batch_debug("scoop_create_batch_tubs_direct: wp_pods_tub bulk insert FAILED: " . $wpdb->last_error);
+  } else {
+    scoop_batch_debug("batch {$batch_id}: wp_pods_tub bulk insert {$result} rows in " . scoop_batch_elapsed_ms($step_start) . "ms");
+  }
+
+  // ── Step 3: bulk INSERT relationships into wp_podsrel ─────────────────────
+  // Pods stores BIDIRECTIONAL relationships as two rows — one per direction.
+  // For each tub we write up to SIX rows: tub→batch, tub→flavor, tub→location
+  // (the forward directions) AND batch.tubs, flavor.tubs, location.tubs (the
+  // reverse directions, so the batch / flavor / location items can list their
+  // tubs without a JOIN-back). Skipping the reverse rows is what made batch
+  // 8394 (Tomato Sorbet, 2026-05-27) show no tubs in wp-admin even though all
+  // 12 tubs had a back-reference to the batch. The audit log writes its own
+  // inventory_change.tubs reverse; we don't have to.
+  $tub_pod = pods_api()->load_pod(['name' => 'tub']);
+  $tub_pod_id     = (int)($tub_pod['id'] ?? 0);
+  $field_batch    = (int)($tub_pod['fields']['batch']['id']    ?? 0);
+  $field_flavor   = (int)($tub_pod['fields']['flavor']['id']   ?? 0);
+  $field_location = (int)($tub_pod['fields']['location']['id'] ?? 0);
+
+  if ($tub_pod_id && $field_batch && $field_flavor) {
+    $batch_pod    = pods_api()->load_pod(['name' => 'batch']);
+    $flavor_pod   = pods_api()->load_pod(['name' => 'flavor']);
+    $location_pod = pods_api()->load_pod(['name' => 'location']);
+
+    $batch_pod_id    = (int)($batch_pod['id']    ?? 0);
+    $flavor_pod_id   = (int)($flavor_pod['id']   ?? 0);
+    $location_pod_id = (int)($location_pod['id'] ?? 0);
+
+    // Reverse-direction field IDs — the "tubs" field on each related Pod.
+    $batch_tubs_field    = (int)($batch_pod['fields']['tubs']['id']    ?? 0);
+    $flavor_tubs_field   = (int)($flavor_pod['fields']['tubs']['id']   ?? 0);
+    $location_tubs_field = (int)($location_pod['fields']['tubs']['id'] ?? 0);
+
+    $podsrel = $wpdb->prefix . 'podsrel';
+    $values  = [];
+
+    $step_start = microtime(true);
+    foreach ($created as $tub) {
+      // Forward: tub.batch
+      $values[] = $wpdb->prepare(
+        '(%d, %d, %d, %d, %d, %d)',
+        $tub_pod_id, $field_batch, $tub['id'], $batch_pod_id, $batch_id, 0
+      );
+      // Reverse: batch.tubs
+      if ($batch_tubs_field) {
+        $values[] = $wpdb->prepare(
+          '(%d, %d, %d, %d, %d, %d)',
+          $batch_pod_id, $batch_tubs_field, $batch_id, $tub_pod_id, $tub['id'], 0
+        );
+      }
+      // Forward: tub.flavor
+      $values[] = $wpdb->prepare(
+        '(%d, %d, %d, %d, %d, %d)',
+        $tub_pod_id, $field_flavor, $tub['id'], $flavor_pod_id, $flavor_id, 0
+      );
+      // Reverse: flavor.tubs
+      if ($flavor_tubs_field) {
+        $values[] = $wpdb->prepare(
+          '(%d, %d, %d, %d, %d, %d)',
+          $flavor_pod_id, $flavor_tubs_field, $flavor_id, $tub_pod_id, $tub['id'], 0
+        );
+      }
+      if ($field_location && $location_pod_id && $location_id) {
+        // Forward: tub.location
+        $values[] = $wpdb->prepare(
+          '(%d, %d, %d, %d, %d, %d)',
+          $tub_pod_id, $field_location, $tub['id'], $location_pod_id, $location_id, 0
+        );
+        // Reverse: location.tubs
+        if ($location_tubs_field) {
+          $values[] = $wpdb->prepare(
+            '(%d, %d, %d, %d, %d, %d)',
+            $location_pod_id, $location_tubs_field, $location_id, $tub_pod_id, $tub['id'], 0
+          );
+        }
+      }
+    }
+    $sql = "INSERT INTO {$podsrel} (pod_id, field_id, item_id, related_pod_id, related_item_id, weight) VALUES "
+         . implode(',', $values);
+    $result = $wpdb->query($sql);
+    if ($result === false) {
+      scoop_batch_debug("scoop_create_batch_tubs_direct: wp_podsrel bulk insert FAILED: " . $wpdb->last_error);
+    } else {
+      scoop_batch_debug("batch {$batch_id}: wp_podsrel bulk insert {$result} rows (incl reverse) in " . scoop_batch_elapsed_ms($step_start) . "ms");
+    }
+  } else {
+    scoop_batch_debug("scoop_create_batch_tubs_direct: WARNING — could not resolve tub/batch/flavor field IDs; relationships not written");
+  }
+
+  // ── Step 4: manually fire pods_api_post_save_pod_item_tub ─────────────────
+  // Downstream listeners (scoop_bump_flavor_modified_date_on_tub_save and
+  // anything added later) expect this hook to fire per-tub. The flavor bump
+  // is suppressed via the per-batch flag the caller sets, so this is a no-op
+  // for that one — but firing it keeps the contract honest.
+  $step_start = microtime(true);
+  foreach ($created as $tub) {
+    $fake_pieces = ['fields' => [], 'fields_active' => [], 'id' => $tub['id']];
+    do_action('pods_api_post_save_pod_item_tub', $fake_pieces, true, $tub['id']);
+  }
+  scoop_batch_debug("batch {$batch_id}: post-save hooks fired x" . count($created) . " in " . scoop_batch_elapsed_ms($step_start) . "ms");
+
+  return array_column($created, 'id');
+}
+
+/**
+ * Original per-tub pods_api()->save_pod_item() path, kept as a fallback for
+ * installs where the direct-write assumptions don't hold. Toggle via
+ * define('SCOOP_DIRECT_TUB_CREATE', false) in wp-config.php.
+ *
+ * @return int Count of tubs successfully created.
+ */
+function scoop_create_batch_tubs_via_pods_api(int $batch_id, int $flavor_id, float $count, int $location_id, string $batch_title): int {
+  $fraction = fmod($count, 1);
+  $created_count = 0;
+
+  if ($fraction > 0) {
+    $last = ceil($count);
+    $tub_frac_args = [
+      'post_title'  => "{$batch_title}|{$last}",
+      'batch'       => $batch_id,
+      'flavor'      => $flavor_id,
+      'index'       => $last,
+      'amount'      => $fraction,
+      'post_status' => 'publish',
+    ];
+    if ($location_id) $tub_frac_args['location'] = $location_id;
+    $new_tub_frac_id = pods_api()->save_pod_item(['pod' => 'tub', 'data' => $tub_frac_args]);
+    scoop_log("created tub id={$new_tub_frac_id} batch={$batch_id} flavor={$flavor_id} index={$last} amount={$fraction}");
+    if ($new_tub_frac_id) $created_count++;
+  }
+
+  for ($i = 1; $i <= $count; $i++) {
+    $tub_args = [
+      'post_title'  => "{$batch_title}|{$i}",
+      'batch'       => $batch_id,
+      'flavor'      => $flavor_id,
+      'index'       => $i,
+      'post_status' => 'publish',
+    ];
+    if ($location_id) $tub_args['location'] = $location_id;
+    $new_tub_id = pods_api()->save_pod_item(['pod' => 'tub', 'data' => $tub_args]);
+    scoop_log("created tub id={$new_tub_id} batch={$batch_id} flavor={$flavor_id} index={$i}");
+    if ($new_tub_id) $created_count++;
+  }
+
+  return $created_count;
+}
+
+function scoop_batch_saved_id($pieces, $id = 0): int {
+  if (!empty($id)) return (int)$id;
+  if (!empty($pieces['id'])) return (int)$pieces['id'];
+  if (!empty($pieces['params']['id'])) return (int)$pieces['params']['id'];
+  if (isset($pieces['params']) && is_object($pieces['params']) && !empty($pieces['params']->id)) {
+    return (int)$pieces['params']->id;
+  }
+  return 0;
 }
 
 /**
@@ -259,6 +572,11 @@ function scoop_bump_flavor_modified_date_on_tub_save($pieces, $is_new_item, $id)
 
     $tub = pods('tub', $tub_id);
     if (!$tub || !$tub->exists()) return $pieces;
+
+    $batch_id = (int)$tub->field('batch.ID');
+    if ($batch_id > 0 && !empty($GLOBALS['scoop_suppress_batch_tub_flavor_bump'][$batch_id])) {
+      return $pieces;
+    }
 
     $flavor_id = (int)$tub->field('flavor.ID');
     if (!$flavor_id) return $pieces;

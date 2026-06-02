@@ -115,7 +115,7 @@ function scoop_date_filter_range_for_preset( string $preset ): array {
   $end_ts  = time();
   $start_ts = $end_ts - ( $presets[ $preset ] ?? $presets['last_48_hours'] );
   $format_date = function ( int $ts ): string {
-    return function_exists( 'wp_date' ) ? wp_date( 'Y-m-d H:i:s', $ts ) : date( 'Y-m-d H:i:s', $ts );
+    return function_exists( 'wp_date' ) ? wp_date( 'c', $ts ) : date( 'c', $ts );
   };
 
   return [
@@ -132,6 +132,9 @@ function scoop_bundle_date_filter_context( \WP_REST_Request $req, array $request
 
   if ( empty( $keys ) && in_array( 'DateActivity', $requesting_types, true ) ) {
     $keys = [ 'activity' ];
+  }
+  if ( empty( $keys ) && in_array( 'BatchHistory', $requesting_types, true ) ) {
+    $keys = [ 'created' ];
   }
 
   $ranges = [];
@@ -172,7 +175,7 @@ function scoop_date_filter_value_in_range( $value, array $range ): bool {
   } else {
     $ts = strtotime( $candidate );
     if ( ! $ts ) return false;
-    $candidate = function_exists( 'wp_date' ) ? wp_date( 'Y-m-d H:i:s', $ts ) : date( 'Y-m-d H:i:s', $ts );
+    $candidate = function_exists( 'wp_date' ) ? wp_date( 'c', $ts ) : date( 'c', $ts );
   }
 
   return $candidate >= $range['start'] && $candidate <= $range['end'];
@@ -213,6 +216,12 @@ function scoop_tub_date_filter_sql_clauses( array $date_filters, array $ranges )
   return $clauses;
 }
 
+function scoop_datetime_out( $v ): string {
+  if ( scoop_nodate( $v ) ) return '';
+
+  return mysql2date( 'c', (string) $v, false ) ?: '';
+}
+
 function scoop_cast( $v, $desc ) {
   $type = scoop_field_type( $desc );
   switch ( $type ) {
@@ -222,6 +231,7 @@ function scoop_cast( $v, $desc ) {
     case 'float':      return ( is_array( $v ) || is_object( $v ) ) ? 0.0 : (float) $v;
     case 'string':     return scoop_text_out( $v );
     case 'bool':       return (bool) $v;
+    case 'datetime':   return scoop_datetime_out( $v );
     default:           return $v;
   }
 }
@@ -265,7 +275,7 @@ function scoop_classify_fetch_fields( array $spec_fields ): array {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only = false ): array {
-
+  error_log( "Fetching entities of type '{$key}' with context: " . json_encode( $ctx ) );
   $specs = scoop_entity_specs();
   if ( empty( $specs[ $key ] ) ) return [];
 
@@ -340,6 +350,26 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     }
   }
 
+  if ( $key === 'batch' ) {
+    // Date-range filter for the BatchHistory grid. Defaults to the 'created'
+    // filter key (set in scoop_bundle_date_filter_context above), bound to
+    // t.post_date. If no filter is enabled, fall back to "1=0" so we never
+    // ship every batch ever made — the grid is intended to be windowed.
+    $requesting_types   = $ctx['requesting_types'] ?? [];
+    $has_batch_history  = in_array( 'BatchHistory', $requesting_types, true );
+    $date_filters       = $ctx['date_filters'] ?? [];
+    $date_ranges        = $ctx['date_filter_ranges'] ?? [];
+
+    if ( $has_batch_history ) {
+      if ( in_array( 'created', $date_filters, true ) ) {
+        $created_clause  = scoop_date_filter_sql_clause( 't.post_date', $date_ranges['created'] ?? [] );
+        $where_clauses[] = $created_clause !== '' ? $created_clause : '1=0';
+      } else {
+        $where_clauses[] = '1=0';
+      }
+    }
+  }
+
   $find_params = [
     'limit'   => -1,
     'orderby' => 'post_date',
@@ -370,30 +400,29 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
       $type = scoop_field_type( $desc );
       $raw  = $pod->row[ $field ] ?? null;
 
-      if ( $type === 'datetime' && scoop_nodate( $raw ) ) continue;
-
+      //if ( $type === 'datetime' && scoop_nodate( $raw ) ) continue;
+     // error_log( "Also Pre-Processing post field '{$field}' of type '{$desc}' " );
       $row[ $field ] = scoop_cast( $raw, $desc );
     }
 
     // Relationship + unknown-typed fields — resolved by Pods
     foreach ( $needs_field as $field => $desc ) {
+      
+      //error_log( "==> Processing field '{$field}' of type '{$desc}' for {$key} ID {$id}" );
       $row[ $field ] = scoop_cast( $pod->field( $field ), $desc );
     }
 
     // Post fields from wp_posts columns already in $pod->row.
     // post_modified and post_date are omitted when zero, same as spec datetime fields.
     foreach ( $post_fields as $field => $type ) {
+      error_log( "Processing post field '{$field}' of type '{$type}' for {$key} ".($pod->row[$field] ?? 'null') );
       if ( $field === 'author_name' ) {
         // get_the_author_meta() caches per unique author — cheap for a small staff
         $row['author_name'] = scoop_text_out(
           get_the_author_meta( 'display_name', (int) ( $pod->row['post_author'] ?? 0 ) )
         );
-      } elseif ( $field === 'post_modified' ) {
-        $val = $pod->row['post_modified'] ?? null;
-        if ( ! scoop_nodate( $val ) ) $row['post_modified'] = $val;
-      } elseif ( $field === 'post_date' ) {
-        $val = $pod->row['post_date'] ?? null;
-        if ( ! scoop_nodate( $val ) ) $row['post_date'] = $val;
+      } else{
+        $row[ $field ] = scoop_cast( $pod->field( $field ), $type );
       }
     }
 

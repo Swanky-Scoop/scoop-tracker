@@ -56,6 +56,32 @@ function scoop_create_pod_item(string $pod_name, array $allowed_fields, array $d
     $clean[$k] = scoop_coerce_value($k, $v);
   }
 
+  if ($pod_name === 'batch') {
+    $flavor_id = function_exists('scoop_rel_id') ? scoop_rel_id($clean['flavor'] ?? 0) : (int)($clean['flavor'] ?? 0);
+    $count = isset($clean['count']) && is_numeric($clean['count']) ? (float)$clean['count'] : 0;
+
+    if ($flavor_id <= 0) {
+      return new WP_Error('batch_missing_flavor', 'Batch create requires a flavor.');
+    }
+    if ($count <= 0) {
+      return new WP_Error('batch_missing_count', 'Batch create requires a positive count.');
+    }
+
+    $clean['flavor'] = $flavor_id;
+    $clean['count'] = $count;
+
+    if (function_exists('scoop_batch_title_for_data')) {
+      $title = scoop_batch_title_for_data($flavor_id, $count);
+      if ($title !== '') {
+        $clean['post_title'] = $title;
+        $clean['post_name'] = sanitize_title($title);
+        $clean['post_status'] = 'publish';
+      }
+    }
+  } elseif (empty($clean)) {
+    return new WP_Error('create_empty_payload', 'Create failed: no writeable fields were provided.');
+  }
+
   $params = ['pod' => $pod_name, 'data' => $clean];
   $id = pods_api()->save_pod_item($params);
 

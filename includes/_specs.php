@@ -3,9 +3,10 @@
 function scoop_bundle_specs(): array {
   
   $specs = [
-    'Cabinet'      => ['needs' => ['cabinet','slot','flavor']],
+    'Cabinet'      => ['needs' => ['cabinet','slot','flavor','tub']],
     'FlavorTub'    => ['needs' => ['tub','flavor','use','slot']],
     'Batch'        => ['needs' => ['flavor']],
+    'BatchHistory' => ['needs' => ['batch','flavor']],
     'Closeout'     => ['needs' => ['flavor','use']],
     'DateActivity' => ['needs' => ['tub','inventory_change','flavor','use','location','slot','cabinet']],
   ];
@@ -18,7 +19,6 @@ function scoop_get_entity_spec_keys(string $bundle_key): array {
   $specs = scoop_bundle_specs();
   
   if (!isset($specs[$bundle_key])) {
-    error_log("🔍 TRACE: WARNING - Bundle key not found: $bundle_key");
     return [];
   }
   
@@ -190,6 +190,24 @@ function scoop_entity_specs(string $key = ''): array {
         'writeable' => []
       ],
 
+      // Read-only batch entity used by the BatchHistory grid.
+      // Date filter on t.post_date is applied in scoop_fetch_entities() below
+      // when BatchHistory is among the requested grid types.
+      'batch' => [
+        'post_type' => 'batch',
+        'pod'       => 'batch',
+        'title'     => true,
+        'fields'    => [
+          'count'  => ['data_type' => 'float'],
+          'flavor' => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'flavor'],
+        ],
+        'post_fields' => [
+          'author_name' => 'string',
+          'post_date'   => 'datetime',
+        ],
+        'writeable' => []
+      ],
+
       'use' => [
         'post_type' => 'use',
         'pod'       => 'use',
@@ -212,11 +230,26 @@ function scoop_entity_specs(string $key = ''): array {
         ],
         'writeable' => []
       ],
+
+      // Closeout — single-row create form (mode='create' in _config.php).
+      // Mirrors the field list in scoop_closeouts_allowed_fields().
+      'closeout' => [
+        'post_type' => 'closeout',
+        'pod'       => 'closeout',
+        'title'     => true,
+        'fields'    => [
+          'tubs_emptied' => ['data_type' => 'float',  'control' => 'text'],
+          'flavor'       => ['data_type' => 'int',    'control' => 'find', 'titleMap' => 'flavor'],
+          'use'          => ['data_type' => 'int',    'control' => 'find', 'titleMap' => 'use'],
+          'location'     => ['data_type' => 'int',    'control' => 'find', 'titleMap' => 'location', 'hidden' => true],
+          'order'        => ['data_type' => 'int',    'hidden' => true],
+        ],
+        'writeable' => ['tubs_emptied', 'flavor', 'use', 'location', 'order'],
+      ],
     ];
   } // end cache build
 
   if ( $key === '' ) return $cache;
-
   if ( ! isset( $cache[ $key ] ) ) {
     error_log( "scoop_entity_specs: WARNING - key not found: {$key}" );
     return [];

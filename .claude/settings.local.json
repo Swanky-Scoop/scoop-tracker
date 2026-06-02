@@ -11,7 +11,17 @@
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" run view 25900951883 --log)",
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" run view 25900894541 --log)",
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" run view 25903207799 --log-failed)",
-      "Bash(/c/Program Files/GitHub CLI/gh.exe secret *)"
+      "Bash(/c/Program Files/GitHub CLI/gh.exe secret *)",
+      "PowerShell($phps = Get-ChildItem -Path \"$env:LOCALAPPDATA\\\\Programs\\\\Local\\\\resources\\\\extraResources\" -Recurse -Filter \"php.exe\" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName; $phps | Select-Object -First 5)",
+      "PowerShell(Get-ChildItem -Path \"$env:LOCALAPPDATA\\\\Programs\\\\Local\\\\resources\\\\extraResources\\\\lightning-services\" -Recurse -Filter \"mysqldump.exe\" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)",
+      "Bash(grep -E \"^CREATE TABLE \\\\`wp_pods\" \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/schema.sql\")",
+      "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/admin-menu.php\")",
+      "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/_config.php\")",
+      "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/csv.php\")",
+      "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/mapper.php\")",
+      "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/importer.php\")",
+      "Bash(node -e \"const d=require\\('./_domain.json'\\); const tubs=d.tub||d.tubs||[]; console.log\\('count:',tubs.length\\); console.log\\('first 3:',JSON.stringify\\(tubs.slice\\(0,3\\),null,2\\)\\);\")",
+      "PowerShell($d = Get-Content -Raw _domain.json | ConvertFrom-Json; $tubs = if \\($d.tub\\) { $d.tub } else { $d.tubs }; \"count: $\\($tubs.Count\\)\"; $tubs | Select-Object -First 3 | ConvertTo-Json -Depth 5)"
     ]
   }
 }

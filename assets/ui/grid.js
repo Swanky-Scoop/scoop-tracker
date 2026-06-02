@@ -133,7 +133,8 @@ export default class Grid extends El{
   _build(){
     const el = this.el;
     this.FORM   = el( 'form',  { classes:['zGRID-form'] } );
-    this.FILTERS = el( 'div',   { classes:['gridFilters'] } );
+    this.TOGGLE = el("button", {text:"x", classes:["gridToggle"] } );
+    this.FILTERS = el( 'div',   { classes:['gridFilters', 'empty'] } );
     this.SUBMIT = el( 'button',{ classes:['save'], text : 'save', attrs:{ type:'submit' }  }  );
     this.TABLE  = el( 'table', { classes:['zGRID'] } );
     this.THEAD  = el( 'thead' );
@@ -261,11 +262,12 @@ export default class Grid extends El{
 
     const defs = typeof state?.getFilterDefs === 'function' ? state.getFilterDefs() : [];
     if (!defs.length) {
-      this.FILTERS.hidden = true;
+      this.FILTERS.remove();
       return;
     }
 
     this.FILTERS.hidden = false;
+    this.FILTERS.classList.remove('empty');
 
     defs.forEach(def => {
       if (def?.type !== 'select') return;
@@ -338,6 +340,7 @@ export default class Grid extends El{
     if (!this.FORM.contains(this.TABLE)) this.FORM.append(this.TABLE);
     if (!this.FORM.contains(this.SUBMIT)) this.FORM.append(this.SUBMIT);
     if (!this.target.contains(this.FORM)) this.target.append(this.FORM);
+    if (!this.target.contains(this.TOGGLE)) this.target.append(this.TOGGLE);
   }
 
   _buildAllPayload() {
@@ -699,7 +702,12 @@ export default class Grid extends El{
 
     }, true);
 
-    this.FORM.addEventListener("click", (e)=>{
+    this.target.addEventListener("click", (e)=>{
+      if(e.target.closest(".gridToggle")){
+        this.target.classList.toggle("toggled");
+        e.stopPropagation();
+        return false;
+      }
       this._showHide(e);
       this._sortCols(e);
     }, true);

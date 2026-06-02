@@ -61,6 +61,8 @@ Each finding has:
 
 ### 5. Tub save cascades into flavor save + cache bust
 
+**Status (2026-05-26):** *Partially addressed for batch creation.* [includes/hooks/batch-tub.php](includes/hooks/batch-tub.php) now suppresses repeated `flavor.modified_date` bumps while a batch is creating its child tubs, then updates the flavor once after all tubs are created. Standalone tub edits still use the existing hook.
+
 **Location:** [scoop_bump_flavor_modified_date_on_tub_save](includes/hooks/batch-tub.php#L253)
 
 **What:** Fires on every tub save. Inside it, `pods_api()->save_pod_item({ pod: 'flavor', ... })` writes the flavor, which fires `save_post`, which fires `scoop_cache_bust`. So a single tub state change → 1 flavor write → 1 full cache invalidation.
@@ -71,15 +73,62 @@ Each finding has:
 
 ## Medium severity
 
-### 6. Batch creation serializes N tub writes
+### 6. Batch creation serializes N tub writes and audit logging
 
-**Location:** [scoop_create_tubs_for_new_batch](includes/hooks/batch-tub.php#L221)
+**Status (2026-05-27, late):** *⚠ Direct-write path is broken — recommend reverting via `define('SCOOP_DIRECT_TUB_CREATE', false);` in `wp-config.php` until further investigation.*
 
-**What:** `for ($i = 1; $i <= $count; $i++) { pods_api()->save_pod_item({ pod: 'tub', ... }); }`. Plus a trailing `wp_update_post()` at [line 240](includes/hooks/batch-tub.php#L240).
+Live test of an 11.4 batch (`batch 8368`) produced these observations:
 
-**Why it's slow:** Combined with finding #5, a batch of 10 produces ~10 tub writes + 10 flavor writes + 10 cache busts + 1 redundant post update.
+```
+batch 8368: wp_insert_post x12 in 389ms        ← reported 12 successes
+batch 8368: wp_podsrel bulk insert 24 rows in 6ms
+batch 8368: scalar saves x12 in 67732ms        ← still ~5.6s/tub
+batch 8368: created 12 tub rows in 68131ms (direct)
+```
+
+**Data integrity problem:** The user reports that after the run, the batch record contains references to 12 tubs in its `tubs` relationship, but the **actual tub posts do not exist in `wp_posts`**. Same symptom observed on a prior "Birthday Cake" run. The `wp_insert_post()` calls returned post IDs that we trusted, the `wp_podsrel` bulk INSERT succeeded against those IDs, but the underlying tub posts are gone (or never persisted) by the time the user checks.
+
+**Actual root cause (revised 2026-05-27 late, after DB inspection):** The earlier "no `wp_pods_tub` row" diagnosis was wrong. A direct SQL audit found **zero orphan rows** across all three integrity checks (tub posts without pod-table rows, pod-table rows without posts, podsrel rows pointing at dead items). The wp_pods_tub rows DID exist for the failed Dad Bod batch (8368). The issue was different:
+
+- `pods('tub', $tub['id'])->save($scalar_args)` on a post that already has an ID is treated by Pods as an **UPDATE, not a CREATE**. Pods's field defaults (state='Freezing', etc.) are applied on creates, not updates.
+- The result: track_pods_tub rows landed with **only the fields we explicitly passed** (`index`, `created_on`, `changed_on`, plus `amount` for the fractional tub). `state` was left NULL, and `amount` was left NULL for whole tubs.
+- The FlavorTub grid's `WHERE state != 'Emptied'` filter ([includes/bundle-fetch.php:299](includes/bundle-fetch.php#L299)) treats NULL as falsy and silently excludes those rows. So the tubs were in the DB but invisible to the grid — which is what the user perceived as "the tubs aren't in the DB."
+
+The fix (landed 2026-05-27 late) abandons `pods('tub', $id)->save()` entirely and writes wp_pods_tub via a single multi-row `$wpdb->query()` INSERT with all required columns explicitly set, including `state='Freezing'`. The Pods-API path remains the fallback via `define('SCOOP_DIRECT_TUB_CREATE', false)` and is the canonical safeguard for any case where the direct path's schema assumptions feel risky.
+
+The 12 Dad Bod tubs from batch 8368 (IDs 8369-8380) have been backfilled via `UPDATE track_pods_tub SET state='Freezing', amount=COALESCE(amount, 1.00) WHERE id BETWEEN 8369 AND 8380` plus a `scoop_cache_version` bump.
+
+**Performance also disappointing:** Scalar saves via `pods('tub', $id)->save()` still took ~5.6s each — Pods's save path apparently doesn't skip relationship work even when the changeset contains only scalar fields. Total dropped from 113s to 68s (~40%), not the ~10× hoped for.
+
+**Decision:** The user's earlier instinct about the Pods API providing safeguards is the right read. The direct path was attempting to bypass exactly the machinery that keeps Pods records well-formed for wp-admin and Pods queries. Until we can either (a) identify why the posts disappear or (b) write a path that's truly faster AND produces well-formed records, the Pods-API loop is the safer default.
+
+**Action items (resolved or in progress):**
+1. ✅ Done — `define('SCOOP_DIRECT_TUB_CREATE', false)` is still the documented fallback. Default is `true` again now that the direct path is corrected.
+2. ✅ Done — Dad Bod tubs from batch 8368 backfilled via SQL UPDATE.
+3. ✅ Done — corrected direct path now bulk-INSERTs into `wp_pods_tub` with all columns explicit. See [includes/hooks/batch-tub.php](includes/hooks/batch-tub.php) `scoop_create_batch_tubs_direct()`.
+4. Pending — verify with a real batch on dev that the new path produces tubs visible in the FlavorTub grid (same observable state as the Birthday Cake batch 8354).
+5. Still on the table for later — async response (`fastcgi_finish_request()` after the batch post is saved) if even the corrected direct path feels too slow for the GUI's toast loop. Lower priority now that the direct path is correct AND fast.
+
+**Status (2026-05-27, earlier):** *Largely addressed (turned out to be wrong — see late status above).* Diagnostics from the 2026-05-27 logs confirmed the bottleneck was `pods_api()->save_pod_item()` per tub (~9.4s/tub on dev, dominated by `PodsField_Pick->save` → `PodsAPI->save_relationships`). [includes/hooks/batch-tub.php](includes/hooks/batch-tub.php) now ships a `scoop_create_batch_tubs_direct()` path that uses `wp_insert_post()` + bulk `wp_podsrel` INSERT + per-tub scalar `pods()->save()`, gated behind the `SCOOP_DIRECT_TUB_CREATE` constant (defaults to true). The Pods-API loop is preserved as `scoop_create_batch_tubs_via_pods_api()` for fallback via `define('SCOOP_DIRECT_TUB_CREATE', false)`. Audit logging stays synchronous (only ~0.4s, no longer worth moving). Cache-bust is now suppressed during the loop and fired once at the end via the new `$GLOBALS['scoop_suppress_cache_bust']` flag honored in [includes/_cache.php](includes/_cache.php).
+
+**Status (2026-05-26):** *Partially addressed and instrumented.* The redundant per-tub flavor update is suppressed during batch-created tub saves, the final batch publish update now checks whether the batch is already published, and timing diagnostics were added around both the batch post-save phases and the REST create/audit phases. The create path is still synchronous.
+
+**Location:** [scoop_create_tubs_for_new_batch](includes/hooks/batch-tub.php), [scoop_handle_create_post](includes/rest.php), [scoop_log_post](includes/rest.php)
+
+**What:** Creating a batch is one synchronous REST request. The batch save creates all related tub rows, then the REST handler writes an `inventory_change` audit row before returning to the browser. A fractional batch such as `9.25` creates ten tub rows, because it creates one fractional tub plus nine whole tubs.
+
+**Why it's slow:** Tub creation fans out through Pods relationships and hooks, then audit logging may query back across those relationships to discover affected tubs/flavors. Before the partial fix, a 10-row batch also triggered 10 redundant flavor saves and many cache-version bumps. The user-facing symptom is a gateway timeout/503 even though the tubs were created, because the mutation can finish before all post-create work completes.
 
 **Fix:** (a) The trailing `wp_update_post` is unnecessary if the batch is already `publish` — check first. (b) Bulk-create the tubs via a single transaction or `wpdb` insert, then fire `pods_api_post_save_pod_item_tub` manually per row.
+
+**Additional fix steps:**
+1. Keep the timing diagnostics long enough to capture a real `9.25+` batch and determine whether tub creation, cache invalidation, or audit logging dominates.
+2. Suppress cache busting during batch-created tub writes and bump the cache version once after the batch is complete.
+3. Move inventory-change audit logging out of the user-facing request using Action Scheduler, WP-Cron, or a small queue table/option. Return success once the batch and tubs are accepted/created.
+4. If audit logging stays synchronous, pass known batch/flavor/created-tub IDs forward instead of rediscovering them with Pods relationship queries.
+5. Consider a specialized lower-level tub creation path only after profiling proves Pods tub creation itself is the bottleneck; this is higher risk because it may bypass useful Pods hook behavior.
+
+**User-facing requirement if split async:** The client should immediately show that the batch/tubs were accepted or created, then handle audit/log completion separately. Staff need a clear "tubs are being made" confirmation instead of a timeout-shaped failure.
 
 ### 7. Analytics grids mount serially
 
@@ -135,3 +184,5 @@ Tackle in this sequence — each step makes the next easier to measure:
 4. **#5** — Audit/remove the flavor-bump hook. Removes write amplification.
 
 Those four together should cut analytics latency by 3-5× on warm requests and dramatically raise the bundle cache hit rate. The medium items (#6, #7, #8) are worth doing afterward; the low items are micro-optimizations to defer until profiling shows them mattering.
+ 
+Update after the batch-create 503 diagnosis: treat **#6** as the next operational performance fix after the cache/flavor-bump work. The concrete next step is one cache bust per batch, async audit logging, and immediate user confirmation that tubs were accepted or created.

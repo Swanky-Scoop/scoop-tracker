@@ -38,7 +38,6 @@ function scoop_client_metadata(): array {
     }
 
     $entities_out = [];
-
     foreach ($entity_keys as $entity_key) {
       $spec   = scoop_entity_specs($entity_key);
       $fields = $spec['fields'] ?? [];
