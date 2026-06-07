@@ -61,7 +61,7 @@ jobs:
             --exclude='response.json' \
             --exclude='*_response.json' \
             --exclude='dump.txt' \
-            --exclude='.prittierrc' \
+            --exclude='.prettierrc' \
             --exclude='scoop-deploy-key*' \
             --exclude='*.pem' \
             --exclude='*_rsa' \

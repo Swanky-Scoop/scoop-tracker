@@ -388,3 +388,171 @@ Every auto-created ingredient is logged with: new pod ID, name, kind (`atomic` o
 1. Sign-off on the phase ordering — is shipping the mapper-only diagnostic at end of phase C worth it, or do you want phases C+D bundled as one push?
 2. The placeholder-detection rule. I have "Price = 1.00 AND Purchase Amount = 1" as the heuristic. Should I also flag rows where `Cost = 1.00` even if `Purchase Amount > 1`, since recipes' `Cost` column doesn't have a parallel `Purchase Amount` column?
 3. Confirmation on the ingredient pod schema additions actually landing on `ingredient` (not `recipe`) so phase F isn't blocked when we get there.
+
+---
+
+## 14. Recipe ingredient-quantity import (Markdown)
+
+A second, independent flow under the same *Scoop → RCC Import* page. Where the
+CSV importer ([§6](#6-field-mappings)) updates recipe/ingredient **cost** data,
+this flow imports the **per-ingredient quantities** for each recipe from RCC's
+Markdown recipe export and writes them as structured `recipe-ingredient-ma`
+rows. The page picks the flow by uploaded file extension: `.csv` → cost
+importer, `.md` → quantities importer.
+
+### Why Markdown
+
+RCC can export the recipe book as `.docx`, `.odt`, `.rtf`, or `.md`. **Markdown
+is the canonical input** for this importer:
+
+- It needs **no parsing library** — `.rtf` is ~24 MB of control words, and
+  `.docx`/`.odt` would require walking zipped table XML. The repo has no
+  document-parsing dependency and `CLAUDE.md` forbids adding one without asking.
+- Its tables are literal `|`-delimited text — unambiguous to parse.
+
+Always export `.md`. The other formats are not accepted by this flow.
+
+### Pod schema (already configured)
+
+Confirmed against `data-exports/pods-package-2026-06-07.json`:
+
+| Pod | Field | Type | Notes |
+|---|---|---|---|
+| `recipe` | `ingredient_maps` | Relationship (multi) → `recipe-ingredient-ma` | the recipe's list of map rows (field id 8650) |
+| `recipe-ingredient-ma` | `ingredient` | Relationship (single) → `ingredient` | **no auto-create** (`pick_allow_add_new: 0`) |
+| `recipe-ingredient-ma` | `quantity` | Number (3 dp) | |
+| `recipe-ingredient-ma` | `unit_vol` | Pick (custom) | `pinch, tsp, Tbl, c, oz, pt, qt, gal, ml, L, other` |
+| `recipe-ingredient-ma` | `unit_weight` | Pick (custom) | `oz, lb, g, kg` |
+
+> **Pod name gotcha:** the join pod's post-type name is **`recipe-ingredient-ma`**
+> — WordPress truncates post-type names to 20 chars, so it is *not*
+> `recipe_ingredient_map`. `scoop_rcc_map_pod_name()` is the single source.
+
+### Files
+
+```
+includes/rcc-import/
+├── _config.php              # + map pod name, recipe link field, unit vocab + scoop_rcc_normalize_unit()
+├── quantities.php           # Markdown parser → per-recipe {name, qty, unit} items
+├── quantities-importer.php  # match recipes/ingredients, create map rows, link to recipe
+└── _ui.php                  # + .md upload, quantities review/preview/commit/results screens
+```
+
+### Two Markdown layouts
+
+The same export mixes two layouts (it mirrors how each recipe was authored), so
+the parser handles both, reducing each to the same `{name, qty, qty_raw, unit}`
+item list:
+
+- **Table-style** (majority): a `| Ingredient | Quantity |` table; each data
+  row is `| <name> | <number> <unit> |`. Parsed by splitting on `|`.
+- **Run-style** (a handful of older recipes): a single free-text run
+  `name qty unit name qty unit …` after an `**Ingredient Quantity**` header.
+  Tokenized by anchoring on `<number> <known-unit>` pairs from
+  `scoop_rcc_unit_vocab()`; everything since the previous unit is the next name.
+  Validated against the real sample (names with commas, parens, `%`, fractions,
+  decimals, and count units all tokenize cleanly).
+
+Recipes are delimited by the `Recipe Summary` header (one per recipe); the title
+is the non-empty line just above it. The quantities section runs from
+`Ingredient Quantities` to `Preparation Method`.
+
+RCC also emits auto-generated **`(Scaled x N)`** variants of recipes (e.g.
+"Apple Compote (Scaled x 2450)"). These are dropped at parse time by
+`scoop_rcc_is_scaled_title()` and never enter the import; the review screen
+reports how many were excluded.
+
+### Preparation Method → `instructions`
+
+The **Preparation Method** section of each recipe is lifted into the recipe
+pod's `instructions` field (a `longtext` column). `scoop_rcc_extract_prep()`
+unescapes the Markdown (`1\.` → `1.`), drops table/heading noise, collapses
+blank runs, and treats RCC's "No preparation method defined." placeholder as
+empty. Instructions are written **independently of the ingredient maps**: a
+matched recipe gets its instructions updated even when its maps are skipped
+(e.g. "already populated"), and even when it has no quantity table at all. The
+write only happens when the parsed text differs from what's already stored, so
+empty/unchanged prep never clobbers existing instructions. The review and
+results screens report the instruction counts.
+
+### Unit normalization
+
+`scoop_rcc_normalize_unit()` maps the export's unit token to one of the pod's
+two pick fields:
+
+- Weight (`g, gram(s), kg, oz, lb(s), pound(s)`) → `unit_weight`.
+- Volume (`pinch, tsp, tbsp/Tbl, c/cup(s), pt, qt(s), gal, ml, l/L, …`) → `unit_vol`.
+- **`oz` is weight** (these recipes weigh ounces far more than they pour fluid
+  ounces); fluid ounces must arrive as `floz`.
+- **`other` is the catch-all**: any present-but-untranslatable token (`each`,
+  `dash`, `mg`, `floz`, …) is stored as `unit_vol = 'other'`, with a per-row
+  warning in review. A line with no unit at all leaves both unit fields blank.
+
+The raw token is always preserved in the map row's title regardless of how it
+normalized, so nothing is lost.
+
+### Line matching (ingredient or sub-recipe)
+
+Each ingredient line resolves to a pod target via `scoop_rcc_resolve_line()`,
+trying the most specific match first:
+
+1. full name → **ingredient**
+2. full name → **recipe** (a *sub-recipe*, e.g. "Cheesecake" used inside another recipe)
+3. pre-comma base → ingredient
+4. pre-comma base → recipe
+
+Each step also tries **singular/plural variants** (`"Granny Smith Apples"` →
+`Granny Smith Apple`; `berries`→`berry`, `tomatoes`→`tomato`). The **pre-comma**
+fallback drops RCC's prep hints (`"Bananas, Roasted,pureed"` → `Bananas`).
+Variants are validated against the live pod index, so over-generating forms is
+harmless. Any non-exact match (plural, pre-comma, or both) is flagged with a
+per-row note for review.
+
+A line that matches a **recipe** rather than an ingredient is written to the
+map row's sub-recipe field instead of `ingredient`. That field was added after
+the 2026-06-07 package export, so its machine name is resolved at runtime from
+the live Pods config by `scoop_rcc_map_subrecipe_field()` (trying `sub-recipe`
+first, matching this site's hyphenated naming — cf. the `sub-recipes` field on
+the recipe pod). If the field doesn't exist, sub-recipe rows fail with a clear
+error rather than writing to a phantom column.
+
+Ingredients whose real name needs a comma should be renamed in the DB to a
+comma-free form (e.g. `"Peanut Butter Cups (mini)"`) so the full match wins and
+the fallback never fires.
+
+### Workflow
+
+Same four-screen, transient-backed, review-first shape as the CSV flow
+(`state['mode'] = 'quantities'`):
+
+1. **Upload** — `.md` file, parsed in memory.
+2. **Review** — per recipe: title-match status, format, existing-map count, and
+   a table of each ingredient line (pod match, quantity, unit → target field,
+   warnings). Controls: per-recipe **skip**; per-recipe **replace** (only when
+   the recipe already has maps); a global **create missing ingredients as
+   stubs** (off by default, since the `ingredient` field disallows auto-create —
+   when off, unmatched lines are skipped and reported).
+3. **Preview** — counts of recipes/rows that will be created, then a single
+   confirm checkbox.
+4. **Commit / results** — per ingredient line, `pods('recipe-ingredient-ma')
+   ->add()` a map row (created as `publish`), then `pods('recipe', $id)
+   ->save(['ingredient_maps' => $ids])`, verified against `wp_podsrel`. Each map
+   row's title is prefixed with the owning recipe's app ID so all rows for one
+   recipe share that prefix — e.g. `8416 Cocoa Powder — 1/4 cups`. Results show
+   recipes done, rows created/deleted, instructions written, ingredients
+   created, items skipped, and errors.
+
+### Idempotency
+
+A recipe that already has `ingredient_maps` is **skipped by default** so
+re-imports don't duplicate. Ticking **replace** deletes the recipe's existing
+map rows (`wp_delete_post`) before recreating them.
+
+### Deliberately out of scope (v1)
+
+- Only `.md` is accepted; no `.docx`/`.odt`/`.rtf` parsing.
+- Ingredient matching is exact normalized-title only (same normalizer as the
+  reconciler, [§13](#13-relation-reconciler)); near-title fuzzy matching is not
+  applied to ingredient lines.
+- No unit conversion — the raw unit is mapped to a pick value, not converted to
+  a common basis (that's the deferred normalization goal in [§11](#11-open-items--tbd)).

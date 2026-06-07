@@ -49,6 +49,8 @@ scoop_require('includes/bundle.php');
 scoop_require('includes/rest.php');
 scoop_require('includes/_routes.php');
 scoop_require('includes/analytics.php');
+scoop_require('includes/audit.php');
+scoop_require('includes/audit-ui.php');
 /**
  * UI glue (shortcode/admin/enqueue) last
  */
@@ -63,6 +65,8 @@ scoop_require('includes/rcc-import/_config.php');
 scoop_require('includes/rcc-import/csv.php');
 scoop_require('includes/rcc-import/mapper.php');
 scoop_require('includes/rcc-import/importer.php');
+scoop_require('includes/rcc-import/quantities.php');
+scoop_require('includes/rcc-import/quantities-importer.php');
 scoop_require('includes/rcc-import/_ui.php');
 scoop_require('includes/rcc-import/reconciler.php');
 scoop_require('includes/rcc-import/dairy-allergy.php');

@@ -21,7 +21,16 @@
       "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/mapper.php\")",
       "Bash(php -l \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/rcc-import/importer.php\")",
       "Bash(node -e \"const d=require\\('./_domain.json'\\); const tubs=d.tub||d.tubs||[]; console.log\\('count:',tubs.length\\); console.log\\('first 3:',JSON.stringify\\(tubs.slice\\(0,3\\),null,2\\)\\);\")",
-      "PowerShell($d = Get-Content -Raw _domain.json | ConvertFrom-Json; $tubs = if \\($d.tub\\) { $d.tub } else { $d.tubs }; \"count: $\\($tubs.Count\\)\"; $tubs | Select-Object -First 3 | ConvertTo-Json -Depth 5)"
+      "PowerShell($d = Get-Content -Raw _domain.json | ConvertFrom-Json; $tubs = if \\($d.tub\\) { $d.tub } else { $d.tubs }; \"count: $\\($tubs.Count\\)\"; $tubs | Select-Object -First 3 | ConvertTo-Json -Depth 5)",
+      "Bash(php -v)",
+      "Bash(python -c \"import json,sys; d=json.load\\(open\\('data-exports/pods-package-2026-06-07.json'\\)\\); print\\(type\\(d\\)\\); print\\(list\\(d.keys\\(\\)\\) if isinstance\\(d,dict\\) else len\\(d\\)\\)\")",
+      "Bash(ls -la .vscode/)",
+      "Bash(cat .vscode/sftp.json)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"https://test.swankyscoop.net/wp-json/scoop/v1/audit/ingredients\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"https://test.swankyscoop.net/wp-json/scoop/v1/audit/flavors\")",
+      "Bash(cd \"c:/Users/gus reiber\" *)",
+      "Read(//c/Users/gus reiber/**)",
+      "Bash(curl -s --insecure -u swannvoe:YKiBr=sHET%U -T includes/rcc-import/_ui.php sftp://swankyscoop.net:21098__TRACKED_VAR__/includes/rcc-import/_ui.php -w 'exit=%{exitcode}\\\\n')"
     ]
   }
 }

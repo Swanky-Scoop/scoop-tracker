@@ -71,5 +71,59 @@ The `Analytics` grid bypasses the bundle pattern entirely. `mountAllGrids()` sep
 - **Write envelopes**: every POST body is `{ "<EnvelopeKey>": payload }` where `EnvelopeKey` matches the route key in `scoop_routes_config()` (`Cabinet`, `FlavorTub`, etc.). `ScoopAPI.postJson(payload, type)` does this wrapping automatically.
 - **Cache-busting on GET**: `ScoopAPI._fetch` appends `_ts=<now>` and sets `Cache-Control: no-cache` on every GET. Don't try to "fix" what looks like over-fetching here — the WP transient layer is what actually saves the round trip.
 - **Underscored PHP files** (`_config.php`, `_specs.php`, `_policy.php`, etc.) are the configuration/contract layer; non-prefixed files are runtime. Underscored JS files (`_base-grid-model.js`, `_flavor.js`, `_column-provider.js`) are abstract bases / helpers, not concrete grid types.
-- **Prettier** config (`.prittierrc` — note the typo in the filename) is `tabWidth: 2`, `useTabs: false`, `singleQuote: true`.
+- **Prettier**: `.prettierrc` (root of repo) is `tabWidth: 2`, `useTabs: false`, `singleQuote: true`.
 - `assets/Main.js`, `dump.txt`, `_domain.json`, `response.json`, `1_response.json`, `fast_response.json`, `post_response.json` at the root are scratch/debug artifacts, not part of the runtime.
+
+## Business domain knowledge
+
+### Ice cream product structure
+
+- **Base types**: dairy, oat, coconut, pea. Sorbet has no base — do not assign or expect a base ingredient for sorbet flavors.
+- **Flavors** are linked to **recipes**, which reference **ingredients**. These three are the core cost chain.
+- **Vanilla** for several flavors is purchased directly from the vendor (not through a distributor).
+- **Cocoa** sourcing alternates between Webstaurant and Chef's Warehouse at negotiated prices — do not assume a single fixed price.
+
+### Vendors
+
+Primary vendors, in order of frequency:
+1. Webstaurant (online)
+2. Chef's Warehouse (negotiated pricing)
+3. US Foods CHEFSTORE (local, Bothell WA)
+
+No vendor APIs exist. All pricing is manual entry. Do not suggest automated price scraping or API-based price feeds as a solution.
+
+### Ingredient pricing — known data quality issues
+
+Ingredient and recipe cost data was largely entered manually in a single pass and is known to be unreliable. Treat all pricing data as suspect until verified. Key failure modes:
+
+- **Unknown or wrong units** are the most common cause of wildly wrong price/unit figures (e.g. price entered per ounce but unit stored as pound).
+- **Order-of-magnitude errors** are a strong signal of a unit mismatch, not a value error.
+- **Sanity bounds for ice cream**: a finished gallon of ice cream costs roughly $10–$30. A price/gallon below $1 or above $100 is almost certainly a data error.
+- Price fluctuations, unit conversions, and summed purchase prices make extracting a true price/unit from purchase history unreliable without a dedicated data entry workflow.
+
+When working on pricing features, lead with detection and reporting of bad data before attempting correction. Never silently correct pricing data — surface the issue for human review.
+
+## Data repair policy
+
+**Any task that writes, updates, or connects live Pods/WordPress records must be validated on TEST before OPS.**
+
+- Use `test.swankyscoop.net` (the default SFTP profile) for all exploratory and repair work.
+- Produce a report or dry-run output first; get explicit approval before writing to OPS (`ops.swankyscoop.net`).
+- For multi-step writes (e.g. connecting ingredients → recipes → flavors), remember that all `track_pods_*` tables except `nightly_sales` are `ENGINE=MyISAM` — no transactions, no rollback. Order inserts defensively and plan explicit cleanup on failure.
+
+## Do not suggest
+
+These approaches have been evaluated and decided against — do not re-propose them:
+
+- Connecting directly to remote servers (test.swankyscoop.net or ops.swankyscoop.net)
+  via SSH, WP-CLI, or any other remote access method. Deployment is by SFTP-on-save
+  and cross-environment coordination is handled by the developer.
+- However: DO flag any situation where local file state or query results suggest the
+  local DB may be out of sync with TEST or OPS (e.g. missing records, unexpected schema,
+  zero results where data is expected). Stop and ask the developer to verify environment
+  alignment before proceeding.
+- Adding a build step, package manager, or bundler (Webpack, Vite, etc.)
+- Converting the JS client to React, Vue, or any other framework
+- Replacing SFTP-on-save deployment with CI/CD pipelines
+- Automated vendor price scraping or API-based price feeds (no vendor APIs exist)
+- Converting Pods tables to InnoDB (valid long-term idea, but out of scope — do not suggest unless explicitly asked)

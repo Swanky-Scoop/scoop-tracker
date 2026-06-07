@@ -119,15 +119,18 @@ function scoop_rcc_extract_currency_value(string $s): string {
 /**
  * Move a $_FILES upload into wp-content/uploads/RCC/.
  * Returns the absolute destination path on success or ['error' => ...].
+ *
+ * $allowed_exts restricts which extensions are accepted (default: CSV only).
+ * The resolved extension is returned as ['ext'] so callers can branch flows.
  */
-function scoop_rcc_stash_upload(array $file): array {
+function scoop_rcc_stash_upload(array $file, array $allowed_exts = ['csv']): array {
 
   if (empty($file['tmp_name']) || !is_uploaded_file($file['tmp_name'])) {
     return ['error' => 'No uploaded file received.'];
   }
-  $info = wp_check_filetype($file['name']);
-  if (($info['ext'] ?? '') !== 'csv') {
-    return ['error' => 'Invalid file type. Please upload a CSV file.'];
+  $ext = strtolower(pathinfo((string) $file['name'], PATHINFO_EXTENSION));
+  if (!in_array($ext, $allowed_exts, true)) {
+    return ['error' => 'Invalid file type. Allowed: ' . implode(', ', $allowed_exts) . '.'];
   }
 
   $upload = wp_upload_dir();
@@ -140,5 +143,5 @@ function scoop_rcc_stash_upload(array $file): array {
   if (!move_uploaded_file($file['tmp_name'], $dest)) {
     return ['error' => 'Failed to move uploaded file.'];
   }
-  return ['path' => $dest];
+  return ['path' => $dest, 'ext' => $ext];
 }

@@ -98,8 +98,6 @@ No shortcode changes are ever needed — `shortcode.php` passes any `type=` valu
 - **Permissions are two-layer**: route-level (`scoop_user_can_route()`) gates the request; field-level intersects `spec.writeable` with `scoop_user_writeable_fields()` and ships per-column `write` flags so the JS knows what's editable for the current user.
 - **Cache-busting on GET**: `ScoopAPI._fetch` appends `_ts=<now>` and sets `Cache-Control: no-cache` on every GET. The WP transient layer is what actually saves the round trip.
 - **Debug**: set `define('SCOOP_DEBUG_LOG', true)` in `wp-config.php` to enable `scoop_debug_log()` output to the PHP error log.
-- **Prettier**: `.prittierrc` (note the typo in the filename) is `tabWidth: 2`, `useTabs: false`, `singleQuote: true`.
-
 ---
 
 ## Database schema (Pods, tables mode)

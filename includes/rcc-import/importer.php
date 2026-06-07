@@ -198,6 +198,23 @@ function scoop_rcc_commit_import(string $type, array $classified, array $pod_ind
       continue;
     }
 
+    // Near match the operator chose to import as a brand-new row rather than
+    // merge into the fuzzy-matched pod row. Build the diff against null (create)
+    // and skip the update/title/back-fill paths below.
+    if ($class === 'near_title' && !empty($choice['create_new'])) {
+      $diff   = scoop_rcc_build_field_diff($csv, null, $field_map, $placeholder, $override_placeholder);
+      $writes = scoop_rcc_diff_to_writes($diff);
+      $r = scoop_rcc_create_pod_row($pod_name, $name, $writes);
+      if ($r['ok']) {
+        $created++;
+        $row_outcomes[$i] = ['action' => 'created', 'pod_id' => $r['id']];
+      } else {
+        $errors[] = "Row '{$name}': {$r['error']}";
+        $row_outcomes[$i] = ['action' => 'error', 'error' => $r['error']];
+      }
+      continue;
+    }
+
     // Matched row — build the diff against the live pod data.
     $pod_row = $pod_index['rows'][$pod_id] ?? null;
     $diff    = scoop_rcc_build_field_diff($csv, $pod_row, $field_map, $placeholder, $override_placeholder);

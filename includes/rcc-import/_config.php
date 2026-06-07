@@ -60,6 +60,165 @@ function scoop_rcc_pod_name(string $type): string {
   return $type;
 }
 
+/* -------------------------------------------------------------------------
+ * Recipe ingredient-quantity import (Markdown).
+ *
+ * A separate flow from the CSV importer: it parses a Recipe Cost Calculator
+ * recipe export (Markdown) into per-recipe ingredient quantities and writes
+ * one `recipe-ingredient-ma` pod row per ingredient, linked back to the
+ * recipe via its `ingredient_maps` relation. See RCC_IMPORT_README.md §14.
+ * ---------------------------------------------------------------------- */
+
+/**
+ * The join pod that holds one (ingredient, quantity, unit) tuple. The post
+ * type name is truncated to WordPress's 20-char limit — it is NOT
+ * `recipe_ingredient_map`. Confirmed against the Pods package export
+ * (data-exports/pods-package-2026-06-07.json, pod id 8645).
+ */
+function scoop_rcc_map_pod_name(): string {
+  return 'recipe-ingredient-ma';
+}
+
+/**
+ * The multi-relationship field on the `recipe` pod that points at the map
+ * rows (Pods field id 8650).
+ */
+function scoop_rcc_recipe_maps_field(): string {
+  return 'ingredient_maps';
+}
+
+/**
+ * The map pod's single-pick field that targets an `ingredient`.
+ */
+function scoop_rcc_map_ingredient_field(): string {
+  return 'ingredient';
+}
+
+/**
+ * The map pod's single-pick field that targets a `recipe` (sub-recipe).
+ *
+ * Resolved from the live Pods config rather than hardcoded — the field was
+ * added after the 2026-06-07 package export, so its exact machine name isn't
+ * in any export we can read. This site names fields with hyphens
+ * (`sub-recipes`, `recipe-ingredient-ma`), so `sub-recipe` is tried first.
+ * Returns '' if no such field exists yet, so the importer can report it
+ * instead of writing to a nonexistent column.
+ */
+function scoop_rcc_map_subrecipe_field(): string {
+
+  static $name = null;
+  if ($name !== null) return $name;
+  $name = '';
+
+  if (!function_exists('pods_api')) return $name;
+
+  $def = pods_api()->load_pod(['name' => scoop_rcc_map_pod_name()]);
+  $fields = is_array($def) ? ($def['fields'] ?? []) : [];
+  if (!is_array($fields)) return $name;
+
+  foreach (['sub-recipe', 'sub_recipe', 'subrecipe', 'sub-recipes', 'sub_recipes'] as $cand) {
+    if (isset($fields[$cand])) { $name = $cand; return $name; }
+  }
+  // Last resort: any field whose label reads like "sub-recipe".
+  foreach ($fields as $fname => $f) {
+    $label = strtolower((string) ($f['label'] ?? ''));
+    if (preg_match('/sub.?recipe/', $label)) { $name = (string) $fname; return $name; }
+  }
+  return $name;
+}
+
+/**
+ * Allowed values for the map pod's two unit pick fields, copied verbatim
+ * from the pod definition (custom-simple lists). The importer only ever
+ * writes one of these exact strings.
+ */
+function scoop_rcc_unit_vol_values(): array {
+  return ['pinch', 'tsp', 'Tbl', 'c', 'oz', 'pt', 'qt', 'gal', 'ml', 'L', 'other'];
+}
+
+function scoop_rcc_unit_weight_values(): array {
+  return ['oz', 'lb', 'g', 'kg'];
+}
+
+/**
+ * Every unit token the run-style tokenizer should recognise as a boundary,
+ * longest-first so the alternation prefers "tbsp" over "t". Includes count
+ * units (each, pinch, …) that map to neither pick field but still mark a
+ * "<qty> <unit>" boundary in the free-text run.
+ */
+function scoop_rcc_unit_vocab(): array {
+  static $vocab = null;
+  if ($vocab === null) {
+    $vocab = [
+      // weight
+      'grams', 'gram', 'g', 'kg', 'mg', 'oz', 'ounce', 'ounces', 'lb', 'lbs', 'pound', 'pounds',
+      // volume
+      'tablespoons', 'tablespoon', 'tbsp', 'tbl', 'tsp', 'teaspoons', 'teaspoon',
+      'cups', 'cup', 'c', 'pints', 'pint', 'pts', 'pt', 'quarts', 'quart', 'qts', 'qt',
+      'gallons', 'gallon', 'gal', 'ml', 'liters', 'litres', 'liter', 'litre', 'l',
+      'floz',
+      // count / other
+      'each', 'ct', 'count', 'pinch', 'pinches', 'dash', 'dashes', 'drop', 'drops',
+      'clove', 'cloves', 'stick', 'sticks', 'slice', 'slices', 'can', 'cans',
+      'bag', 'bags', 'sprig', 'sprigs', 'pieces', 'piece',
+    ];
+    usort($vocab, function ($a, $b) { return strlen($b) - strlen($a); });
+  }
+  return $vocab;
+}
+
+/**
+ * Normalize a raw unit token to the pod's pick value and tell the caller
+ * which field it belongs in.
+ *
+ * Returns:
+ *   [
+ *     'kind'  => 'weight' | 'vol' | 'other' | 'none',
+ *     'field' => 'unit_weight' | 'unit_vol' | null,
+ *     'value' => '<pick value>' | null,
+ *     'raw'   => '<original token>',
+ *   ]
+ *
+ * `oz` is ambiguous (it's in both pick lists). These recipes weigh in
+ * ounces far more often than they pour fluid ounces, so bare "oz" maps to
+ * weight; fluid ounces must arrive as "floz". `pinch` is a first-class
+ * `unit_vol` value. Any other present-but-untranslatable token (each, dash,
+ * mg, floz, …) falls back to `unit_vol = 'other'` — the operator-confirmed
+ * catch-all. A genuinely empty unit returns a null field (kind 'none').
+ */
+function scoop_rcc_normalize_unit(string $raw): array {
+  $t = strtolower(trim($raw));
+  $t = rtrim($t, '.');
+
+  if ($t === '') {
+    return ['kind' => 'none', 'field' => null, 'value' => null, 'raw' => $raw];
+  }
+
+  $weight = [
+    'g' => 'g', 'gram' => 'g', 'grams' => 'g',
+    'kg' => 'kg',
+    'oz' => 'oz', 'ounce' => 'oz', 'ounces' => 'oz',
+    'lb' => 'lb', 'lbs' => 'lb', 'pound' => 'lb', 'pounds' => 'lb',
+  ];
+  $vol = [
+    'pinch' => 'pinch', 'pinches' => 'pinch',
+    'tsp' => 'tsp', 'teaspoon' => 'tsp', 'teaspoons' => 'tsp',
+    'tbsp' => 'Tbl', 'tbl' => 'Tbl', 'tablespoon' => 'Tbl', 'tablespoons' => 'Tbl',
+    'c' => 'c', 'cup' => 'c', 'cups' => 'c',
+    'pt' => 'pt', 'pts' => 'pt', 'pint' => 'pt', 'pints' => 'pt',
+    'qt' => 'qt', 'qts' => 'qt', 'quart' => 'qt', 'quarts' => 'qt',
+    'gal' => 'gal', 'gallon' => 'gal', 'gallons' => 'gal',
+    'ml' => 'ml',
+    'l' => 'L', 'liter' => 'L', 'liters' => 'L', 'litre' => 'L', 'litres' => 'L',
+  ];
+
+  if (isset($weight[$t])) return ['kind' => 'weight', 'field' => 'unit_weight', 'value' => $weight[$t], 'raw' => $raw];
+  if (isset($vol[$t]))    return ['kind' => 'vol',    'field' => 'unit_vol',    'value' => $vol[$t],    'raw' => $raw];
+
+  // Present but untranslatable → the catch-all unit_vol bucket.
+  return ['kind' => 'other', 'field' => 'unit_vol', 'value' => 'other', 'raw' => $raw];
+}
+
 /**
  * The transient key holding mid-flow state for the current user.
  * TTL is intentionally short — abandoned imports shouldn't accumulate.
