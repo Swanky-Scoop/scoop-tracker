@@ -82,9 +82,13 @@ export default class FlavorTubGridModel extends BaseGridModel{
     const tubsByFlavorId = Indexer.groupBy(locationTubIds, t => t.flavor);
     const designationsByFlavorId = this._designationsByFlavorId(this.domain.slot ?? []);
     const filteredTubsByFlavorId = this._filterGroups(tubsByFlavorId, designationsByFlavorId);
-    
+    // Show the most recently modified flavors first. groupBy preserves the
+    // bundle's post_date-ascending order, which otherwise sinks fresh activity
+    // to the bottom of the grid.
+    const orderedTubsByFlavorId = this._sortGroupsByModifiedDesc(filteredTubsByFlavorId);
+
     return this.buildGroupedRows({
-        groupsMap     : filteredTubsByFlavorId,
+        groupsMap     : orderedTubsByFlavorId,
         includeGroupId: (id)   => Number(id) > 0,
         getGroupLabel : (id)   => this.labelFromMap(id, this._flavorsById),
         makeRowId     : (item) => item.id,
@@ -106,6 +110,26 @@ export default class FlavorTubGridModel extends BaseGridModel{
   _activeTubs(items = []) {
     return this.filterByLocation(items)
       .filter(t => t.state !== "Emptied");
+  }
+
+  // Reorder the flavor groups so the flavor with the most recently modified
+  // tub comes first (descending). Each group's sort key is the max
+  // post_modified across its tubs.
+  _sortGroupsByModifiedDesc(groupsMap) {
+    const groupTime = (items = []) =>
+      items.reduce((max, t) => Math.max(max, this._modifiedTime(t)), -Infinity);
+
+    const entries = [...(groupsMap ?? new Map()).entries()]
+      .sort((a, b) => groupTime(b[1]) - groupTime(a[1]));
+
+    return new Map(entries);
+  }
+
+  _modifiedTime(tub) {
+    const raw = tub?.post_modified || tub?.changed_on || tub?.post_date || '';
+    if (!raw) return -Infinity;
+    const ts = new Date(String(raw).replace(' ', 'T')).getTime();
+    return Number.isFinite(ts) ? ts : -Infinity;
   }
 
   _filterGroups(groupsMap, designationsByFlavorId) {

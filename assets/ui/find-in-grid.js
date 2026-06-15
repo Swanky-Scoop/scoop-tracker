@@ -79,6 +79,30 @@ export default class FindInGrid {
       const hit = !term || hay.includes(term);
       this.setVisible(el, tOk ? hit : true);
     }
+
+    // QoL: when the filter narrows to exactly one group, open it so its child
+    // rows show without an extra click. Groups auto-opened this way are
+    // collapsed again once they're no longer the sole match; groups the user
+    // toggled by hand are left alone.
+    const visible = targets.filter(el => !el.hidden);
+    if (visible.length === 1) {
+      this.setGroupOpen(visible[0], true);
+      visible[0].dataset.autoOpened = "1";
+    } else {
+      for (const el of targets) {
+        if (el.dataset?.autoOpened) {
+          this.setGroupOpen(el, false);
+          delete el.dataset.autoOpened;
+        }
+      }
+    }
+  }
+
+  setGroupOpen(groupRow, open) {
+    const tb = groupRow?.parentElement;
+    if (!tb || !tb.matches?.("tbody.collapsible")) return;
+    tb.classList.toggle("opened", open);
+    tb.classList.toggle("closed", !open);
   }
 
   render() {

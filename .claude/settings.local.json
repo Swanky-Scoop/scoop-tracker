@@ -32,7 +32,9 @@
       "Read(//c/Users/gus reiber/**)",
       "Bash(curl -s --insecure -u swannvoe:YKiBr=sHET%U -T includes/rcc-import/_ui.php sftp://swankyscoop.net:21098__TRACKED_VAR__/includes/rcc-import/_ui.php -w 'exit=%{exitcode}\\\\n')",
       "Bash(curl -s --insecure -u swannvoe:YKiBr=sHET%U sftp://swankyscoop.net:21098__TRACKED_VAR__/pods/init.php)",
-      "Bash(curl -s --insecure -u swannvoe:YKiBr=sHET%U -T includes/hooks/batch-tub.php sftp://swankyscoop.net:21098__TRACKED_VAR__/includes/hooks/batch-tub.php -w 'exit=%{exitcode}\\\\n')"
+      "Bash(curl -s --insecure -u swannvoe:YKiBr=sHET%U -T includes/hooks/batch-tub.php sftp://swankyscoop.net:21098__TRACKED_VAR__/includes/hooks/batch-tub.php -w 'exit=%{exitcode}\\\\n')",
+      "Bash(cd \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker\")",
+      "Bash(curl -s --insecure -u swannvoe:YKiBr=sHET%U -T assets/models/flavor-tub-grid-model.js sftp://swankyscoop.net:21098__TRACKED_VAR__/assets/models/flavor-tub-grid-model.js -w 'exit=%{exitcode}\\\\n')"
     ]
   }
 }

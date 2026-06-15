@@ -39,6 +39,7 @@ export default class Grid extends El{
     this._isInit = false;
     this._docListenerBound = false;
     this._lastFocusedEl = this.target;
+    this._postSubmitFocus = false;
 
     this.loadConfig(config);
     this._build();
@@ -180,10 +181,15 @@ export default class Grid extends El{
     const gEls = this.rowGroupDom;
     const el = this.el;
     
+    // When the grid is narrowed to a single group, open it so its child rows
+    // are visible without an extra click.
+    const onlyOneGroup = this.rowGroups.length === 1;
+
     let groupCount = 0;
     for(const g of this.rowGroups){
-    
-      const TBODY = el('tbody', {classes:['groupBody', (g.collapsible?'collapsible':'static'), (g.collapsed?'closed':'opened') ],
+
+      const opened = onlyOneGroup ? true : !g.collapsed;
+      const TBODY = el('tbody', {classes:['groupBody', (g.collapsible?'collapsible':'static'), (opened?'opened':'closed') ],
         data:{rowType:g.rowType, groupType: g.groupType}
       });
       const GR = el('tr', {classes:['group'], data:{ rowId:g.groupId, groupLabel:g.label } } );
@@ -465,6 +471,37 @@ export default class Grid extends El{
     this._lastFocusedEl = { rowId: Number(parsed[2]), colKey: parsed[3] };
 
     return this._lastFocusedEl;
+  }
+
+  // Where focus lands after a successful submit.
+  //
+  // - Grouped grids: the rebuild can collapse/reorder the group that held the
+  //   edited cell, so returning there is jarring. Send focus to the top text
+  //   filter (so the user can keep filtering); if there's no text filter, the
+  //   first top-most editable input.
+  // - Ungrouped grids: keep the original behavior — return to the cell the
+  //   user was editing.
+  _focusAfterSubmit() {
+    if (!this.rowGroups || this.rowGroups.length === 0) {
+      this._restoreFocusAddress();
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      const filterInput = this.FORM.querySelector('input.gridFilterInput');
+      if (filterInput) { filterInput.focus(); return; }
+
+      const first = this._firstEditableInput();
+      if (first) first.focus();
+    });
+  }
+
+  // First visible, editable input control in table order (skips hidden-column
+  // inputs and rows inside collapsed groups). Falls back to the first match.
+  _firstEditableInput() {
+    const sel = 'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), [contenteditable="true"]';
+    const candidates = [...(this.TABLE?.querySelectorAll(sel) ?? [])];
+    return candidates.find(el => el.offsetParent !== null) ?? candidates[0] ?? null;
   }
 
   _restoreFocusAddress() {
@@ -757,8 +794,14 @@ export default class Grid extends El{
             changes: chng
           });
           
+          this._postSubmitFocus = true;
           await this.api.refreshPageDomain({ force: true, toast:TOAST, info:{name:this.name, response:r} });
-          this._restoreFocusAddress();
+          // Usually handled by the ts:domain:updated listener after it rebuilds
+          // the DOM; this is a fallback if that listener didn't run/consume it.
+          if (this._postSubmitFocus) {
+            this._postSubmitFocus = false;
+            this._focusAfterSubmit();
+          }
         }
         
       } catch (err) {
@@ -785,7 +828,12 @@ export default class Grid extends El{
           // Refresh grid with updated model
           if (this._isInit) {
             await this.refresh(this.modelInstance);
-            this._restoreFocusAddress();
+            if (this._postSubmitFocus) {
+              this._postSubmitFocus = false;
+              this._focusAfterSubmit();
+            } else {
+              this._restoreFocusAddress();
+            }
           }
         } finally {
           this._reloading = false;
