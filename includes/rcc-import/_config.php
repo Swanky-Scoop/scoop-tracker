@@ -103,6 +103,14 @@ function scoop_rcc_map_ingredient_field(): string {
  * (`sub-recipes`, `recipe-ingredient-ma`), so `sub-recipe` is tried first.
  * Returns '' if no such field exists yet, so the importer can report it
  * instead of writing to a nonexistent column.
+ *
+ * Must work across Pods versions: ≤2.7 returned a plain array from load_pod(),
+ * but 2.8+/3.x (this site runs 3.3.9) returns a Pods\Whatsit\Pod object. The
+ * old `is_array($def)` gate silently treated that object as "no fields", so the
+ * lookup returned '' even when the field existed — which is exactly the
+ * "sub-recipe field not found" failure on import. We now ask Pods for each
+ * candidate field directly (version-agnostic) and only fall back to
+ * enumerating the pod's fields.
  */
 function scoop_rcc_map_subrecipe_field(): string {
 
@@ -112,19 +120,70 @@ function scoop_rcc_map_subrecipe_field(): string {
 
   if (!function_exists('pods_api')) return $name;
 
-  $def = pods_api()->load_pod(['name' => scoop_rcc_map_pod_name()]);
-  $fields = is_array($def) ? ($def['fields'] ?? []) : [];
-  if (!is_array($fields)) return $name;
+  $map_pod    = scoop_rcc_map_pod_name();
+  $candidates = ['sub-recipe', 'sub_recipe', 'subrecipe', 'sub-recipes', 'sub_recipes'];
+  $api        = pods_api();
 
-  foreach (['sub-recipe', 'sub_recipe', 'subrecipe', 'sub-recipes', 'sub_recipes'] as $cand) {
+  // Primary: ask Pods for each candidate field by name. load_field() works the
+  // same on the legacy array API and the 3.x object API.
+  foreach ($candidates as $cand) {
+    try {
+      $field = $api->load_field(['pod' => $map_pod, 'name' => $cand]);
+    } catch (\Throwable $e) {
+      $field = null;
+    }
+    if ($field && !is_wp_error($field)) { $name = $cand; return $name; }
+  }
+
+  // Fallback: enumerate the pod's fields (tolerant of array vs object) and
+  // match by name, then by a "sub-recipe"-ish label.
+  $fields = scoop_rcc_load_pod_fields($map_pod);
+  foreach ($candidates as $cand) {
     if (isset($fields[$cand])) { $name = $cand; return $name; }
   }
-  // Last resort: any field whose label reads like "sub-recipe".
   foreach ($fields as $fname => $f) {
-    $label = strtolower((string) ($f['label'] ?? ''));
-    if (preg_match('/sub.?recipe/', $label)) { $name = (string) $fname; return $name; }
+    $label = scoop_rcc_field_label($f);
+    if ($label !== '' && preg_match('/sub.?recipe/i', $label)) { $name = (string) $fname; return $name; }
   }
+
   return $name;
+}
+
+/**
+ * Field definitions for a pod, keyed by field name. Tolerant of every Pods
+ * return shape: a Whatsit\Pod object (2.8+/3.x, via get_fields()), an
+ * ArrayAccess object, or a legacy array (≤2.7).
+ */
+function scoop_rcc_load_pod_fields(string $pod_name): array {
+  if (!function_exists('pods_api')) return [];
+
+  try {
+    $def = pods_api()->load_pod(['name' => $pod_name]);
+  } catch (\Throwable $e) {
+    return [];
+  }
+  if (empty($def)) return [];
+
+  if (is_object($def) && method_exists($def, 'get_fields')) {
+    $fields = $def->get_fields();
+  } elseif (is_array($def) || $def instanceof ArrayAccess) {
+    $fields = $def['fields'] ?? [];
+  } else {
+    return [];
+  }
+
+  if ($fields instanceof Traversable) $fields = iterator_to_array($fields);
+  return is_array($fields) ? $fields : [];
+}
+
+/** Read a field's label regardless of array vs object (Whatsit\Field) shape. */
+function scoop_rcc_field_label($field): string {
+  if (is_array($field)) return (string) ($field['label'] ?? '');
+  if (is_object($field)) {
+    if (method_exists($field, 'get_label')) return (string) $field->get_label();
+    if ($field instanceof ArrayAccess && isset($field['label'])) return (string) $field['label'];
+  }
+  return '';
 }
 
 /**

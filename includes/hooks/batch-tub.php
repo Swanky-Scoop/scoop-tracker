@@ -114,6 +114,47 @@ if (!function_exists('scoop_get_default_location_id')) {
     return (int)SCOOP_DEFAULT_LOCATION_ID;
   }
 }
+// Default "use" for new tubs. Source of truth is the Pods GUI: tub → "use"
+// field → Default Value. The direct-write path bypasses Pods, so the field
+// default isn't auto-applied (same reason state is set to 'Freezing'
+// explicitly) — we read that configured default here and apply it ourselves.
+// Returns 0 when no default is configured, in which case no "use" is set.
+if (!function_exists('scoop_get_default_use_id')) {
+  function scoop_get_default_use_id(): int {
+    static $cached = null;
+    if ($cached !== null) return $cached;
+    $cached = 0;
+
+    if (!function_exists('pods_api')) return $cached;
+    try {
+      $field = pods_api()->load_field(['pod' => 'tub', 'name' => 'use']);
+    } catch (\Throwable $e) {
+      return $cached;
+    }
+    if (!$field || is_wp_error($field)) return $cached;
+
+    $cached = scoop_rel_id(scoop_field_option($field, 'default_value'));
+    return $cached;
+  }
+}
+
+if (!function_exists('scoop_field_option')) {
+  /**
+   * Read a single Pods field option, tolerant of the array (≤2.7) and
+   * Whatsit\Field object (2.8+/3.x) shapes load_field() can return.
+   */
+  function scoop_field_option($field, string $key) {
+    if (is_array($field)) return $field[$key] ?? null;
+    if (is_object($field)) {
+      if (method_exists($field, 'get_arg')) {
+        $v = $field->get_arg($key);
+        if ($v !== null) return $v;
+      }
+      if ($field instanceof ArrayAccess && isset($field[$key])) return $field[$key];
+    }
+    return null;
+  }
+}
 
 /** ------------------------------------------------------------
  *  Batch hooks
@@ -419,20 +460,28 @@ function scoop_create_batch_tubs_direct(int $batch_id, int $flavor_id, float $co
   $field_batch    = (int)($tub_pod['fields']['batch']['id']    ?? 0);
   $field_flavor   = (int)($tub_pod['fields']['flavor']['id']   ?? 0);
   $field_location = (int)($tub_pod['fields']['location']['id'] ?? 0);
+  $field_use      = (int)($tub_pod['fields']['use']['id']      ?? 0);
+
+  // Default "use" for new tubs (front-of-house). Pods' field default isn't
+  // applied on this direct-write path, so set it explicitly like state.
+  $use_id = (int)scoop_get_default_use_id();
 
   if ($tub_pod_id && $field_batch && $field_flavor) {
     $batch_pod    = pods_api()->load_pod(['name' => 'batch']);
     $flavor_pod   = pods_api()->load_pod(['name' => 'flavor']);
     $location_pod = pods_api()->load_pod(['name' => 'location']);
+    $use_pod      = pods_api()->load_pod(['name' => 'use']);
 
     $batch_pod_id    = (int)($batch_pod['id']    ?? 0);
     $flavor_pod_id   = (int)($flavor_pod['id']   ?? 0);
     $location_pod_id = (int)($location_pod['id'] ?? 0);
+    $use_pod_id      = (int)($use_pod['id']      ?? 0);
 
     // Reverse-direction field IDs — the "tubs" field on each related Pod.
     $batch_tubs_field    = (int)($batch_pod['fields']['tubs']['id']    ?? 0);
     $flavor_tubs_field   = (int)($flavor_pod['fields']['tubs']['id']   ?? 0);
     $location_tubs_field = (int)($location_pod['fields']['tubs']['id'] ?? 0);
+    $use_tubs_field      = (int)($use_pod['fields']['tubs']['id']      ?? 0);
 
     $podsrel = $wpdb->prefix . 'podsrel';
     $values  = [];
@@ -477,6 +526,20 @@ function scoop_create_batch_tubs_direct(int $batch_id, int $flavor_id, float $co
           );
         }
       }
+      if ($field_use && $use_pod_id && $use_id) {
+        // Forward: tub.use (default front-of-house)
+        $values[] = $wpdb->prepare(
+          '(%d, %d, %d, %d, %d, %d)',
+          $tub_pod_id, $field_use, $tub['id'], $use_pod_id, $use_id, 0
+        );
+        // Reverse: use.tubs
+        if ($use_tubs_field) {
+          $values[] = $wpdb->prepare(
+            '(%d, %d, %d, %d, %d, %d)',
+            $use_pod_id, $use_tubs_field, $use_id, $tub_pod_id, $tub['id'], 0
+          );
+        }
+      }
     }
     $sql = "INSERT INTO {$podsrel} (pod_id, field_id, item_id, related_pod_id, related_item_id, weight) VALUES "
          . implode(',', $values);
@@ -515,6 +578,7 @@ function scoop_create_batch_tubs_direct(int $batch_id, int $flavor_id, float $co
 function scoop_create_batch_tubs_via_pods_api(int $batch_id, int $flavor_id, float $count, int $location_id, string $batch_title): int {
   $fraction = fmod($count, 1);
   $created_count = 0;
+  $use_id = (int)scoop_get_default_use_id();
 
   if ($fraction > 0) {
     $last = ceil($count);
@@ -527,6 +591,7 @@ function scoop_create_batch_tubs_via_pods_api(int $batch_id, int $flavor_id, flo
       'post_status' => 'publish',
     ];
     if ($location_id) $tub_frac_args['location'] = $location_id;
+    if ($use_id)      $tub_frac_args['use']      = $use_id;
     $new_tub_frac_id = pods_api()->save_pod_item(['pod' => 'tub', 'data' => $tub_frac_args]);
     scoop_log("created tub id={$new_tub_frac_id} batch={$batch_id} flavor={$flavor_id} index={$last} amount={$fraction}");
     if ($new_tub_frac_id) $created_count++;
@@ -541,6 +606,7 @@ function scoop_create_batch_tubs_via_pods_api(int $batch_id, int $flavor_id, flo
       'post_status' => 'publish',
     ];
     if ($location_id) $tub_args['location'] = $location_id;
+    if ($use_id)      $tub_args['use']      = $use_id;
     $new_tub_id = pods_api()->save_pod_item(['pod' => 'tub', 'data' => $tub_args]);
     scoop_log("created tub id={$new_tub_id} batch={$batch_id} flavor={$flavor_id} index={$i}");
     if ($new_tub_id) $created_count++;
