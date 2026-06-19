@@ -349,14 +349,18 @@ export default class BaseGridModel {
     // Gracefully handle missing domain
     if (!this.domain) return [];
     
-    if (fieldKey === 'state') return [
-        {key:'__override__',   label:'__override__'},
-        {key:'Hardening',      label:'Hardening'},
-        {key:'Freezing',       label:'Freezing'},
-        {key:'Tempering',      label:'Tempering'},
-        {key:'Opened',         label:'Opened'},
-        {key:'Emptied',        label:'Emptied'}
-    ];
+    // State options are NOT defined here. Single source of truth: the Pods
+    // admin `tub.state` field (pick / custom-simple). The server reads that
+    // field's value list and ships it as the column's `options` in
+    // SCOOP.metaData (see scoop_field_enum_options() / scoop_client_metadata()
+    // in includes/enqueue.php). To add/rename/remove a state, edit the Pods
+    // field — not this file. Example values (first 3): __override__, Hardening,
+    // Freezing. If the dropdown is empty, the Pods field or the metadata feed
+    // is where to look.
+    if (fieldKey === 'state') {
+      return (this.columns ?? this._allColumns ?? [])
+        .find(c => c.key === 'state')?.options ?? [];
+    }
     
     if (fieldKey === 'location') {
         return [...(this.domain.location || [])]

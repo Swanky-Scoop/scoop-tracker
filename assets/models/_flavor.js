@@ -8,12 +8,17 @@
 
 import Indexer from "../data/indexer.js";
 
+// Tub states that drop out of the "in play" set entirely. "Emptied" tubs are
+// gone; "!Lost" tubs are flagged lost and must not affect alertCase coloring or
+// availability counts whether or not they still hold product.
+const EXCLUDED_STATES = new Set(["Emptied", "!Lost"]);
+
 export default class Flavor {
   constructor({ flavorsById, tub, location }) {
     this.flavorsById = flavorsById;
     this.location = Number(location);
 
-    const notEmpty = (tub ?? []).filter(t => t.state !== "Emptied");
+    const notEmpty = (tub ?? []).filter(t => !EXCLUDED_STATES.has(t.state));
     
     const hereNotEmpty = notEmpty.filter(t => t.location  === location);
     const hereOpened   = hereNotEmpty.filter(t => t.state === "Opened");

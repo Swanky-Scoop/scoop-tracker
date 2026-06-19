@@ -17,6 +17,42 @@ function scoop_client_routes(): array {
   return $out;
 }
 
+/**
+ * Option list for a Pods pick / custom-simple ("enum") field, read live from
+ * the field config so the Pods admin GUI is the single source of truth.
+ *
+ * Pods stores custom-simple values in the field's `pick_custom` option as a
+ * newline-delimited string; each line is either `value` or `value|Label`.
+ * Order is preserved. Returns [] if the field or its list can't be read (the
+ * client then shows an empty dropdown — a loud, traceable failure, by design).
+ */
+function scoop_field_enum_options(string $pod_name, string $field_key): array {
+  if (!function_exists('pods_api') || !function_exists('scoop_field_option')) return [];
+
+  try {
+    $field = pods_api()->load_field(['pod' => $pod_name, 'name' => $field_key]);
+  } catch (\Throwable $e) {
+    return [];
+  }
+  if (!$field || is_wp_error($field)) return [];
+
+  $raw = scoop_field_option($field, 'pick_custom');
+  if (!is_string($raw) || $raw === '') return [];
+
+  $options = [];
+  foreach (preg_split('/\r\n|\r|\n/', $raw) as $line) {
+    $line = trim($line);
+    if ($line === '') continue;
+    $parts = explode('|', $line, 2);
+    $value = trim($parts[0]);
+    if ($value === '') continue;
+    $label = (isset($parts[1]) && trim($parts[1]) !== '') ? trim($parts[1]) : $value;
+    $options[] = ['key' => $value, 'label' => $label];
+  }
+
+  return $options;
+}
+
 function scoop_client_metadata(): array {
 
   $out  = [];
@@ -65,18 +101,28 @@ function scoop_client_metadata(): array {
         if (is_string($field_def)) $field_def = ['data_type' => $field_def];
         if (!is_array($field_def)) $field_def = [];
 
-        $hidden = (bool)($field_def['hidden'] ?? false);
+        $hidden  = (bool)($field_def['hidden'] ?? false);
+        $control = $field_def['control'] ?? 'input';
 
-        $columns[] = [
+        $column = [
           'key'      => (string)$field_key,
           'label'    => $field_def['label'] ?? ucfirst(str_replace('_', ' ', (string)$field_key)),
           'dataType' => $field_def['data_type'] ?? 'string',
-          'control'  => $field_def['control'] ?? 'input',
+          'control'  => $control,
           'hidden'   => $hidden,
           'titleMap' => $field_def['titleMap'] ?? null,
           'visible'  => !$hidden,
           'write'    => isset($writeable_set[$field_key]),
         ];
+
+        // Enum fields (Pods pick / custom-simple, e.g. tub.state) carry their
+        // option list, read live from the Pods field config. The client renders
+        // these directly — there is no hardcoded copy on the JS side.
+        if ($control === 'enum') {
+          $column['options'] = scoop_field_enum_options((string)$entity_key, (string)$field_key);
+        }
+
+        $columns[] = $column;
       }
 
       $entities_out[$entity_key] = $columns;
