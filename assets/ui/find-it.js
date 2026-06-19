@@ -140,23 +140,42 @@ export default class FindIt extends El {
     });
 
     this.INP.addEventListener("blur", () => {
-      
-      const match = this.options.find(op => op.label === this.INP.value);
-      
-      if (match) this.select(match);
-      
-      else {
-        const oldValue = this.value;
-        
-        this.value = ""; 
-        this.HDN.value = "";
-        
-        // FIX: Dispatch the change event!
-        this.HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
+      const typed = this.INP.value;
+
+      // Emptying the field is the only sanctioned way to leave it unselected.
+      if (typed.trim() === "") {
+        this._clearValue();
+        this.close();
+        return;
       }
-      
+
+      // An exact label match always wins (also covers arrow-key navigation,
+      // which writes the full label into the input).
+      let match = this.options.find(op => op.label === typed);
+
+      // Otherwise, once the user has typed enough to filter (2+ chars), commit
+      // the top filtered option. This stops them from tabbing/clicking out on a
+      // half-typed value that was never actually selected from the list.
+      if (!match && typed.trim().length >= 2) {
+        match = this._matchOptions(typed)[0] ?? null;
+      }
+
+      if (match) this.select(match);
+      else       this._clearValue();
+
       this.close();
     });
+  }
+
+  // Reset to "no selection": blanks the committed value AND the visible text so
+  // the cell never shows a stray, unselected string. Used by the blur handler
+  // when the field is empty or the typed text matches nothing.
+  _clearValue() {
+    this.value   = "";
+    this.display = "";
+    if (this.HDN) this.HDN.value = "";
+    if (this.INP) this.INP.value = "";
+    this.HDN?.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
   }
 
   clear() {    

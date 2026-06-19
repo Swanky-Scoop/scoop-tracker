@@ -16,6 +16,18 @@ Deployment is by SFTP-on-save via the VS Code SFTP extension — `.vscode/sftp.j
 
 To exercise changes, save the file (uploads to TEST) and reload a page that contains a `[scoop_grid ...]` shortcode while logged in. When debugging server-side, set `define('SCOOP_DEBUG_LOG', true)` in `wp-config.php` to enable `scoop_debug_log()` output to the PHP error log.
 
+### Local development mirror (fastest loop)
+
+There is a [Local](https://localwp.com/) (by Flywheel) site, `swank-tracker`, served at `https://ops.swankyscoop.local`, whose plugin directory is a **symbolic link to this repository**:
+
+```
+…/Local Sites/swank-tracker/app/public/wp-content/plugins/scoop_rest  →  <repo root>
+```
+
+Because it's a symlink, **edits to the repo are live on the local site immediately** — no SFTP, no copy. Reload for PHP; hard-refresh for JS (ES module cache). This is the fastest way to validate a change. Reach it with `curl -k` (self-signed cert). The local site has its own database and users, and its Pods config/content can differ from TEST and OPS — don't assume parity (see "Do not suggest" notes on environment drift).
+
+SFTP-on-save still governs the **real** servers (`test.swankyscoop.net`, `ops.swankyscoop.net`); use it to ship once a change is validated locally. The local mirror is for iteration only.
+
 ## Architecture
 
 ### Request lifecycle for a grid page
