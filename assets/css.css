@@ -1239,3 +1239,21 @@ table.zGRID tr .badges .badge.warning {
 .zGRID td.phase-emptied {
   color: #7a4f01;
 }
+
+/* ── Autosave grids ──────────────────────────────────────────────────────────
+   Grids whose model sets `autosave = true` persist each change immediately and
+   render no save button. The button is also hidden via the `hidden` attribute
+   in JS; this rule is a backup. Per-cell flashes confirm a save (or an error). */
+.zGRID-form.autosave > button.save { display: none; }
+
+.zGRID td.cell-saved { animation: scoopCellSaved 0.8s ease-out; }
+.zGRID td.cell-error { animation: scoopCellError 0.8s ease-out; }
+
+@keyframes scoopCellSaved {
+  0%   { background: #b6e0b6; }
+  100% { background: transparent; }
+}
+@keyframes scoopCellError {
+  0%   { background: #f3b6b6; }
+  100% { background: transparent; }
+}

@@ -1,9 +1,11 @@
 import BaseGridModel from "./_base-grid-model.js";
 
 export default class CabinetGridModel extends BaseGridModel{
-  constructor(name = 'Cabinet', domain, attrs = {}) 
+  constructor(name = 'Cabinet', domain, attrs = {})
   {
     super(name, domain, attrs );
+    // Save each change immediately, no save button, no full page reload.
+    this.autosave = true;
   }
 
   buildRows() {

@@ -41,6 +41,12 @@ export default class Grid extends El{
     this._lastFocusedEl = this.target;
     this._postSubmitFocus = false;
 
+    // Autosave mode (opt-in per model via `autosave = true`): every cell change
+    // POSTs immediately with NO full page reload, and the save button is hidden.
+    this._autosaving = false;
+    this._autosavePending = false;
+    this._autosaveTimer = null;
+
     this.loadConfig(config);
     this._build();
     
@@ -71,6 +77,7 @@ export default class Grid extends El{
     this._filter = (state?.filter) ? new FindInGrid(this.FORM, { root: this.TABLE }) : this.filter;
 
     this._captureBaseline();
+    this._applyAutosaveUI();
 
     this.FORM.dispatchEvent(new Event("ts:grid:init"));
     this._isInit = true;
@@ -105,6 +112,7 @@ export default class Grid extends El{
     this._buildFilters(state);
     this._rebuildBodies(state);
     this._captureBaseline();
+    this._applyAutosaveUI();
     this.FORM.dispatchEvent(new Event("ts:grid:close-overlays"));
   }
   
@@ -667,9 +675,93 @@ export default class Grid extends El{
   
     const before = this._normValue(colKey, this.baseline.get(k));
     const after  = this._normValue(colKey, v);
-    
+
     if (before === after) this.dirtySet.delete(k);
     else this.dirtySet.add(k);
+
+    // Autosave grids persist each change right away (no save button, no reload).
+    if (this._autosaveEnabled()) this._scheduleAutosave();
+  }
+
+  // ─── Autosave ──────────────────────────────────────────────────────────────
+  // Opt in per model: `this.autosave = true`. Each cell change is POSTed on a
+  // short debounce; unlike the normal submit path it does NOT call
+  // refreshPageDomain(), so the page/grid is never rebuilt out from under the
+  // user mid-edit. The save button is hidden (see _applyAutosaveUI).
+
+  _autosaveEnabled() {
+    return !!(this.state && this.state.autosave);
+  }
+
+  _applyAutosaveUI() {
+    const on = this._autosaveEnabled();
+    this.FORM.classList.toggle('autosave', on);
+    if (this.SUBMIT) this.SUBMIT.hidden = on;
+  }
+
+  _scheduleAutosave() {
+    clearTimeout(this._autosaveTimer);
+    this._autosaveTimer = setTimeout(() => this._autosaveFlush(), 250);
+  }
+
+  async _autosaveFlush() {
+    // Coalesce: if a save is already in flight, run once more when it lands.
+    if (this._autosaving) { this._autosavePending = true; return; }
+
+    const changes = this._buildDirtyPayload();
+    if (!Object.keys(changes.cells).length) return;
+
+    if (!this.api || !this.postUrl) {
+      console.error('Grid autosave: missing api/postUrl');
+      return;
+    }
+
+    this._autosaving = true;
+    this.FORM.classList.add('autosaving');
+
+    try {
+      const r = await this.api.postJson(changes, this.name);
+
+      if (!r.ok || !r.data?.ok) {
+        Toast.addMessage({
+          title: 'Autosave failed',
+          message: r?.data ? JSON.stringify(r.data) : `HTTP ${r?.status}`,
+        });
+        this._flashCells(changes, 'cell-error');
+        return;
+      }
+
+      // Commit to baseline (clears the dirty flags) with NO page reload — the
+      // cells already display the values the user entered.
+      this._commitPosted(changes);
+      this._flashCells(changes, 'cell-saved');
+
+    } catch (err) {
+      console.error('Grid autosave exception:', err);
+      Toast.addMessage({ title: 'Autosave error', message: String(err) });
+    } finally {
+      this._autosaving = false;
+      this.FORM.classList.remove('autosaving');
+      if (this._autosavePending) {
+        this._autosavePending = false;
+        this._scheduleAutosave();
+      }
+    }
+  }
+
+  // Briefly mark the just-saved (or errored) cells so autosave is visible.
+  _flashCells(changes, cls) {
+    for (const [rowId, row] of Object.entries(changes.cells ?? {})) {
+      for (const colKey of Object.keys(row ?? {})) {
+        const h = this.FORM.querySelector(
+          `input[type="hidden"][name="${this.name}[cells][${rowId}][${colKey}]"]`
+        );
+        const cell = h?.closest('td');
+        if (!cell) continue;
+        cell.classList.add(cls);
+        setTimeout(() => cell.classList.remove(cls), 800);
+      }
+    }
   }
 
   async _bindEvents() {
