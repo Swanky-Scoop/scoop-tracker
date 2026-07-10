@@ -59,7 +59,16 @@ function scoop_routes_config(string $batch_key = ''): array {
       'post_type'    => 'tub',
       'pod_name'     => 'tub',
       'allowed_fields_cb' => 'scoop_tubs_allowed_fields',
-    ]
+    ],
+    'InstockFlavor' => [
+      'path'         => '/instockflavors',
+      'methods'      => ['GET','POST'],
+      'mode'         => 'update',
+      'envelope_key' => 'InstockFlavor',
+      'post_type'    => 'flavor',
+      'pod_name'     => 'flavor',
+      'allowed_fields_cb' => 'scoop_instock_flavor_fields',
+    ],
   ];
   
   if ($batch_key === '') {

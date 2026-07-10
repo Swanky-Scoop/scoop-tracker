@@ -9,6 +9,7 @@ function scoop_bundle_specs(): array {
     'BatchHistory' => ['needs' => ['batch','flavor']],
     'Closeout'     => ['needs' => ['flavor','use']],
     'DateActivity' => ['needs' => ['tub','inventory_change','flavor','use','location','slot','cabinet']],
+    'InstockFlavor'=> ['needs' => ['flavor']],
   ];
   
   return $specs;
@@ -184,8 +185,12 @@ function scoop_entity_specs(string $key = ''): array {
         'titleMap'  => 'flavor',
         'title'     => 'Flavors',
         'fields'    => [
-          'web_id'    => ['data_type' => 'int'],
-          'allergens' => ['data_type' => 'post_names'],
+          'menu_board'    => ['data_type' => 'file'],
+          'photo'         => ['data_type' => 'file'],
+          'tubs'          => ['data_type' => 'ids'],
+          'current_slots' => ['data_type' => 'ids'],
+          'allergens'     => ['data_type' => 'post_names'],
+          'web_id'        => ['data_type' => 'int'],
         ],
         'writeable' => []
       ],

@@ -45,6 +45,26 @@ function scoop_post_names_out( $v ): array {
   return $a;
 }
 
+/**
+ * Pods 'file' fields resolve via $pod->field() to an attachment array (or a
+ * bare attachment ID, depending on Pods version/config). Reduce either shape
+ * to the plain attachment URL the client can show as text.
+ */
+function scoop_file_url_out( $v ): string {
+  if ( empty( $v ) ) return '';
+
+  if ( is_array( $v ) ) {
+    if ( isset( $v[0] ) && is_array( $v[0] ) ) $v = $v[0];
+    if ( ! empty( $v['guid'] ) ) return scoop_text_out( $v['guid'] );
+    if ( ! empty( $v['ID'] ) ) return (string) ( wp_get_attachment_url( (int) $v['ID'] ) ?: '' );
+    return '';
+  }
+
+  if ( is_numeric( $v ) ) return (string) ( wp_get_attachment_url( (int) $v ) ?: '' );
+
+  return scoop_text_out( $v );
+}
+
 function scoop_relation_ids_out( $v ): array {
   if ( empty( $v ) ) return [];
 
@@ -232,6 +252,7 @@ function scoop_cast( $v, $desc ) {
     case 'string':     return scoop_text_out( $v );
     case 'bool':       return (bool) $v;
     case 'datetime':   return scoop_datetime_out( $v );
+    case 'file':       return scoop_file_url_out( $v );
     default:           return $v;
   }
 }

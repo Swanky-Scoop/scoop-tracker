@@ -11,6 +11,7 @@ import AnalyticsGridModel    from "../models/analytics-grid-model.js";
 import PopularGridModel      from "../models/popular-grid-model.js";
 import PopularPlot           from "../ui/popular-plot.js";
 import FlavorsGridModel      from "../models/flavors-grid-model.js";
+import InstockFlavorGridModel from "../models/instock-flavor-grid-model.js";
 
 
 export default class ScoopAPI {
@@ -82,6 +83,7 @@ export default class ScoopAPI {
       "Analytics"    : AnalyticsGridModel,
       "Popular"      : PopularGridModel,
       "Flavors"      : FlavorsGridModel,
+      "InstockFlavor": InstockFlavorGridModel,
     };
   }
 

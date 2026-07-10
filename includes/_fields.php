@@ -11,6 +11,9 @@ function scoop_batches_allowed_fields( $user ): array {
 function scoop_tubs_allowed_fields( $user ): array {
   return [ 'state', 'use', 'amount']; //'amount' 
 }
+function scoop_instock_flavor_fields( $user ): array {
+  return [ 'menu_board', 'photo', 'tubs', 'current_slots', 'allergens', 'web_id' ];
+}
 function scoop_closeouts_allowed_fields( $user ): array {
   return [ 'tubs_emptied', 'flavor', 'use', 'location', 'order']; //'amount' 
 }
