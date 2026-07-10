@@ -8,7 +8,16 @@ export default class InstockFlavorGridModel extends BaseGridModel {
 
   // Columns come straight from SCOOP.metaData.InstockFlavor (server-driven,
   // see BaseGridModel.buildCols()) — menu_board, photo, tubs, current_slots,
-  // allergens, web_id, in that order.
+  // allergens, web_id, in that order. _title (flavor post title) isn't a
+  // Pods field so it isn't in metaData; prepend it here.
+  buildCols() {
+    super.buildCols();
+
+    const titleCol = { key: "_title", label: "Flavor", dataType: "string", control: "input", hidden: false, visible: true, write: false };
+    this._allColumns = [titleCol, ...(this._allColumns ?? [])];
+    this._applyColumnFilter();
+    return this.columns;
+  }
 
   buildRows() {
     super.buildRows();
