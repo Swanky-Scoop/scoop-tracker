@@ -88,4 +88,16 @@ scoop_require('includes/cli.php');
 //error_log("========== SCOOP REST PLUGIN LOADED ==========");
 
 register_activation_hook(__FILE__, 'scoop_readonly');
+
 add_filter('pods_api_pre_save_pod_item', 'scoop_enforce_tub_rules', 10, 3);
+
+// Hook into the login page script queue
+add_action( 'login_enqueue_scripts', 'scoop_login_styles' );
+
+function scoop_login_styles() {
+    // Generates the correct URL to your plugin folder's CSS file
+    $css_url = plugins_url( 'assets/ui/login.css', __FILE__ );
+
+    // Enqueue the stylesheet safely
+    wp_enqueue_style( 'scoop-login-css', $css_url, array(), '1.0.0' );
+}
