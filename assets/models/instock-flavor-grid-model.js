@@ -1,9 +1,20 @@
 import BaseGridModel from "./_base-grid-model.js";
+import Indexer       from "../data/indexer.js";
 
 export default class InstockFlavorGridModel extends BaseGridModel {
   constructor(name = 'InstockFlavor', domain, attrs = {}) {
     super(name, domain, attrs);
     this.filter = true; // enables text find-in-grid
+
+    // From the shortcode's data-group/data-filter (see includes/shortcode.php).
+    // No attributes => show every flavor, flat/ungrouped.
+    this.group = attrs?.group ? String(attrs.group).trim().toLowerCase() : null;
+    this.rowFilters = new Set(
+      String(attrs?.filters ?? '')
+        .split(',')
+        .map(s => s.trim().toLowerCase())
+        .filter(Boolean)
+    );
   }
 
   // Columns come straight from SCOOP.metaData.InstockFlavor (server-driven,
@@ -22,13 +33,89 @@ export default class InstockFlavorGridModel extends BaseGridModel {
     return this.columns;
   }
 
+  // tubs/current_slots stay as raw id arrays on the row (no count-collapsing
+  // here); Grid and Tile each decide for themselves how much of that to show
+  // (see grid.js buildFieldDom and tile.js buildFieldDom).
+  //
+  // group="cabinet" / filter="tubs" on the shortcode (see includes/shortcode.php)
+  // opt into grouping-by-cabinet and/or excluding flavors with no active tubs.
+  // With neither, every flavor shows, flat.
   buildRows() {
-    super.buildRows();
-    for (const row of this.rows) {
-      this._applyCounts(row);
-      this._applyTitleLink(row);
+    if (!this.domain) return [];
+
+    const allFlavors = Array.isArray(this.domain.flavor) ? this.domain.flavor : [];
+    const flavors = this.rowFilters.has('tubs')
+      ? allFlavors.filter(f => (this._availByFlavor.get(f.id)?.length ?? 0) > 0)
+      : allFlavors;
+
+    if (this.group === 'cabinet') {
+      return this._buildRowsGroupedByCabinet(flavors);
     }
+
+    return this._buildFlatRows(flavors);
+  }
+
+  _buildFlatRows(flavors) {
+    this.rows = flavors.map((f, i) => {
+      const row = { id: f.id };
+      this._fillFlavorRow(row, f, i);
+      return row;
+    });
+    this.rowGroups = [];
     return this.rows;
+  }
+
+  // Groups by the cabinet each flavor's current_slots point at — flavors
+  // with no resolvable cabinet fall into an "Others" bucket.
+  _buildRowsGroupedByCabinet(flavors) {
+    const slotsById = Indexer.byId(this.domain.slot ?? []);
+    const OTHERS = 'others';
+
+    const groupsMap = new Map();
+    for (const flavor of flavors) {
+      const cabinetId = this._cabinetIdForFlavor(flavor, slotsById) || OTHERS;
+      const list = groupsMap.get(cabinetId) ?? [];
+      list.push(flavor);
+      groupsMap.set(cabinetId, list);
+    }
+
+    return this.buildGroupedRows({
+      groupsMap     : this._sortGroupsOthersLast(groupsMap, OTHERS),
+      includeGroupId: () => true,
+      getGroupLabel : (id) => id === OTHERS ? 'Others' : this.labelFromMap(id, this._cabinetsById),
+      makeRowId     : (f) => f.id,
+      fillRow       : (row, f, i) => this._fillFlavorRow(row, f, i),
+      groupType     : 'cabinet',
+      rowType       : 'flavor',
+      rowLabel      : 'flavor',
+      collapsible   : true,
+      collapsed     : false,
+    });
+  }
+
+  _cabinetIdForFlavor(flavor, slotsById) {
+    const slotIds = Array.isArray(flavor.current_slots) ? flavor.current_slots : [];
+    for (const slotId of slotIds) {
+      const slot = slotsById.get(Number(slotId));
+      const cabinetId = Number(slot?.cabinet ?? 0);
+      if (cabinetId > 0) return cabinetId;
+    }
+    return 0;
+  }
+
+  // "Others" always sorts last regardless of insertion order.
+  _sortGroupsOthersLast(groupsMap, othersKey) {
+    const entries = [...groupsMap.entries()].sort((a, b) => {
+      if (a[0] === othersKey) return 1;
+      if (b[0] === othersKey) return -1;
+      return 0;
+    });
+    return new Map(entries);
+  }
+
+  _fillFlavorRow(row, flavor, i) {
+    this.fillRowFromColumns(row, flavor, i);
+    this._applyTitleLink(row);
   }
 
   // fillRowFromColumns() sets cell.id = Number(raw), but raw here is the
@@ -36,18 +123,5 @@ export default class InstockFlavorGridModel extends BaseGridModel {
   // so the Details link points at the right item.
   _applyTitleLink(row) {
     if (row._title) row._title.id = row.id;
-  }
-
-  // tubs / current_slots arrive as relationship-id arrays; show a count
-  // rather than the raw id list (filtering by those tubs is a later step).
-  _applyCounts(row) {
-    for (const key of ['tubs', 'current_slots']) {
-      const cell = row[key];
-      if (!cell) continue;
-
-      const ids = Array.isArray(cell.display) ? cell.display : [];
-      cell.value = ids.length;
-      cell.display = String(ids.length);
-    }
   }
 }

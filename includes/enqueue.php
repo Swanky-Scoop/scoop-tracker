@@ -113,6 +113,9 @@ function scoop_client_metadata(): array {
           'titleMap' => $field_def['titleMap'] ?? null,
           'visible'  => !$hidden,
           'write'    => isset($writeable_set[$field_key]),
+          // Multi-value rendering capability ('count'|'list'|'both'); only
+          // meaningful for data_type 'ids'/'post_names', default 'both'.
+          'display'  => $field_def['display'] ?? 'both',
         ];
 
         // Enum fields (Pods pick / custom-simple, e.g. tub.state) carry their

@@ -325,14 +325,19 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
   if ( $key === 'tub' ) {
     $requesting_types = $ctx['requesting_types'] ?? [];
 
-    // InstockFlavor's Details drill-down needs to resolve titles for every
-    // tub id in flavor.tubs, including long-emptied ones — exclude it from
-    // the "active only" trimming below.
-    $wants_all_tubs = in_array( 'InstockFlavor', $requesting_types, true );
-
     // Exclude emptied tubs at the DB level unless the caller explicitly wants them.
     // This is the biggest single filter on the tub table and saves the most work.
-    $include_empty = ! empty( $ctx['include_empty_tubs'] ) || $wants_all_tubs;
+    //
+    // InstockFlavor's Details drill-down would ideally resolve titles for
+    // every tub id in flavor.tubs, including long-emptied ones — but
+    // unconditionally disabling this filter whenever InstockFlavor shares a
+    // page with any other grid pulls the shop's ENTIRE tub history into one
+    // request regardless of the other grids' needs. That's unbounded and
+    // exhausted PHP's memory limit in practice (crashed the php-fpm worker).
+    // Reverted: always exclude Emptied here. Details falls back to a plain
+    // "tub #id" label for tubs old enough to have been trimmed — a small
+    // cosmetic downgrade, not a crash.
+    $include_empty = ! empty( $ctx['include_empty_tubs'] );
     if ( ! $include_empty ) {
       $where_clauses[] = "state != 'Emptied'";
     }

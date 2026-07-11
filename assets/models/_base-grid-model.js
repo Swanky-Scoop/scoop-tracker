@@ -442,9 +442,14 @@ export default class BaseGridModel {
       if (!key) continue;
 
       const raw = rowData?.[key];
-      const id = Number(raw ?? 0);
+      // Multi-value ('ids') fields carrying titleMap (added so Details.js can
+      // resolve them — see scoop_entity_relations()) are NOT a single foreign
+      // key; Number(array) => NaN and titleFrom() would show "NaN". Only
+      // apply the single-id titleMap lookup for scalar values.
+      const isMulti = Array.isArray(raw);
+      const id = isMulti ? 0 : Number(raw ?? 0);
 
-      let display = col.titleMap
+      let display = (col.titleMap && !isMulti)
         ? this.titleFrom(id, col)
         : raw ?? "";
 

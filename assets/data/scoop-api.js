@@ -1,4 +1,5 @@
 import Grid               from "../ui/grid.js";
+import Tile                from "../ui/tile.js";
 import ColumnsProvider    from "../models/_column-provider.js";
 import FormCodec          from "./form-codec.js";
 import CabinetGridModel      from "../models/cabinet-grid-model.js";
@@ -469,10 +470,19 @@ export default class ScoopAPI {
             metaData: SCOOP.metaData?.[name],
             dateFilters,
             filterValues,
-            modifiedRange: dom.dataset.modifiedRange || filterValues.activity || 'last_48_hours'
+            modifiedRange: dom.dataset.modifiedRange || filterValues.activity || 'last_48_hours',
+            // Row grouping/filtering from the shortcode (data-group/data-filter,
+            // see includes/shortcode.php) — currently read by InstockFlavorGridModel.
+            group: dom.dataset.group || null,
+            filters: dom.dataset.filter || '',
         });
 
-        return new Grid(dom, name, {
+        // data-view="tile" (see includes/shortcode.php's [scoop_tile ...])
+        // picks the card renderer instead of the table one — same model,
+        // same bundle domain, just a different List subclass (see tile.js).
+        const ViewClass = dom.dataset.view === 'tile' ? Tile : Grid;
+
+        return new ViewClass(dom, name, {
             api: this,
             modelInstance,
             formCodec,

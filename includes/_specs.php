@@ -9,7 +9,7 @@ function scoop_bundle_specs(): array {
     'BatchHistory' => ['needs' => ['batch','flavor']],
     'Closeout'     => ['needs' => ['flavor','use']],
     'DateActivity' => ['needs' => ['tub','inventory_change','flavor','use','location','slot','cabinet']],
-    'InstockFlavor'=> ['needs' => ['flavor','tub','slot']],
+    'InstockFlavor'=> ['needs' => ['flavor','tub','slot','cabinet']],
   ];
   
   return $specs;
@@ -64,13 +64,6 @@ function scoop_entity_specs(string $key = ''): array {
 
           $has_date_activity = in_array('DateActivity', $requesting_types, true);
           $has_other_grids   = !empty(array_diff($requesting_types, ['DateActivity']));
-
-          // InstockFlavor's Details drill-down resolves titles for every tub id
-          // in flavor.tubs (see scoop_entity_relations()), including emptied
-          // ones — bypass the "active only" exclusion below entirely.
-          if (in_array('InstockFlavor', $requesting_types, true)) {
-            return true;
-          }
 
           // DateActivity needs tubs whose actual inventory event dates are recent.
           // post_modified is still used for manual override rows, but opens and
@@ -194,8 +187,12 @@ function scoop_entity_specs(string $key = ''): array {
         'fields'    => [
           'menu_board'    => ['data_type' => 'file'],
           'photo'         => ['data_type' => 'file'],
-          'tubs'          => ['data_type' => 'ids', 'titleMap' => 'tub'],
-          'current_slots' => ['data_type' => 'ids', 'titleMap' => 'slot'],
+          // 'display' is a rendering-capability hint for multi-value fields:
+          // 'count' | 'list' | 'both'. Grid defaults to count-only regardless;
+          // Tile shows whatever the flag allows. Defaults to 'both' when unset
+          // (see scoop_client_metadata()).
+          'tubs'          => ['data_type' => 'ids', 'titleMap' => 'tub',  'display' => 'both'],
+          'current_slots' => ['data_type' => 'ids', 'titleMap' => 'slot', 'display' => 'both'],
           'allergens'     => ['data_type' => 'post_names'],
           'web_id'        => ['data_type' => 'int'],
         ],

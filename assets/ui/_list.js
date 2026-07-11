@@ -174,8 +174,8 @@ export default class List extends El{
     throw new Error(`${this.constructor.name}.buildItemDom() must be overridden — return one empty container node for a single item; List appends each field's DOM into it.`);
   }
 
-  buildFieldDom(col, data) {
-    throw new Error(`${this.constructor.name}.buildFieldDom() must be overridden — create your own wrapper node, call this._renderFieldValue(wrapper, col, data) to fill it, then return the wrapper.`);
+  buildFieldDom(col, data, row) {
+    throw new Error(`${this.constructor.name}.buildFieldDom() must be overridden — create your own wrapper node, call this._renderFieldValue(wrapper, col, data) to fill it, then return the wrapper. row is the full item, for cases like an <img alt> that need more than the one field's value.`);
   }
 
   // ─── Shared build pipeline — calls the hooks above, owns nothing visual ───
@@ -248,7 +248,7 @@ export default class List extends El{
 
         fields.forEach(col => {
           const data = row?.[col.key] ?? "";
-          ITEM.append(this.buildFieldDom(col, data));
+          ITEM.append(this.buildFieldDom(col, data, row));
         });
 
         const container = this.itemGroupDom[i];
@@ -263,7 +263,11 @@ export default class List extends El{
           return; // stop building further items
         }
 
-        container.append(ITEM);
+        // buildGroupDom may nest items inside a child element (e.g. a <ul>
+        // inside a card group's <div>) rather than appending directly to the
+        // container it returned — that child, if any, is stashed on
+        // container._itemsHost.
+        (container._itemsHost ?? container).append(ITEM);
       });
 
     } catch (e) {
@@ -328,7 +332,15 @@ export default class List extends El{
   _renderFieldValue(EL, col, data) {
     const d = (data && typeof data === "object") ? data : { display: String(data ?? "") };
 
-    EL.classList.add(col.key, col.type ?? 'ok_colType', d.alertCase ?? 'ok_alertCase');
+    // classList.add() throws on an empty-string token (unlike El.el()'s
+    // `classes` array, which silently filters those out) — getAlertCase()
+    // defaults to '' rather than undefined, so this must filter too.
+    // col.type is the hand-authored-model convention; col.dataType is what
+    // server-driven metadata columns carry (see grid.js's header comment on
+    // this long-standing split). Prefer whichever is actually present.
+    const stateClasses = [col.key, col.type ?? col.dataType ?? 'ok_colType', d.alertCase ?? 'ok_alertCase']
+      .filter(c => typeof c === 'string' && c.trim().length > 0);
+    if (stateClasses.length) EL.classList.add(...stateClasses);
     if (col.hidden) EL.classList.add('hidden');
 
     if (col.write && d.write !== false) {
@@ -344,10 +356,10 @@ export default class List extends El{
       // triggering titleMap's id-lookup display logic.
       const entityKey = col.detailEntity ?? col.titleMap;
       if (entityKey === 'flavor' && d.id) {
-        EL.append(this.el('button', {
+        EL.append(this.el('a', {
           text: '' + (d.display || ''),
           classes: ['detail-link'],
-          attrs: { type: 'button' },
+          attrs: { href: `#details=${encodeURIComponent(entityKey)}%3A${d.id}` },
           data: { detailEntity: entityKey, detailId: d.id },
         }));
       } else {
@@ -359,6 +371,17 @@ export default class List extends El{
     if (data.badges && data.badges[0]) EL.append(this._getBadgeDom(data.badges));
 
     return EL;
+  }
+
+  // CSS-safe class token from arbitrary text (a title, a slot name, an
+  // allergen slug already conforms and passes through unchanged). Falls back
+  // to 'item' rather than risk classList.add('') — see _renderFieldValue's
+  // comment on why that throws.
+  _slug(text) {
+    return String(text ?? '')
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9_-]/g, '') || 'item';
   }
 
   _getBadgeDom(badges){

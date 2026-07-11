@@ -74,7 +74,22 @@ export default class Grid extends List {
 
   buildFieldDom(col, data) {
     const CELL = this.el('td', { classes: ['cell'] });
+
+    // Table cells stay terse: any multi-value ('ids') field shows a count,
+    // not the id list. Tile shows the fuller list — see tile.js.
+    if (col.dataType === 'ids') return this._renderIdsCount(CELL, col, data);
+
     return this._renderFieldValue(CELL, col, data);
+  }
+
+  _renderIdsCount(CELL, col, data) {
+    const ids = Array.isArray(data?.display) ? data.display : [];
+
+    CELL.classList.add(col.key, 'ids-count', 'read-only');
+    if (col.hidden) CELL.classList.add('hidden');
+    CELL.append(String(ids.length));
+
+    return CELL;
   }
 
 }

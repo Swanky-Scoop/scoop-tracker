@@ -36,7 +36,10 @@
       "Bash(cd \"c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker\")",
       "Bash(curl -s --insecure -u swannvoe:YKiBr=sHET%U -T assets/models/flavor-tub-grid-model.js sftp://swankyscoop.net:21098__TRACKED_VAR__/assets/models/flavor-tub-grid-model.js -w 'exit=%{exitcode}\\\\n')",
       "Bash(php -l includes/_specs.php)",
-      "Bash(php -l includes/bundle-fetch.php)"
+      "Bash(php -l includes/bundle-fetch.php)",
+      "Bash(curl -sk -D - \"https://ops.swankyscoop.local/wp-json/scoop/v1/bundle?types=InstockFlavor\" -o /tmp/bundle_response.txt --max-time 20)",
+      "Read(//tmp/**)",
+      "Read(//c/Users/gus reiber/Local Sites/**)"
     ]
   }
 }

@@ -10,6 +10,8 @@
 // close so the browser back/forward buttons step through panel state.
 //////////////////////////////////
 
+import { resolveRelationIds } from "../data/relations.js";
+
 export default class Details {
   static _api = null;
   static _state1 = null; // { entity, id } | null
@@ -67,9 +69,12 @@ export default class Details {
     CLOSE.addEventListener('click', () => Details.close(level));
 
     // Relation links rendered inside either panel always open into level 2.
+    // preventDefault so the real href doesn't also trigger a native hash
+    // navigation alongside Details.open()'s own pushState.
     HOST.addEventListener('click', (e) => {
       const link = e.target.closest('[data-detail-entity]');
       if (!link) return;
+      e.preventDefault();
       Details.open(link.dataset.detailEntity, Number(link.dataset.detailId), { level: 2 });
     });
 
@@ -147,24 +152,20 @@ export default class Details {
     const ids = Array.isArray(value) ? value : (value ? [value] : []);
     if (!ids.length) { DD.append('—'); return; }
 
-    const byId = new Map(Details._domain(rel.pod).map(i => [Number(i.id), i]));
+    const resolved = resolveRelationIds(rel.pod, ids, Details._api?.getDomainSnapshot?.() ?? {});
 
-    ids.forEach((rawId, i) => {
-      const relId = Number(rawId);
-      const found = byId.get(relId);
-      const label = found?._title || `${rel.pod} ${relId}`;
-
+    resolved.forEach(({ id, title, found }, i) => {
       if (found) {
-        const LINK = Details._el('button', label, 'detail-link');
-        LINK.type = 'button';
+        const LINK = Details._el('a', title, 'detail-link');
+        LINK.href = `#details2=${encodeURIComponent(rel.pod)}%3A${id}`;
         LINK.dataset.detailEntity = rel.pod;
-        LINK.dataset.detailId = String(relId);
+        LINK.dataset.detailId = String(id);
         DD.append(LINK);
       } else {
-        DD.append(label);
+        DD.append(title);
       }
 
-      if (i < ids.length - 1) DD.append(', ');
+      if (i < resolved.length - 1) DD.append(', ');
     });
   }
 
