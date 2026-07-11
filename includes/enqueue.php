@@ -197,7 +197,7 @@ add_action('wp_enqueue_scripts', function () {
     global $post;
     if (!$post) return;
     
-    if (!has_shortcode($post->post_content, 'scoop_grid')) return;
+    if (!has_shortcode($post->post_content, 'scoop_grid') && !has_shortcode($post->post_content, 'scoop_tile')) return;
 
     scoop_enqueue_assets();
 });

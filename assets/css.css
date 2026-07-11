@@ -1072,7 +1072,8 @@ form table {
    ============================================ */
 
 .scoop-grid[data-grid-type="Analytics"] button.save,
-.scoop-grid[data-grid-type="Flavors"] button.save {
+.scoop-grid[data-grid-type="Flavors"] button.save,
+.scoop-grid[data-grid-type="CabinetWorkflow"] button.save {
   display: none;
 }
 

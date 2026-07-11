@@ -13,6 +13,8 @@ import PopularGridModel      from "../models/popular-grid-model.js";
 import PopularPlot           from "../ui/popular-plot.js";
 import FlavorsGridModel      from "../models/flavors-grid-model.js";
 import InstockFlavorGridModel from "../models/instock-flavor-grid-model.js";
+import CabinetWorkflowGridModel from "../models/cabinet-workflow-grid-model.js";
+import CabinetWorkflowTile      from "../ui/cabinet-workflow-tile.js";
 
 
 export default class ScoopAPI {
@@ -85,6 +87,18 @@ export default class ScoopAPI {
       "Popular"      : PopularGridModel,
       "Flavors"      : FlavorsGridModel,
       "InstockFlavor": InstockFlavorGridModel,
+      "CabinetWorkflow": CabinetWorkflowGridModel,
+    };
+  }
+
+  // Per-type View class overrides — checked before the generic data-view
+  // ("grid"/"tile") switch below. CabinetWorkflow's markup (see
+  // cabinet-workflow-tile.js) doesn't fit Tile's column-driven rendering, so
+  // it gets its own Tile subclass rather than adding type-specific branches
+  // to the shared tile.js.
+  getViewOverrides() {
+    return {
+      "CabinetWorkflow": CabinetWorkflowTile,
     };
   }
 
@@ -480,7 +494,10 @@ export default class ScoopAPI {
         // data-view="tile" (see includes/shortcode.php's [scoop_tile ...])
         // picks the card renderer instead of the table one — same model,
         // same bundle domain, just a different List subclass (see tile.js).
-        const ViewClass = dom.dataset.view === 'tile' ? Tile : Grid;
+        // getViewOverrides() takes priority for types with their own Tile
+        // subclass (see cabinet-workflow-tile.js).
+        const ViewClass = this.getViewOverrides()[name]
+          ?? (dom.dataset.view === 'tile' ? Tile : Grid);
 
         return new ViewClass(dom, name, {
             api: this,

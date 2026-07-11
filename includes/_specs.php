@@ -10,6 +10,7 @@ function scoop_bundle_specs(): array {
     'Closeout'     => ['needs' => ['flavor','use']],
     'DateActivity' => ['needs' => ['tub','inventory_change','flavor','use','location','slot','cabinet']],
     'InstockFlavor'=> ['needs' => ['flavor','tub','slot','cabinet']],
+    'CabinetWorkflow' => ['needs' => ['cabinet','slot','flavor','tub']],
   ];
   
   return $specs;
@@ -164,8 +165,12 @@ function scoop_entity_specs(string $key = ''): array {
           'current_flavor'   => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'flavor'],
           'immediate_flavor' => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'flavor'],
           'next_flavor'      => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'flavor'],
+          // Pods field already exists (id 2434) but was unused until CabinetWorkflow —
+          // see change-tub.md. 'ids' (not 'int') because scoop_relation_ids_out()
+          // always returns an array regardless of the field's single/multi setting.
+          'tubs'             => ['data_type' => 'ids', 'control' => 'find', 'titleMap' => 'tub', 'hidden' => true],
         ],
-        'writeable' => ['current_flavor','immediate_flavor','next_flavor'],
+        'writeable' => ['current_flavor','immediate_flavor','next_flavor','tubs'],
       ],
 
       'cabinet' => [

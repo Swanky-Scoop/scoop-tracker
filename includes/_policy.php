@@ -14,7 +14,7 @@ function scoop_access_policy(): array {
       ],
       'entities' => [
         'tub'  => ['state','use','amount'],
-        'slot' => ['current_flavor','immediate_flavor','next_flavor'],
+        'slot' => ['current_flavor','immediate_flavor','next_flavor','tubs'],
       ],
     ],
 
@@ -42,7 +42,7 @@ function scoop_access_policy(): array {
       ],
       'entities' => [
         'tub'  => ['state'],
-        'slot' => ['current_flavor'],
+        'slot' => ['current_flavor','tubs'],
       ],
     ],
   ];
