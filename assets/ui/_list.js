@@ -185,9 +185,12 @@ export default class List extends El{
     if (this.fields) this._buildFields();
   }
 
-  _rebuildBodies({ itemGroups, items }) {
-    this.setItemGroups(itemGroups ?? []);
-    this.setItems(items ?? []);
+  // Accepts either the model itself (which exposes .rows/.rowGroups — that
+  // naming lives on BaseGridModel and isn't part of this refactor) or a
+  // plain { rows, rowGroups } object from _applySortAndRender's re-sort.
+  _rebuildBodies(state) {
+    this.setItemGroups(state?.rowGroups ?? []);
+    this.setItems(state?.rows ?? []);
   }
 
   _buildFields(){
@@ -574,7 +577,7 @@ export default class List extends El{
     const preSortItems = this.items;
     if(!this.itemGroups || this.itemGroups.length < 1 ){
       this.items = this._sortItems(preSortItems, this.sortField, this.sortDirection);
-      this._rebuildBodies({ itemGroups: this.itemGroups, items: this.items });
+      this._rebuildBodies({ rowGroups: this.itemGroups, rows: this.items });
       return;
     }
     const sortedGroups = this.itemGroups.map((group, groupIndex) => {
@@ -608,7 +611,7 @@ export default class List extends El{
     });
 
     // Re-render
-    this._rebuildBodies({ itemGroups: this.itemGroups, items: this.items });
+    this._rebuildBodies({ rowGroups: this.itemGroups, rows: this.items });
   }
 
   _sortItems(items, colKey, direction) {
@@ -813,7 +816,8 @@ export default class List extends El{
           select.disabled = false;
         }
       } else if (this.modelInstance) {
-        this.modelInstance._buildItems();
+        // BaseGridModel's own rebuild method — model-side naming, not part of this refactor.
+        this.modelInstance._buildRows();
         await this.refresh(this.modelInstance);
       }
     });
