@@ -1,4 +1,5 @@
 import ScoopAPI    from "./data/scoop-api.js";
+import Details     from "./ui/details.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
   const api = new ScoopAPI({
@@ -9,6 +10,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     user: SCOOP.user
   });
   if( await api.userHelper(SCOOP) === false ) return;
+  Details.attach(api);
   await api.mountAllGrids(SCOOP.metaData);
-  
+  Details.refresh();
+
 });

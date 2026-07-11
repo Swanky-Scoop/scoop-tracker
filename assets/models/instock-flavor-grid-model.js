@@ -13,7 +13,10 @@ export default class InstockFlavorGridModel extends BaseGridModel {
   buildCols() {
     super.buildCols();
 
-    const titleCol = { key: "_title", label: "Flavor", dataType: "string", control: "input", hidden: false, visible: true, write: false };
+    // detailEntity (not titleMap) opts this cell into the Details-panel link
+    // in Grid._getCellDom() without going through titleMap's id-lookup
+    // display logic — this cell's raw value already IS the title text.
+    const titleCol = { key: "_title", label: "Flavor", dataType: "string", control: "input", hidden: false, visible: true, write: false, detailEntity: "flavor" };
     this._allColumns = [titleCol, ...(this._allColumns ?? [])];
     this._applyColumnFilter();
     return this.columns;
@@ -21,8 +24,18 @@ export default class InstockFlavorGridModel extends BaseGridModel {
 
   buildRows() {
     super.buildRows();
-    for (const row of this.rows) this._applyCounts(row);
+    for (const row of this.rows) {
+      this._applyCounts(row);
+      this._applyTitleLink(row);
+    }
     return this.rows;
+  }
+
+  // fillRowFromColumns() sets cell.id = Number(raw), but raw here is the
+  // title string (not a foreign key) — fix it up to the flavor's own post id
+  // so the Details link points at the right item.
+  _applyTitleLink(row) {
+    if (row._title) row._title.id = row.id;
   }
 
   // tubs / current_slots arrive as relationship-id arrays; show a count

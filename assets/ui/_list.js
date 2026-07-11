@@ -1,12 +1,28 @@
 ///////////////////////////////////
-// Table amd Form combo
-// consumes different cell/input types
-// can be augmented with FindInGrid
-// depends on MOM_El.js
-// Is fed by MDL*.js files
+// List — abstract parent for Grid (table) and Tile (card) views.
+// Owns everything that is NOT visual markup: sort, filter wiring, autosave,
+// submit, domain refresh, Details drill-down. A concrete subclass supplies
+// the actual DOM by overriding five hooks:
+//
+//   buildCoreDom()             — create + assign this.FORM/TOGGLE/FILTERS/
+//                                 SUBMIT/FRAME/TOOLS (the chrome)
+//   buildMetaFieldDom(field)   — one node per field in the header/tools area.
+//                                 Give it [data-sort-key] if it should sort.
+//   buildGroupDom(group,       — one container node that items get appended
+//     fields, opened)            into. If group.label is falsy, this is the
+//                                 synthetic "ungrouped" container — skip
+//                                 rendering a header for it.
+//   buildItemDom(row, fields)  — one EMPTY container node for a single item;
+//                                 List appends each field's DOM into it.
+//   buildFieldDom(col, data)   — create your own wrapper node, call
+//                                 this._renderFieldValue(wrapper, col, data)
+//                                 to fill it (FindIt/TextIt/detail-link/
+//                                 badges — all shared), then return it.
+//
+// Every hook throws until a subclass overrides it — this class cannot be
+// used unless all five are implemented.
 //////////////////////////////////
 
-// GRID ---------------------------
 import El         from "./_el.js";
 import FindIt     from "./find-it.js";
 import TextIt     from "./text-it.js";
@@ -14,7 +30,7 @@ import FindInGrid from "./find-in-grid.js";
 import Toast      from "./toast.js";
 import Details    from "./details.js";
 
-export default class Grid extends El{
+export default class List extends El{
   constructor(target, name, config = {}) {
     super();
     this.target = target;
@@ -24,13 +40,13 @@ export default class Grid extends El{
     this.formCodec = config?.formCodec;
     this.msgManager = config?.msgManager;
 
-    this._columnsSet = false;
-    this.cols = null;
-    this.rows = [];
-    this.rowGroups = [];
-    this.rowGroupDom = [];
+    this._fieldSet = false;
+    this.fields = null;
+    this.items = [];
+    this.itemGroups = [];
+    this.itemGroupDom = [];
 
-    this.sortColumn = null;
+    this.sortField = null;
     this.sortDirection = 'asc';
 
     this.baseline = new Map();
@@ -42,7 +58,7 @@ export default class Grid extends El{
     this._lastFocusedEl = this.target;
     this._postSubmitFocus = false;
 
-    // Autosave mode (opt-in per model via `autosave = true`): every cell change
+    // Autosave mode (opt-in per model via `autosave = true`): every field change
     // POSTs immediately with NO full page reload, and the save button is hidden.
     this._autosaving = false;
     this._autosavePending = false;
@@ -50,15 +66,15 @@ export default class Grid extends El{
 
     this.loadConfig(config);
     this._build();
-    
-    // NEW: Preload columns from metadata if available
+
+    // Preload fields from metadata if available
     if (config?.columns?.length) {
-      this.setColumns(config.columns, true);
+      this.setFields(config.columns, true);
     } else if (config?.api?.Meta) {
       const metaCols = config.api.Meta.forGrid(name);
-      if (metaCols?.length) this.setColumns(metaCols, true);
+      if (metaCols?.length) this.setFields(metaCols, true);
     }
-    
+
     this._attachCoreDom();
     this._bindEvents();
   }
@@ -67,20 +83,20 @@ export default class Grid extends El{
     if (this._isInit) return this.refresh(state);
 
     this.state = state;
-    
-    // Only set columns if not already set from metadata
-    if (!this._columnsSet) {
-      this.setColumns(state.columns, true);
+
+    // Only set fields if not already set from metadata
+    if (!this._fieldSet) {
+      this.setFields(state.columns, true);
     }
-    
+
     this._buildFilters(state);
     this._rebuildBodies(state);
-    this._filter = (state?.filter) ? new FindInGrid(this.FORM, { root: this.TABLE }) : this.filter;
+    this._filter = (state?.filter) ? new FindInGrid(this.FORM, { root: this.FRAME }) : this.filter;
 
     this._captureBaseline();
     this._applyAutosaveUI();
 
-    this.FORM.dispatchEvent(new Event("ts:grid:init"));
+    this.FORM.dispatchEvent(new Event("ts:list:init"));
     this._isInit = true;
   }
 
@@ -93,13 +109,13 @@ export default class Grid extends El{
   }
 
   async setDomain(domain) {
-    // Pass full domain to model, which will build rows
+    // Pass full domain to model, which will build items
     this.modelInstance.setDomain(domain);
-    
+
     // Model IS the state
     this.state = this.modelInstance;
-    
-    // Initialize or refresh grid
+
+    // Initialize or refresh
     if (this._isInit) {
         this.refresh(this.state);
     } else {
@@ -108,164 +124,149 @@ export default class Grid extends El{
   }
 
   async refresh(state) {
-    if (!this._isInit) throw new Error("Grid.refresh() called before init()");
+    if (!this._isInit) throw new Error("List.refresh() called before init()");
     this.state = state;
     this._buildFilters(state);
     this._rebuildBodies(state);
     this._captureBaseline();
     this._applyAutosaveUI();
-    this.FORM.dispatchEvent(new Event("ts:grid:close-overlays"));
+    this.FORM.dispatchEvent(new Event("ts:list:close-overlays"));
   }
-  
+
   preloadColumns(columns) {
-    this.setColumns(columns, true);
+    this.setFields(columns, true);
     this._captureBaseline(); // optional: only if inputs already exist (often they won't yet)
   }
 
-  setColumns(columns = [], force){
-    if(!force && this._columnsSet) return;
-    this._columnsSet = true;
-    this.cols = columns;
-    this._buildCols();
+  setFields(columns = [], force){
+    if(!force && this._fieldSet) return;
+    this._fieldSet = true;
+    this.fields = columns;
+    this._buildFields();
   }
 
-  setRowGroups(rowGroups = []){
-    this.rowGroups = rowGroups;
-    this._buildRowGroups();
+  setItemGroups(itemGroups = []){
+    this.itemGroups = itemGroups;
+    this._buildItemGroups();
   }
 
-  setRows(rows = [], rowGroups = this.rowGroups ?? []){
-    this.rows = rows;
-    this.rowGroups = rowGroups;
-    this._buildRows();
+  setItems(items = [], itemGroups = this.itemGroups ?? []){
+    this.items = items;
+    this.itemGroups = itemGroups;
+    this._buildItems();
   }
+
+  // ─── Subclass hooks — all abstract, all required ──────────────────────────
+
+  buildCoreDom() {
+    throw new Error(`${this.constructor.name}.buildCoreDom() must be overridden — create and assign this.FORM, this.TOGGLE, this.FILTERS, this.SUBMIT, this.FRAME, and this.TOOLS.`);
+  }
+
+  buildMetaFieldDom(field) {
+    throw new Error(`${this.constructor.name}.buildMetaFieldDom() must be overridden — return one DOM node representing field "${field?.key}" for the header/tools area. Give it a [data-sort-key] attribute if it should be sortable.`);
+  }
+
+  buildGroupDom(group, fields, opened) {
+    throw new Error(`${this.constructor.name}.buildGroupDom() must be overridden — return one container node that items get appended into. If group.label is falsy, this is the synthetic ungrouped container: skip rendering a header for it.`);
+  }
+
+  buildItemDom(row, fields) {
+    throw new Error(`${this.constructor.name}.buildItemDom() must be overridden — return one empty container node for a single item; List appends each field's DOM into it.`);
+  }
+
+  buildFieldDom(col, data) {
+    throw new Error(`${this.constructor.name}.buildFieldDom() must be overridden — create your own wrapper node, call this._renderFieldValue(wrapper, col, data) to fill it, then return the wrapper.`);
+  }
+
+  // ─── Shared build pipeline — calls the hooks above, owns nothing visual ───
 
   _build(){
-    const el = this.el;
-    this.FORM   = el( 'form',  { classes:['zGRID-form'] } );
-    this.TOGGLE = el("button", {text:"x", classes:["gridToggle"] } );
-    this.FILTERS = el( 'div',   { classes:['gridFilters', 'empty'] } );
-    this.SUBMIT = el( 'button',{ classes:['save'], text : 'save', attrs:{ type:'submit' }  }  );
-    this.TABLE  = el( 'table', { classes:['zGRID'] } );
-    this.THEAD  = el( 'thead' );
-    this.TRH    = el( 'tr' );
-
-    this.THEAD.append(this.TRH);
-
-    if(this.cols) this._buildCols();
+    this.buildCoreDom(this);
+    if (this.fields) this._buildFields();
   }
 
-  _rebuildBodies({ rowGroups, rows }) {
-    this.TABLE.querySelectorAll("tbody").forEach(tb => tb.remove());
-    this.rowGroupDom = [];
-    this.setRowGroups(rowGroups ?? []);
-    this.setRows(rows ?? []);
+  _rebuildBodies({ itemGroups, items }) {
+    this.setItemGroups(itemGroups ?? []);
+    this.setItems(items ?? []);
   }
 
-  _buildCols(){
-    if(!this.cols || !this.TABLE  || !this.TRH) return;
+  _buildFields(){
+    if (!this.fields || !this.FRAME || !this.TOOLS) return;
 
-    this.TRH.replaceChildren();
-    this.TABLE.querySelectorAll('tbody').forEach( el=>el.remove() );
-    
-    for (const col of this.cols) {
-      const TH = this.el( 
-        "th", { 
-          text: col.label ?? col.key, 
-          classes:[col.key, col.type, 'sortable'],
-          data: {key:col.key} 
-        }  
-      );
-      if(col.hidden) TH.classList.add('hidden');
-      this.TRH.append(TH);
+    this.TOOLS.replaceChildren();
+
+    for (const field of this.fields) {
+      const META = this.buildMetaFieldDom(field);
+      if (field.hidden) META.classList.add('hidden');
+      this.TOOLS.append(META);
     }
-  
-    this.TABLE.prepend(this.THEAD);
   }
 
-  _buildRowGroups(){
-    if(!this.rowGroups || this.rowGroups.length === 0) return;
-    this.rowGroupDom.forEach(g=>g.remove());
-    this.rowGroupDom = [];
-    const gEls = this.rowGroupDom;
-    const el = this.el;
-    
-    // When the grid is narrowed to a single group, open it so its child rows
-    // are visible without an extra click.
-    const onlyOneGroup = this.rowGroups.length === 1;
+  _clearGroupContainers() {
+    this.itemGroupDom.forEach(el => el.remove());
+    this.itemGroupDom = [];
+  }
 
-    let groupCount = 0;
-    for(const g of this.rowGroups){
+  _buildItemGroups(){
+    this._clearGroupContainers();
+    if (!this.itemGroups || this.itemGroups.length === 0) return;
 
+    // When narrowed to a single group, open it so its items are visible
+    // without an extra click.
+    const onlyOneGroup = this.itemGroups.length === 1;
+
+    for (const g of this.itemGroups) {
       const opened = onlyOneGroup ? true : !g.collapsed;
-      const TBODY = el('tbody', {classes:['groupBody', (g.collapsible?'collapsible':'static'), (opened?'opened':'closed') ],
-        data:{rowType:g.rowType, groupType: g.groupType}
-      });
-      const GR = el('tr', {classes:['group'], data:{ rowId:g.groupId, groupLabel:g.label } } );
-      const GD = el('th', {classes:['groupCell'], attrs:{'colSpan':this.cols.length } } )  
-      const SP = el('b');
-      const OC = (g.collapsible)? el( 'button', {classes:["oc"]} ) : null;
-      const LB = el("span", {text:g.label, classes:["groupLabel"] } );
-      
-      if(g.collapsible) SP.append(OC);
-      if(g.badges && g.badges[0]) GD.append(this._getBadgeDom(g.badges));
-      
-        
-      SP.append(LB);
-      GD.append(SP);
-      GR.append(GD);
-      
-      TBODY.append(GR);
-
-      this.TABLE.append(TBODY);
-      this.rowGroupDom.push(TBODY);
-      
+      const CONTAINER = this.buildGroupDom(g, this.fields, opened);
+      this.FRAME.append(CONTAINER);
+      this.itemGroupDom.push(CONTAINER);
     }
   }
 
-  _buildRows() {
+  _buildItems() {
     try {
-      const rows = this.rows ?? [];
-      const cols = this.cols ?? [];
-      const rowGroups = this.rowGroups ?? [];
-      const el = this.el;
+      const items = this.items ?? [];
+      const fields = this.fields ?? [];
+      const itemGroups = this.itemGroups ?? [];
 
-      if (!rowGroups.length) {
-        this.rowGroupDom = [ el('tbody') ];
-        this.TABLE.append(this.rowGroupDom[0]);
+      // No groups: one synthetic, headerless container holds every item.
+      if (!itemGroups.length) {
+        const CONTAINER = this.buildGroupDom({ collapsible: false, label: null }, fields, true);
+        this.FRAME.append(CONTAINER);
+        this.itemGroupDom = [CONTAINER];
       }
 
       let i = 0;
 
-      rows.forEach((row, r) => {
-        if (rowGroups[i + 1] && r === rowGroups[i + 1].startIndex) i++;
+      items.forEach((row, r) => {
+        if (itemGroups[i + 1] && r === itemGroups[i + 1].startIndex) i++;
 
-        const TR = el('tr', { classes:['row'], data:{ rowId: row?.id?.rowId ?? row?.id ?? 0 } });
+        const ITEM = this.buildItemDom(row, fields);
 
-        cols.forEach(col => {
+        fields.forEach(col => {
           const data = row?.[col.key] ?? "";
-          TR.append(this._getCellDom(col, data));
+          ITEM.append(this.buildFieldDom(col, data));
         });
 
-        const body = this.rowGroupDom[i];
-        if (!body) {
-          console.error("Grid buildRows: missing tbody", {
-            grid: this.name,
+        const container = this.itemGroupDom[i];
+        if (!container) {
+          console.error("List _buildItems: missing group container", {
+            list: this.name,
             i, r,
-            rowGroups: rowGroups.map(g => g.startIndex),
-            rowGroupDomLen: this.rowGroupDom.length,
-            rowsLen: rows.length
+            itemGroups: itemGroups.map(g => g.startIndex),
+            itemGroupDomLen: this.itemGroupDom.length,
+            itemsLen: items.length
           });
-          return; // stop building further rows; or create a fallback body (below)
+          return; // stop building further items
         }
 
-        body.append(TR);
+        container.append(ITEM);
       });
 
     } catch (e) {
-      console.error("Grid _buildRows exception", this.name, e, {
-        rowsLen: this.rows?.length,
-        rowGroups: this.rowGroups
+      console.error("List _buildItems exception", this.name, e, {
+        itemsLen: this.items?.length,
+        itemGroups: this.itemGroups
       });
     }
   }
@@ -316,47 +317,50 @@ export default class Grid extends El{
     });
   }
 
-  _getCellDom(col,data){
-    // TODO: Decide if I am going to demand data types for all cells
-    // TODO: Decide how I am going to swallow or reflect those types in the css class
+  // Fills an already-created wrapper node (built by the subclass's
+  // buildFieldDom) with the field's actual value: FindIt/TextIt when
+  // writeable, plain text or a Details detail-link when read-only, plus
+  // badges. This is the part every view shares — only the wrapper tag/class
+  // varies per subclass.
+  _renderFieldValue(EL, col, data) {
     const d = (data && typeof data === "object") ? data : { display: String(data ?? "") };
-    const CELL = this.el('td', { classes:['cell', col.key, col.type ?? 'ok_colType', d.alertCase ?? 'ok_alertCase' ] });
 
-    if(col.hidden) CELL.classList.add('hidden');
-    
-    if(col.write && d.write !== false){
-      if(col.hidden)
-        new TextIt(CELL, col, this.name);
-      else if(col.control === "text" )
-        new TextIt(CELL, data, this.name);
-      //else if(col.num);
-      else new FindIt(CELL, data, this.name);
-    }else{
-      // Read-only relationship cells (currently: flavor) link to a Details
+    EL.classList.add(col.key, col.type ?? 'ok_colType', d.alertCase ?? 'ok_alertCase');
+    if (col.hidden) EL.classList.add('hidden');
+
+    if (col.write && d.write !== false) {
+      if (col.hidden)
+        new TextIt(EL, col, this.name);
+      else if (col.control === "text")
+        new TextIt(EL, data, this.name);
+      else new FindIt(EL, data, this.name);
+    } else {
+      // Read-only relationship fields (currently: flavor) link to a Details
       // panel instead of plain text. col.detailEntity lets a non-relationship
-      // column (e.g. a row's own title) opt into the same link without
+      // field (e.g. a row's own title) opt into the same link without
       // triggering titleMap's id-lookup display logic.
       const entityKey = col.detailEntity ?? col.titleMap;
       if (entityKey === 'flavor' && d.id) {
-        CELL.append(this.el('button', {
+        EL.append(this.el('button', {
           text: '' + (d.display || ''),
           classes: ['detail-link'],
           attrs: { type: 'button' },
           data: { detailEntity: entityKey, detailId: d.id },
         }));
       } else {
-        CELL.append('' + (d.display || ''));
+        EL.append('' + (d.display || ''));
       }
-      CELL.classList.add('read-only');
+      EL.classList.add('read-only');
     }
-    if(data.badges && data.badges[0]) CELL.append(this._getBadgeDom(data.badges));
 
-    return CELL;
+    if (data.badges && data.badges[0]) EL.append(this._getBadgeDom(data.badges));
+
+    return EL;
   }
 
   _getBadgeDom(badges){
     if(!badges || badges.length === 0) return null;
-    const BDGs = this.el("span", {classes:["badges"] } ); 
+    const BDGs = this.el("span", {classes:["badges"] } );
     badges.forEach( (b) => {
       const B = this.el('b', {text:b.text, classes:['badge', b.key] } );
       BDGs.append(B);
@@ -366,7 +370,7 @@ export default class Grid extends El{
 
   _attachCoreDom(){
     if (!this.FORM.contains(this.FILTERS)) this.FORM.append(this.FILTERS);
-    if (!this.FORM.contains(this.TABLE)) this.FORM.append(this.TABLE);
+    if (!this.FORM.contains(this.FRAME)) this.FORM.append(this.FRAME);
     if (!this.FORM.contains(this.SUBMIT)) this.FORM.append(this.SUBMIT);
     if (!this.target.contains(this.FORM)) this.target.append(this.FORM);
     if (!this.target.contains(this.TOGGLE)) this.target.append(this.TOGGLE);
@@ -413,7 +417,7 @@ export default class Grid extends El{
 
     return changes;
   }
-  
+
   _captureBaseline() {
     const { flat } = this.formCodec.extractGridChanges(this.FORM, this.name);
 
@@ -428,20 +432,20 @@ export default class Grid extends El{
 
   _normValue(colKey, raw) {
     if (raw == null) return "";
-  
+
     // state enum
     if (colKey === "state") return String(raw);
-  
+
     // amount float
     if (colKey === "amount") {
       const n = Number(raw);
       return Number.isFinite(n) ? n : 0;
     }
-  
+
     // default: use your existing scalar normalizer (may return number or string)
     return this.formCodec.normalizeScalar(raw);
   }
-    
+
 
   _normRelId(v) {
     if (v == null) return 0;
@@ -466,15 +470,15 @@ export default class Grid extends El{
       }
     }
   }
-  
+
   _showHide(e, el=e.target){
     if(el.closest(".oc")){
-        const TB = e.target.closest("TBODY");
-        TB.classList.toggle('opened');
-        TB.classList.toggle('closed');
+        const CONTAINER = e.target.closest("[data-group-container], TBODY");
+        CONTAINER?.classList.toggle('opened');
+        CONTAINER?.classList.toggle('closed');
     }
-    
-    this.FORM.dispatchEvent(new Event("ts:grid:close-overlays"));
+
+    this.FORM.dispatchEvent(new Event("ts:list:close-overlays"));
 
   }
 
@@ -482,7 +486,7 @@ export default class Grid extends El{
     const el = document.activeElement;
     if (!el || !this.FORM.contains(el)) return null;
 
-    // If focus is inside a cell editor, find the hidden input that already has the key
+    // If focus is inside a field editor, find the hidden input that already has the key
     const h = (e.target instanceof HTMLInputElement && e.target.type === "hidden")
       ? e.target : e.target.closest('input[type="hidden"][name]');
     if (!h) return null;
@@ -498,14 +502,14 @@ export default class Grid extends El{
 
   // Where focus lands after a successful submit.
   //
-  // - Grouped grids: the rebuild can collapse/reorder the group that held the
-  //   edited cell, so returning there is jarring. Send focus to the top text
+  // - Grouped lists: the rebuild can collapse/reorder the group that held the
+  //   edited field, so returning there is jarring. Send focus to the top text
   //   filter (so the user can keep filtering); if there's no text filter, the
   //   first top-most editable input.
-  // - Ungrouped grids: keep the original behavior — return to the cell the
+  // - Ungrouped lists: keep the original behavior — return to the field the
   //   user was editing.
   _focusAfterSubmit() {
-    if (!this.rowGroups || this.rowGroups.length === 0) {
+    if (!this.itemGroups || this.itemGroups.length === 0) {
       this._restoreFocusAddress();
       return;
     }
@@ -519,11 +523,11 @@ export default class Grid extends El{
     });
   }
 
-  // First visible, editable input control in table order (skips hidden-column
-  // inputs and rows inside collapsed groups). Falls back to the first match.
+  // First visible, editable input control in document order (skips hidden-
+  // field inputs and items inside collapsed groups). Falls back to the first match.
   _firstEditableInput() {
     const sel = 'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), [contenteditable="true"]';
-    const candidates = [...(this.TABLE?.querySelectorAll(sel) ?? [])];
+    const candidates = [...(this.FRAME?.querySelectorAll(sel) ?? [])];
     return candidates.find(el => el.offsetParent !== null) ?? candidates[0] ?? null;
   }
 
@@ -538,44 +542,47 @@ export default class Grid extends El{
     );
     if (!h) return;
 
-    // Prefer focusing the visible input in the same cell (FindIt/TextIt)
-    const cell = h.closest('td');
+    // Prefer focusing the visible input in the same field (FindIt/TextIt)
+    const field = h.closest('td, [data-field]') ?? h.parentElement;
     const focusable =
-      cell?.querySelector('input:not([type="hidden"]), textarea, [contenteditable="true"], button');
+      field?.querySelector('input:not([type="hidden"]), textarea, [contenteditable="true"], button');
 
     requestAnimationFrame(() => (focusable ?? h).focus());
   }
 
+  // Sort trigger is any element carrying [data-sort-key] — a <th> in a table
+  // view, a button/chip in a card view — so both drive the same sort logic
+  // via one delegated click handler.
   _sortCols(e) {
-    const th = e.target.closest("th.sortable");
-    if (!th) return;
-  
-    const colKey = th.dataset.key;
+    const trigger = e.target.closest("[data-sort-key]");
+    if (!trigger) return;
+
+    const colKey = trigger.dataset.sortKey;
     if (!colKey) return;
-  
-    if (this.sortColumn === colKey) {
+
+    if (this.sortField === colKey) {
       this.sortDirection = this.sortDirection === "asc" ? "desc" : "asc";
     } else {
-      this.sortColumn = colKey;
+      this.sortField = colKey;
       this.sortDirection = "asc";
     }
-  
+
     this._applySortAndRender();
   }
 
   _applySortAndRender(){
-    const preSortRows = this.rows;
-    if(!this.rowGroups || this.rowGroups.length < 1 ){
-      this.rows = this._sortRows(preSortRows, this.sortColumn, this.sortDirection);
-      this._rebuildBodies({ rowGroups: this.rowGroups, rows: this.rows });
+    const preSortItems = this.items;
+    if(!this.itemGroups || this.itemGroups.length < 1 ){
+      this.items = this._sortItems(preSortItems, this.sortField, this.sortDirection);
+      this._rebuildBodies({ itemGroups: this.itemGroups, items: this.items });
       return;
-    } 
-    const sortedGroups = this.rowGroups.map((group, groupIndex) => {
-      const groupRows = this.rows.filter((row, i) => {
-        // Find which group this row belongs to
+    }
+    const sortedGroups = this.itemGroups.map((group, groupIndex) => {
+      const groupItems = this.items.filter((row, i) => {
+        // Find which group this item belongs to
         let currentGroup = 0;
-        for (let g = 0; g < this.rowGroups.length; g++) {
-          if (i >= this.rowGroups[g].startIndex) {
+        for (let g = 0; g < this.itemGroups.length; g++) {
+          if (i >= this.itemGroups[g].startIndex) {
             currentGroup = g;
           } else {
             break;
@@ -583,37 +590,37 @@ export default class Grid extends El{
         }
         return currentGroup === groupIndex;
       });
-      
-      const sorted = this._sortRows(groupRows, this.sortColumn, this.sortDirection);
-      return { group, rows: sorted };
+
+      const sorted = this._sortItems(groupItems, this.sortField, this.sortDirection);
+      return { group, items: sorted };
     });
-     
-    // Rebuild rows array in sorted order
-    this.rows = [];
-    this.rowGroups = [];
+
+    // Rebuild items array in sorted order
+    this.items = [];
+    this.itemGroups = [];
     let startIndex = 0;
-    
-    sortedGroups.forEach(({ group, rows }) => {
+
+    sortedGroups.forEach(({ group, items }) => {
       group.startIndex = startIndex;
-      this.rowGroups.push(group);
-      this.rows.push(...rows);
-      startIndex += rows.length;
+      this.itemGroups.push(group);
+      this.items.push(...items);
+      startIndex += items.length;
     });
-    
-    // Re-render the table
-    this._rebuildBodies({ rowGroups: this.rowGroups, rows: this.rows });
+
+    // Re-render
+    this._rebuildBodies({ itemGroups: this.itemGroups, items: this.items });
   }
 
-  _sortRows(rows, colKey, direction) {
-    if (!colKey) return rows;
+  _sortItems(items, colKey, direction) {
+    if (!colKey) return items;
 
-    // Find the column descriptor so _getSortValue can honour col.type.
-    // Without this, numeric columns (whose display is a formatted string
+    // Find the field descriptor so _getSortValue can honour col.type.
+    // Without this, numeric fields (whose display is a formatted string
     // like "9.7") fall through to localeCompare and sort lexically —
     // "84.6" < "9.7" as text.
-    const col = (this.cols ?? []).find(c => c.key === colKey) ?? null;
+    const col = (this.fields ?? []).find(c => c.key === colKey) ?? null;
 
-    const sorted = [...rows].sort((a, b) => {
+    const sorted = [...items].sort((a, b) => {
       const aVal = this._getSortValue(a[colKey], col);
       const bVal = this._getSortValue(b[colKey], col);
 
@@ -637,11 +644,11 @@ export default class Grid extends El{
   }
 
   _getSortValue(cellData, col = null) {
-    // Handle different cell data structures
+    // Handle different field data structures
     if (cellData == null) return null;
 
     if (typeof cellData === 'object') {
-      // For numeric columns, prefer the raw numeric .value over the
+      // For numeric fields, prefer the raw numeric .value over the
       // formatted display string so the comparator takes the numeric
       // branch. Fall back through value -> display -> id, coercing when
       // the value is a numeric string (e.g. "9.7" from JSON).
@@ -672,36 +679,36 @@ export default class Grid extends El{
     return null;
   }
 
-  _handleCellChange(e) 
+  _handleCellChange(e)
   {
     const h = e.target.closest('input[type="hidden"][name]');
     if (!h) return;
-  
+
     const parsed = this.formCodec.parseBracketName(h.name);
     if (!parsed || parsed.length < 4) return;
     if (parsed[0] !== this.name || parsed[1] !== "cells") return;
-  
+
     const rowId = Number(parsed[2]);
     const colKey = parsed[3];
     const k = `${rowId}|${colKey}`;
-    
+
     const v = (h.name.indexOf('[state]') === -1) ?
       this.formCodec.normalizeScalar(h.value ?? "") : h.value;
-  
+
     const before = this._normValue(colKey, this.baseline.get(k));
     const after  = this._normValue(colKey, v);
 
     if (before === after) this.dirtySet.delete(k);
     else this.dirtySet.add(k);
 
-    // Autosave grids persist each change right away (no save button, no reload).
+    // Autosave lists persist each change right away (no save button, no reload).
     if (this._autosaveEnabled()) this._scheduleAutosave();
   }
 
   // ─── Autosave ──────────────────────────────────────────────────────────────
-  // Opt in per model: `this.autosave = true`. Each cell change is POSTed on a
+  // Opt in per model: `this.autosave = true`. Each field change is POSTed on a
   // short debounce; unlike the normal submit path it does NOT call
-  // refreshPageDomain(), so the page/grid is never rebuilt out from under the
+  // refreshPageDomain(), so the page/list is never rebuilt out from under the
   // user mid-edit. The save button is hidden (see _applyAutosaveUI).
 
   _autosaveEnabled() {
@@ -727,7 +734,7 @@ export default class Grid extends El{
     if (!Object.keys(changes.cells).length) return;
 
     if (!this.api || !this.postUrl) {
-      console.error('Grid autosave: missing api/postUrl');
+      console.error('List autosave: missing api/postUrl');
       return;
     }
 
@@ -747,12 +754,12 @@ export default class Grid extends El{
       }
 
       // Commit to baseline (clears the dirty flags) with NO page reload — the
-      // cells already display the values the user entered.
+      // fields already display the values the user entered.
       this._commitPosted(changes);
       this._flashCells(changes, 'cell-saved');
 
     } catch (err) {
-      console.error('Grid autosave exception:', err);
+      console.error('List autosave exception:', err);
       Toast.addMessage({ title: 'Autosave error', message: String(err) });
     } finally {
       this._autosaving = false;
@@ -764,17 +771,17 @@ export default class Grid extends El{
     }
   }
 
-  // Briefly mark the just-saved (or errored) cells so autosave is visible.
+  // Briefly mark the just-saved (or errored) fields so autosave is visible.
   _flashCells(changes, cls) {
     for (const [rowId, row] of Object.entries(changes.cells ?? {})) {
       for (const colKey of Object.keys(row ?? {})) {
         const h = this.FORM.querySelector(
           `input[type="hidden"][name="${this.name}[cells][${rowId}][${colKey}]"]`
         );
-        const cell = h?.closest('td');
-        if (!cell) continue;
-        cell.classList.add(cls);
-        setTimeout(() => cell.classList.remove(cls), 800);
+        const field = h?.closest('td, [data-field]') ?? h?.parentElement;
+        if (!field) continue;
+        field.classList.add(cls);
+        setTimeout(() => field.classList.remove(cls), 800);
       }
     }
   }
@@ -806,7 +813,7 @@ export default class Grid extends El{
           select.disabled = false;
         }
       } else if (this.modelInstance) {
-        this.modelInstance._buildRows();
+        this.modelInstance._buildItems();
         await this.refresh(this.modelInstance);
       }
     });
@@ -821,7 +828,7 @@ export default class Grid extends El{
 
         const isButton = el.matches("button, [role='button']");
         if (!isButton) return;
-        
+
         // Avoid interfering with typing in inputs/textareas
         if (el.matches("input, textarea, [contenteditable='true']")) return;
 
@@ -864,14 +871,14 @@ export default class Grid extends El{
       this._sortCols(e);
     }, true);
 
-    this.FORM.addEventListener("submit", async (e) => {      
+    this.FORM.addEventListener("submit", async (e) => {
       e.preventDefault();
       this._captureFocusAddress(e);
 
       if(e.submitter && e.submitter.classList.contains('oc')) return false;
 
-      if (!this.api) throw new Error('Grid submit: missing this.api');
-      if (!this.postUrl) throw new Error('Grid submit: missing this.postUrl');
+      if (!this.api) throw new Error('List submit: missing this.api');
+      if (!this.postUrl) throw new Error('List submit: missing this.postUrl');
 
       const submitBtn = this.FORM.querySelector('button[type="submit"], input[type="submit"]');
       if (submitBtn) submitBtn.disabled = true;
@@ -879,13 +886,13 @@ export default class Grid extends El{
       try {
         const isAll = this.state.submitMode === 'all';
         const changes = ( isAll)? this._buildAllPayload() :this._buildDirtyPayload();
-        
+
         // OPTIONAL: no-op submit guard
         if (!Object.keys(changes.cells).length && !isAll) {
           console.log("No changes to submit.", changes);
           return;
         }
-        
+
         const r = await this.api.postJson(changes, this.name);
 
         if (!r.ok) {
@@ -897,18 +904,18 @@ export default class Grid extends El{
           Toast.addMessage({title:'bad post', message:JSON.stringify(r.data, null)});
           return;
         }
-        
+
         if (r.ok && r.data?.ok) {
           document.body.classList.add('TS_GRID-UPDATING');
-          
+
           this._commitPosted(changes);
-          
+
           const chng = this.modelInstance.describeFieldChanges(r.data, changes?.cells??[] );
           const TOAST = Toast.addMessage({
             title: 'Update Confirmed',
             changes: chng
           });
-          
+
           this._postSubmitFocus = true;
           await this.api.refreshPageDomain({ force: true, toast:TOAST, info:{name:this.name, response:r} });
           // Usually handled by the ts:domain:updated listener after it rebuilds
@@ -918,7 +925,7 @@ export default class Grid extends El{
             this._focusAfterSubmit();
           }
         }
-        
+
       } catch (err) {
         console.error("POST exception:", err);
       } finally {
@@ -934,13 +941,13 @@ export default class Grid extends El{
         try {
           // Get fresh domain from API
           const freshDomain = this.api.getDomainSnapshot();
-          
-          // Update model with new domain (rebuilds rows)
+
+          // Update model with new domain (rebuilds items)
           if (this.modelInstance) {
             this.modelInstance.setDomain(freshDomain);
           }
-          
-          // Refresh grid with updated model
+
+          // Refresh with updated model
           if (this._isInit) {
             await this.refresh(this.modelInstance);
             if (this._postSubmitFocus) {
@@ -956,9 +963,9 @@ export default class Grid extends El{
       };
 
       document.addEventListener("ts:domain:updated", this._onDomainUpdated);
-    }    
+    }
   }
-  
+
   // Details resolves the item itself from the page's shared bundle domain.
   _openDetails(linkEl) {
     const entity = linkEl.dataset.detailEntity;

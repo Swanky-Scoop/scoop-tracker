@@ -9,7 +9,7 @@ function scoop_bundle_specs(): array {
     'BatchHistory' => ['needs' => ['batch','flavor']],
     'Closeout'     => ['needs' => ['flavor','use']],
     'DateActivity' => ['needs' => ['tub','inventory_change','flavor','use','location','slot','cabinet']],
-    'InstockFlavor'=> ['needs' => ['flavor']],
+    'InstockFlavor'=> ['needs' => ['flavor','tub','slot']],
   ];
   
   return $specs;
@@ -64,6 +64,13 @@ function scoop_entity_specs(string $key = ''): array {
 
           $has_date_activity = in_array('DateActivity', $requesting_types, true);
           $has_other_grids   = !empty(array_diff($requesting_types, ['DateActivity']));
+
+          // InstockFlavor's Details drill-down resolves titles for every tub id
+          // in flavor.tubs (see scoop_entity_relations()), including emptied
+          // ones — bypass the "active only" exclusion below entirely.
+          if (in_array('InstockFlavor', $requesting_types, true)) {
+            return true;
+          }
 
           // DateActivity needs tubs whose actual inventory event dates are recent.
           // post_modified is still used for manual override rows, but opens and
@@ -187,8 +194,8 @@ function scoop_entity_specs(string $key = ''): array {
         'fields'    => [
           'menu_board'    => ['data_type' => 'file'],
           'photo'         => ['data_type' => 'file'],
-          'tubs'          => ['data_type' => 'ids'],
-          'current_slots' => ['data_type' => 'ids'],
+          'tubs'          => ['data_type' => 'ids', 'titleMap' => 'tub'],
+          'current_slots' => ['data_type' => 'ids', 'titleMap' => 'slot'],
           'allergens'     => ['data_type' => 'post_names'],
           'web_id'        => ['data_type' => 'int'],
         ],
@@ -261,4 +268,38 @@ function scoop_entity_specs(string $key = ''): array {
   }
 
   return $cache[ $key ];
+}
+
+/**
+ * Per-entity map of "this field's value(s) are id(s) into another pod" —
+ * { entity => { field => { pod, multi } } } — built from the same 'titleMap'
+ * + 'data_type' already on each field in scoop_entity_specs(). Shipped to the
+ * client as SCOOP.entityRelations so the generic Details panel (assets/ui/details.js)
+ * can turn a raw relationship id/array into a clickable, title-resolved link
+ * for ANY entity, not just whichever pod happens to be a grid's primary.
+ */
+function scoop_entity_relations(): array {
+  $out = [];
+
+  foreach ( scoop_entity_specs() as $entity_key => $spec ) {
+    $fields = $spec['fields'] ?? [];
+    $rels   = [];
+
+    foreach ( $fields as $field_key => $def ) {
+      if ( is_string( $def ) ) $def = [ 'data_type' => $def ];
+      if ( ! is_array( $def ) ) continue;
+
+      $titleMap = $def['titleMap'] ?? null;
+      if ( ! $titleMap ) continue;
+
+      $rels[ $field_key ] = [
+        'pod'   => $titleMap,
+        'multi' => ( $def['data_type'] ?? '' ) === 'ids',
+      ];
+    }
+
+    if ( $rels ) $out[ $entity_key ] = $rels;
+  }
+
+  return $out;
 }

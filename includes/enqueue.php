@@ -165,6 +165,7 @@ function scoop_enqueue_assets() {
         'isAdmin' => current_user_can( 'manage_options' ),
         'routes'  => scoop_client_routes(),
         'metaData'=> scoop_client_metadata(), //scoop_fetch_entities
+        'entityRelations' => scoop_entity_relations(),
         'user'    => ( is_user_logged_in() ) ? [
           'name'  => $user -> data -> user_nicename,
           'roles' => $user -> roles

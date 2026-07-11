@@ -323,16 +323,22 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
   $db_loc_applied = false;
 
   if ( $key === 'tub' ) {
+    $requesting_types = $ctx['requesting_types'] ?? [];
+
+    // InstockFlavor's Details drill-down needs to resolve titles for every
+    // tub id in flavor.tubs, including long-emptied ones — exclude it from
+    // the "active only" trimming below.
+    $wants_all_tubs = in_array( 'InstockFlavor', $requesting_types, true );
+
     // Exclude emptied tubs at the DB level unless the caller explicitly wants them.
     // This is the biggest single filter on the tub table and saves the most work.
-    $include_empty = ! empty( $ctx['include_empty_tubs'] );
+    $include_empty = ! empty( $ctx['include_empty_tubs'] ) || $wants_all_tubs;
     if ( ! $include_empty ) {
       $where_clauses[] = "state != 'Emptied'";
     }
 
     // DateActivity-only tub bundles should not scan every historical tub.
     // When other grids are present, keep active tubs in scope for their views.
-    $requesting_types   = $ctx['requesting_types'] ?? [];
     $has_date_activity = in_array( 'DateActivity', $requesting_types, true );
     $has_other_grids   = ! empty( array_diff( $requesting_types, [ 'DateActivity' ] ) );
     $date_filters      = $ctx['date_filters'] ?? [];
