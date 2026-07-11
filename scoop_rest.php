@@ -96,7 +96,7 @@ add_action( 'login_enqueue_scripts', 'scoop_login_styles' );
 
 function scoop_login_styles() {
     // Generates the correct URL to your plugin folder's CSS file
-    $css_url = plugins_url( 'assets/ui/login.css', __FILE__ );
+    $css_url = plugins_url( 'assets/login.css', __FILE__ );
 
     // Enqueue the stylesheet safely
     wp_enqueue_style( 'scoop-login-css', $css_url, array(), '1.0.0' );
