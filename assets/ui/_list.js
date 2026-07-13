@@ -373,6 +373,16 @@ export default class List extends El{
     return EL;
   }
 
+  // Group container class from group.groupType ('cabinet', 'flavor', ...) —
+  // shared by Grid and Tile's buildGroupDom so every grouped view's group
+  // container carries a class naming what it's grouped by, not just the
+  // per-group data-group-type attribute already set. null (not '_slug's
+  // 'item' fallback) for the synthetic ungrouped container, which has no
+  // groupType at all — see List._buildItems().
+  _groupTypeClass(group) {
+    return group?.groupType ? this._slug(group.groupType) : null;
+  }
+
   // CSS-safe class token from arbitrary text (a title, a slot name, an
   // allergen slug already conforms and passes through unchanged). Falls back
   // to 'item' rather than risk classList.add('') — see _renderFieldValue's

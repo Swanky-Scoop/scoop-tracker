@@ -73,6 +73,7 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     row.flavorId     = flavorId;
     row.flavorTitle  = flavor?._title ?? '';
     row.flavorPhoto  = flavor?.photo ?? '';
+    row.allergens    = Array.isArray(flavor?.allergens) ? flavor.allergens : [];
     row.cabinetTitle = this.labelFromMap(slot.cabinet, this._cabinetsById) ?? `Cabinet ${slot.cabinet}`;
 
     row.tubCountLocal = this._sumAmount(this._fohTubs(flavorId, slot.location, ELIGIBLE_TUB_STATE));

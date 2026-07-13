@@ -102,6 +102,12 @@ export default class CabinetWorkflowTile extends Tile {
       data: { rowId: row.slotId ?? 0, slotId: row.slotId ?? 0 },
     });
 
+    const DIV = el('div', { classes: ['available'] });
+
+    if (row.flavorPhoto) {
+      LI.append(el('img', { attrs: { src: row.flavorPhoto, alt: row.flavorTitle } }));
+    }
+    
     if (row.empty) {
       LI.append(el('button', {
         text: 'Add Flavor',
@@ -113,13 +119,12 @@ export default class CabinetWorkflowTile extends Tile {
     }
 
     LI.append(el('h3', { text: row.flavorTitle }));
+    LI.append(this._allergensDom(row));
 
-    if (row.flavorPhoto) {
-      LI.append(el('img', { attrs: { src: row.flavorPhoto, alt: row.flavorTitle } }));
-    }
+    DIV.append(this._statLabel('tub-count-local', 'Local tubs', row.tubCountLocal));
+    DIV.append(this._statLabel('tub-count-total', 'Total tubs', row.tubCountTotal));
 
-    LI.append(this._statLabel('tub-count-local', 'Local tubs', row.tubCountLocal));
-    LI.append(this._statLabel('tub-count-total', 'Total tubs', row.tubCountTotal));
+    LI.append(DIV);
 
     // Omitted (not disabled) when there's no local FOH tub to advance to —
     // see change-tub.md's "add next" pool definition.
@@ -140,6 +145,26 @@ export default class CabinetWorkflowTile extends Tile {
     }));
 
     return LI;
+  }
+
+  // Same markup/classes as Tile._buildMultiFieldDom's post_names branch
+  // (see tile.js) so the existing `.multiple.allergens` CSS applies as-is.
+  _allergensDom(row) {
+    const allergens = row.allergens ?? [];
+    const WRAP = this.el('div', { classes: ['multiple', 'allergens'] });
+
+    const LABEL = this.el('label', { classes: ['allergen-count'] });
+    LABEL.append('Allergen count: ');
+    LABEL.append(this.el('em', { text: String(allergens.length) }));
+    WRAP.append(LABEL);
+
+    if (allergens.length) {
+      const UL = this.el('ul');
+      allergens.forEach(slug => UL.append(this.el('li', { text: slug, classes: [this._slug(slug)] })));
+      WRAP.append(UL);
+    }
+
+    return WRAP;
   }
 
   _statLabel(cls, label, amount) {
