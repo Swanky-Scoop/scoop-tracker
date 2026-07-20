@@ -308,6 +308,65 @@ export default class ScoopAPI {
     return this._domain ?? {};
   }
 
+  // True if any grid on the page has typed-but-not-yet-flushed input or an
+  // autosave POST in flight. Used to gate the stale-tab reload below — never
+  // force-reload out from under a mid-edit field.
+  hasUnsavedEdits() {
+    return this._bundleGrids.some(g => g.dirtySet?.size || g._autosaving);
+  }
+
+  // A tab left open across a deploy keeps running the old app.js forever —
+  // there's no build/CDN cache to expire it. Poll the server's app.js mtime
+  // (SCOOP.version at load time is the baseline) and reload once it changes,
+  // but only when nothing on the page is mid-edit; otherwise recheck next tick.
+  watchForStaleVersion(baseline, { intervalMs = 5 * 60 * 1000 } = {}) {
+    if (!baseline) return;
+
+    setInterval(async () => {
+      let current;
+      try {
+        const r = await this.getJson(this.route("Version"));
+        current = r?.version;
+      } catch (err) {
+        console.error("watchForStaleVersion: check failed", err);
+        return;
+      }
+
+      if (!current || current === baseline) return;
+      if (this.hasUnsavedEdits()) return; // try again next tick
+
+      location.reload();
+    }, intervalMs);
+  }
+
+  // Forces a real re-login after N hours of no genuine interaction — a tab
+  // left open overnight shouldn't stay authenticated forever. Deliberately
+  // driven by actual mousemove/keydown/click, NOT by background traffic like
+  // watchForStaleVersion's poll or autosave — those fire on their own timers
+  // regardless of whether she's at the keyboard, so counting them as
+  // "activity" would defeat the timeout.
+  watchForIdleTimeout({ idleMs = 6 * 60 * 60 * 1000, checkIntervalMs = 60 * 1000, loginUrl } = {}) {
+    let lastActivity = Date.now();
+    const bump = () => { lastActivity = Date.now(); };
+    ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt =>
+      document.addEventListener(evt, bump, { passive: true })
+    );
+
+    setInterval(async () => {
+      if (Date.now() - lastActivity < idleMs) return;
+      if (this.hasUnsavedEdits()) return; // autosave hasn't flushed yet, recheck next tick
+
+      try {
+        await this._fetch(this.route("IdleLogout"), { method: "POST" });
+      } catch (err) {
+        console.error("watchForIdleTimeout: logout call failed", err);
+      }
+
+      alert("You've been logged out after a period of inactivity. Please log back in.");
+      location.href = loginUrl || "/wp-login.php";
+    }, checkIntervalMs);
+  }
+
   _normalizeDateFilterKey(value) {
     return String(value ?? '')
       .trim()

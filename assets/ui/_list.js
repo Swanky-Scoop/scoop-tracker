@@ -793,6 +793,7 @@ export default class List extends El{
       // fields already display the values the user entered.
       this._commitPosted(changes);
       this._flashCells(changes, 'cell-saved');
+      this._scheduleBackgroundDomainRefresh();
 
     } catch (err) {
       console.error('List autosave exception:', err);
@@ -805,6 +806,20 @@ export default class List extends El{
         this._scheduleAutosave();
       }
     }
+  }
+
+  // After an autosaved write, other grids on the page (bundle-based derived
+  // views not being edited right now) may be showing stale downstream state.
+  // Debounce a background bundle refetch so a burst of autosaves only
+  // triggers one fetch once things settle; this does NOT touch this grid's
+  // own DOM — see the dirty/in-flight guard in _onDomainUpdated.
+  _scheduleBackgroundDomainRefresh() {
+    clearTimeout(this._domainRefreshTimer);
+    this._domainRefreshTimer = setTimeout(() => {
+      this.api?.refreshPageDomain({ force: true }).catch(err =>
+        console.error('Background domain refresh failed:', err)
+      );
+    }, 800);
   }
 
   // Briefly mark the just-saved (or errored) fields so autosave is visible.
@@ -974,6 +989,15 @@ export default class List extends El{
       this._docListenerBound = true;
       this._onDomainUpdated = async () => {
         if (this._reloading) return;
+
+        // This grid is mid-autosave or has edits not yet flushed — a full
+        // rebuild here would wipe in-progress input/focus. Skip it; the
+        // background refresh was for OTHER grids' derived state, and this
+        // grid gets its own fresh domain next time it rebuilds unforced.
+        if (this._autosaveEnabled() && (this._autosaving || this.dirtySet?.size)) {
+          return;
+        }
+
         this._reloading = true;
         try {
           // Get fresh domain from API

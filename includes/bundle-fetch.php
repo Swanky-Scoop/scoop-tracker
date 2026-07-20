@@ -49,14 +49,27 @@ function scoop_post_names_out( $v ): array {
  * Pods 'file' fields resolve via $pod->field() to an attachment array (or a
  * bare attachment ID, depending on Pods version/config). Reduce either shape
  * to the plain attachment URL the client can show as text.
+ *
+ * ID + wp_get_attachment_url() is tried before falling back to the raw
+ * 'guid' column: guid is frozen at upload time and never gets recalculated
+ * if the site's domain/upload path changes later (a well-known WP gotcha —
+ * NOT meant to be used as a display URL), which broke image paths on
+ * environments other than the one an attachment was originally sideloaded
+ * on (see CLAUDE.md's env-drift notes — local/TEST/OPS are separate DBs).
+ * wp_get_attachment_url() always reflects the current environment's
+ * upload_url/baseurl, so it's the one to prefer.
  */
 function scoop_file_url_out( $v ): string {
   if ( empty( $v ) ) return '';
 
   if ( is_array( $v ) ) {
     if ( isset( $v[0] ) && is_array( $v[0] ) ) $v = $v[0];
+
+    if ( ! empty( $v['ID'] ) ) {
+      $url = wp_get_attachment_url( (int) $v['ID'] );
+      if ( $url ) return $url;
+    }
     if ( ! empty( $v['guid'] ) ) return scoop_text_out( $v['guid'] );
-    if ( ! empty( $v['ID'] ) ) return (string) ( wp_get_attachment_url( (int) $v['ID'] ) ?: '' );
     return '';
   }
 

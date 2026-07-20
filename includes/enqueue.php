@@ -12,8 +12,10 @@ function scoop_client_routes(): array {
     $out[$key] = rest_url('scoop/v1' . $path);
   }
 
-  $out['Bundle'] = rest_url('scoop/v1/bundle');
-  
+  $out['Bundle']     = rest_url('scoop/v1/bundle');
+  $out['Version']    = rest_url('scoop/v1/version');
+  $out['IdleLogout'] = rest_url('scoop/v1/idle-logout');
+
   return $out;
 }
 
@@ -169,6 +171,11 @@ function scoop_enqueue_assets() {
         'routes'  => scoop_client_routes(),
         'metaData'=> scoop_client_metadata(), //scoop_fetch_entities
         'entityRelations' => scoop_entity_relations(),
+        // Baseline for the client-side stale-tab check (assets/version-watch.js).
+        // Bumps whenever app.js is re-saved (SFTP-on-save touches mtime).
+        'version' => filemtime($base_path . 'assets/app.js'),
+        // Where to send her back after a forced idle-timeout re-login.
+        'loginUrl' => wp_login_url( home_url( $_SERVER['REQUEST_URI'] ?? '/' ) ),
         'user'    => ( is_user_logged_in() ) ? [
           'name'  => $user -> data -> user_nicename,
           'roles' => $user -> roles
