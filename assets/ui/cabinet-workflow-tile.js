@@ -12,6 +12,7 @@
 // any click handler yet — that's Phase 2/3 and the not-yet-designed modal.
 //////////////////////////////////
 import Tile from "./tile.js";
+import ConfirmSwapModal from "./confirm-swap-modal.js";
 
 export default class CabinetWorkflowTile extends Tile {
 
@@ -33,6 +34,20 @@ export default class CabinetWorkflowTile extends Tile {
     this.CONFIRM_CABINET.addEventListener('click', () => this._confirmCabinet());
 
     this.FRAME.append(this.CONFIRM_CABINET);
+
+    // One modal instance per Tile, reused/repopulated per 'add-next' click
+    // (see confirm-swap-modal.js) — not built per-slot, and not wiped by
+    // group-container rebuilds since it isn't inside FRAME.
+    this.SWAP_MODAL = new ConfirmSwapModal({ api: this.api, model: this.modelInstance });
+
+    this.FRAME.addEventListener('click', (e) => {
+      const btn = e.target.closest('.add-next');
+      if (!btn) return;
+
+      const slotId = Number(btn.dataset.slotId);
+      const row = (this.items ?? []).find(r => r.slotId === slotId);
+      if (row) this.SWAP_MODAL.open(row);
+    });
   }
 
   // Bootstraps slot.tubs links (see change-tub.md): every row whose

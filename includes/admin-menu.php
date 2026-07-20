@@ -47,4 +47,13 @@ function scoop_register_admin_menu() {
     'scoop_command_test',
     'scoop_render_command_test_page'
   );
+
+  add_submenu_page(
+    'scoop_root',
+    'Flavor Photos',
+    'Flavor Photos',
+    'manage_options',
+    'scoop_flavor_photos',
+    'scoop_render_flavor_photos_page'
+  );
 }

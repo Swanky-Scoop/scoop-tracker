@@ -7,77 +7,33 @@
   <link rel="stylesheet" href="css.css" />
 </head>
 <body>
-  <div class="InstockFlavor by_cabinets">
+  <div class="modal confirm_swap">
     <form>
-      <div class="group cabinets current_slots">
-        <h2>Woodinville_dairy_14</h2>
-        <ul>
-            <li class="flavor banana_fluffernutter">
-                <a class="flavor-link" href="#details=flavor%3A940">
-                  <h3>Banana Fluffernutter</h3>
-                </a>
-                <i class="menu_board"><img src="path/to/menu-board.webp" alt="Menu board for the item title" /></i>
-                <i class="photo">     <img src="path/to/photo.webp"      alt="Photo for the item title" /></i>
-                <div class="multiple current-slots">
-                  <label class="current-slots-count">Current slots: <em>1</em></label>
-                  <ul>
-                    <li class="Woodinville_dairy_14">Woodinville_dairy_14</li>
-                  </ul>
-                </div>
-                <div class="multiple tubs">
-                    <label class="tub-count">Tub count: <em>3</em></label>
-                    <ul>
-                        <li class="Banana_Fluffernutter_2026-01-20_05_59_3_1">Banana Fluffernutter 2026-01-20 05:59_3|1</li>
-                        <li class="Banana_Fluffernutter_2026-01-20_05_59_3_2">Banana Fluffernutter 2026-01-20 05:59_3|2</li>
-                        <li class="Banana_Fluffernutter_2026-01-20_05_59_3_3">Banana Fluffernutter 2026-01-20 05:59_3|3</li>
-                    </ul>
-                </div>
-                <div class="multiple allergens">
-                    <label class="allergen-count">Allergen count: <em>5</em></label>
-                    <ul>
-                        <li class="peanuts">peanuts</li>
-                        <li class="tree_nuts">tree_nuts</li>
-                        <li class="milk">milk</li>
-                        <li class="eggs">eggs</li>
-                        <li class="soy">soy</li>
-                    </ul>   
-                </div>
-                <div class="number web-id">1492</div>
-                <input type="checkbox" class="select-item" name="selected-items" value="flavor-940" />
-            </li>
-        </ul>
+      <button class="close">X</button>
+      <p>Replace flavor</p>
+      <h2>Almond Croissant</h2>
+      <p>with</p>
+      <div class="img almond_crissant">
+        <img src="path/to/photo.webp" alt="Photo for the flavor" />
+        <h3>Almond Croissant</h3>
+        <p>2026-05-06 00:15_4|4</p>
       </div>
-      <div class="group others">
-        <h2>Others</h2>
-        <ul>
-            <li class="flavor vanilla_bean">
-                <a class="flavor-link" href="#details=flavor%3A940">
-                  <h3>Vanilla Bean</h3>
-                </a>
-                <i class="menu_board"><img src="path/to/menu-board.webp" alt="Menu board for the item title" /></i>
-                <i class="photo">     <img src="path/to/photo.webp"      alt="Photo for the item title" /></i>
-                <div class="multiple current-slots">
-                  <label class="current-slots-count">Current slots: <em>0</em></label>
-                </div>
-                <div class="multiple tubs">
-                    <label class="tub-count">Tub count: <em>3</em></label>
-                    <ul>
-                        <li class="Vanilla_Bean_2026-01-20_05_59_3_1">Vanilla Bean 2026-01-20 05:59_3|1</li>
-                        <li class="Vanilla_Bean_2026-01-20_05_59_3_2">Vanilla Bean 2026-01-20 05:59_3|2</li>
-                        <li class="Vanilla_Bean_2026-01-20_05_59_3_3">Vanilla Bean 2026-01-20 05:59_3|3</li>
-                    </ul>
-                </div>
-                <div class="multiple allergens">
-                    <label class="allergen-count">Allergen count: <em>1</em></label>
-                    <ul>
-                        <li class="soy">soy</li>
-                    </ul>   
-                </div>
-                <div class="number web-id">120</div>
-                <input type="checkbox" class="select-item" name="selected-items" value="flavor-432" />
-            </li>
-        </ul>
-      </div>
+      <label>
+        <input type="checkbox" id="partial" checked="checked" />
+        Use full tubs before partial tubs.
+      </label>
+      <p class="current">
+        There are <b>2</b> remaining tubs, <b>2</b> are here.
+      </p>
+      <p class="next">
+        Next scheduled flavor is <h4><a href="#confirm_other_tub_flavor">Butter Peacan Baklava</a></h4>
+        It has <b>2</b> remaining tubs, <b>2</b> are here.
+      </p>
+      <p class="btn_group">
+        <button class="confirm">Confirm Swap</button>
+        <button class="other">Change Plan</button>
+      </p>
+      <p class="none"><button class="empty">Click here to leave slot empty.</button></p>
     </form>
   </div>
 </body>

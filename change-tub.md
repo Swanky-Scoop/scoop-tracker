@@ -224,6 +224,70 @@ Two-step per your original answer:
 
 </details>
 
+## "Add next" confirmation modal — built
+
+Draft markup: `assets/emptyAdd.html`. Decisions made before implementation:
+
+- **Eligible/"remaining" tub states widen.** Was `state === 'Freezing'`
+  only (`CabinetWorkflowGridModel`'s `ELIGIBLE_TUB_STATE`). Now: exclude
+  only `Opened`, `Emptied`, and the client-only `!Lost` flag
+  (`assets/models/_flavor.js`'s `EXCLUDED_STATES` precedent) — so
+  `Hardening`/`Tempering`/`__override__` count as "remaining" too. This
+  changes **both** the modal's "N remaining / N here" text and the base
+  tile's existing `tub-count-local`/`tub-count-total` — they need to
+  agree, so the tile's numbers will grow once this lands (not a bug when
+  it happens).
+- **Both `immediate_flavor` and `next_flavor` get a block** in this
+  primary modal (each with its own switch-confirmation link), not just
+  `immediate_flavor` — matches the original "up to 2 additional flavors"
+  framing.
+- **"Leave slot empty"**: marks the old tub `Emptied` (it's being
+  physically pulled regardless of what replaces it) and clears
+  `slot.current_flavor`/`slot.tubs`. Does **not** touch
+  `immediate_flavor`/`next_flavor` — those are a manager's forward plan,
+  independent of today's swap being skipped.
+- **Date/index/batch-quantity in the tub preview come from structured
+  fields**, not `post_title` parsing: `tub.created_on`, `tub.index`,
+  and `tub.batch → batch.count`. Requires adding `batch` to
+  `CabinetWorkflow`'s bundle spec `needs` (currently
+  `['cabinet','slot','flavor','tub']`) — it isn't fetched today.
+- **Whole-vs-partial becomes a live checkbox** in the modal (checked =
+  whole tub preferred, unchecked = partial first), recomputing which tub
+  is shown. This **supersedes** the earlier hardcoded Decisions-log #1
+  rule ("`add next` always takes whole over fractional") — that was a
+  fixed server-side rule; it's now a per-confirmation user choice with
+  the same default.
+
+Built: `assets/ui/confirm-swap-modal.js` (`ConfirmSwapModal`), wired to
+every slot's `add-next` button via a delegated click listener in
+`CabinetWorkflowTile.buildCoreDom()`. `CabinetWorkflowGridModel` gained the
+state-widening split (`remainingSummary()` = broad display figure,
+`promotablePool()`/`pickPromotableTub()` = `Freezing`-only selection pool
+— deliberately different sets, see the model's own comments) plus
+`flavorInfo()`/`tubBatchCount()` for the modal's tub preview.
+
+**Batch quantity is parsed from `tub._title`**, not a `batch.count`
+lookup — adding `batch` to this view's bundle `needs` would pull the
+shop's *entire* unbounded batch history into every page load (the same
+failure shape `bundle-fetch.php`'s own comments document crashing
+php-fpm once already). The title format
+(`"{flavor} {date}_{count}|{index}"`, `scoop_batch_title_for_data()` in
+`includes/hooks/batch-tub.php`) already carries the count, so
+`tubBatchCount()` regexes it out — the one place this feature reads a
+title string instead of a structured field, and only because the
+alternative was worse.
+
+**Known gap, not yet handled**: if `openTubStatus` is `'none'`/`'multi'`
+(no clean single currently-open tub — see "Confirm Cabinet" above), the
+confirm modal still opens a new tub without emptying anything (there's
+nothing unambiguous to empty). Could leave two tubs `Opened`
+simultaneously for that flavor in the already-inconsistent case. Not
+blocking — `Confirm Cabinet` is the tool for fixing that separately — but
+worth knowing before relying on `add-next` in that state.
+
+Not yet built: the "Change Plan" from-scratch picker (`Change Plan`
+button currently just alerts that it isn't built).
+
 ## Stubbed for later (no-op now)
 
 - `add special` — click handler attached, does nothing (or opens an empty

@@ -71,6 +71,8 @@ scoop_require('includes/rcc-import/_ui.php');
 scoop_require('includes/rcc-import/reconciler.php');
 scoop_require('includes/rcc-import/dairy-allergy.php');
 scoop_require('includes/rcc-import/reconciler-ui.php');
+scoop_require('includes/flavor-photos.php');
+scoop_require('includes/flavor-photos-ui.php');
 scoop_require('includes/admin-menu.php');
 
 /**
