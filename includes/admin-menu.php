@@ -56,4 +56,13 @@ function scoop_register_admin_menu() {
     'scoop_flavor_photos',
     'scoop_render_flavor_photos_page'
   );
+
+  add_submenu_page(
+    'scoop_root',
+    'Allergen Icons',
+    'Allergen Icons',
+    'manage_options',
+    'scoop_allergen_icons',
+    'scoop_render_allergen_icons_page'
+  );
 }

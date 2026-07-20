@@ -99,7 +99,12 @@
       "Bash(curl -sk -o /dev/null -w \"%{http_code}\\\\n\" \"https://ops.swankyscoop.local/wp-admin/admin.php?page=scoop_flavor_photos\" --max-time 15)",
       "Bash([ -f \"$LOG\" ])",
       "Read(//c/Users/gus reiber/Local Sites/swank-tracker/app/public/wp-content/**)",
-      "Bash(curl -sk -o /dev/null -w \"http:%{http_code}\\\\n\" \"https://ops.swankyscoop.local/wp-admin/admin.php?page=scoop_flavor_photos\" --max-time 15)"
+      "Bash(curl -sk -o /dev/null -w \"http:%{http_code}\\\\n\" \"https://ops.swankyscoop.local/wp-admin/admin.php?page=scoop_flavor_photos\" --max-time 15)",
+      "Read(//c/Users/gus reiber/AppData/Roaming/Local/run/**)",
+      "Read(//c/Users/gus reiber/AppData/Roaming/Local/run/m9wACEH6n/conf/mysql/**)",
+      "Bash('/c/Users/gus reiber/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe' -l includes/allergen-icons.php)",
+      "Bash('/c/Users/gus reiber/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe' -l includes/allergen-icons-ui.php)",
+      "Bash(curl -sk -o /dev/null -w \"http:%{http_code}\\\\n\" \"https://ops.swankyscoop.local/wp-admin/admin.php?page=scoop_allergen_icons\" --max-time 15)"
     ],
     "additionalDirectories": [
       "c:\\Users\\gus reiber\\OneDrive\\Documents\\git\\scoop-tracker\\assets\\flavors"
