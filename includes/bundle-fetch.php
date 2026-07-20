@@ -296,7 +296,7 @@ function scoop_classify_fetch_fields( array $spec_fields ): array {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only = false ): array {
-  error_log( "Fetching entities of type '{$key}' with context: " . json_encode( $ctx ) );
+  scoop_debug_log( "Fetching entities of type '{$key}' with context: " . json_encode( $ctx ) );
   $specs = scoop_entity_specs();
   if ( empty( $specs[ $key ] ) ) return [];
 
@@ -447,7 +447,7 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     // Post fields from wp_posts columns already in $pod->row.
     // post_modified and post_date are omitted when zero, same as spec datetime fields.
     foreach ( $post_fields as $field => $type ) {
-      error_log( "Processing post field '{$field}' of type '{$type}' for {$key} ".($pod->row[$field] ?? 'null') );
+      scoop_debug_log( "Processing post field '{$field}' of type '{$type}' for {$key} ".($pod->row[$field] ?? 'null') );
       if ( $field === 'author_name' ) {
         // get_the_author_meta() caches per unique author — cheap for a small staff
         $row['author_name'] = scoop_text_out(
