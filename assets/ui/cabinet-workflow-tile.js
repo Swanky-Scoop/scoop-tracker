@@ -175,7 +175,15 @@ export default class CabinetWorkflowTile extends Tile {
 
     if (allergens.length) {
       const UL = this.el('ul');
-      allergens.forEach(slug => UL.append(this.el('li', { text: slug, classes: [this._slug(slug)] })));
+      allergens.forEach(slug => {
+        const LI = this.el('li', { classes: [this._slug(slug)] });
+
+        const iconUrl = this.modelInstance.allergenIconUrl(slug);
+        if (iconUrl) LI.append(this.el('img', { attrs: { src: iconUrl, alt: slug } }));
+
+        LI.append(slug);
+        UL.append(LI);
+      });
       WRAP.append(UL);
     }
 

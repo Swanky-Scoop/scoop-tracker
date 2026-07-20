@@ -10,7 +10,10 @@ function scoop_bundle_specs(): array {
     'Closeout'     => ['needs' => ['flavor','use']],
     'DateActivity' => ['needs' => ['tub','inventory_change','flavor','use','location','slot','cabinet']],
     'InstockFlavor'=> ['needs' => ['flavor','tub','slot','cabinet']],
-    'CabinetWorkflow' => ['needs' => ['cabinet','slot','flavor','tub']],
+    // 'allergen' is a small fixed reference table (unlike 'batch' — see the
+    // comment on that one elsewhere in change-tub.md) — cheap to fetch
+    // whole, needed for the allergen icon URLs shown on each slot's flavor.
+    'CabinetWorkflow' => ['needs' => ['cabinet','slot','flavor','tub','allergen']],
   ];
   
   return $specs;
@@ -259,6 +262,25 @@ function scoop_entity_specs(string $key = ''): array {
           'order'        => ['data_type' => 'int',    'hidden' => true],
         ],
         'writeable' => ['tubs_emptied', 'flavor', 'use', 'location', 'order'],
+      ],
+
+      // Icon field populated by the scan/apply tool in
+      // includes/allergen-icons.php (matches allergen-icons/*.svg to
+      // allergen titles) — same pattern as flavor.photo. 'post_name' is
+      // what flavor.allergens' post_names values already are
+      // (scoop_post_names_out() extracts post_name), so it's the join key
+      // client-side maps allergen slug -> icon URL with.
+      'allergen' => [
+        'post_type' => 'allergen',
+        'pod'       => 'allergen',
+        'title'     => true,
+        'fields'    => [
+          'icon' => ['data_type' => 'file'],
+        ],
+        'post_fields' => [
+          'post_name' => 'string',
+        ],
+        'writeable' => [],
       ],
     ];
   } // end cache build

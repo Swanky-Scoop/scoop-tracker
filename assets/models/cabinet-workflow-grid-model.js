@@ -168,6 +168,15 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     return { id: Number(flavorId), title: flavor?._title ?? '', photo: flavor?.photo ?? '' };
   }
 
+  // flavor.allergens gives slugs (post_name), not ids — matches
+  // domain.allergen rows by post_name rather than needing flavor.allergens
+  // to change shape. Small fixed table, no caching needed.
+  allergenIconUrl(slug) {
+    const rows = Array.isArray(this.domain.allergen) ? this.domain.allergen : [];
+    const norm = String(slug ?? '').toLowerCase();
+    return rows.find(a => String(a.post_name ?? '').toLowerCase() === norm)?.icon ?? '';
+  }
+
   // "N remaining" — broader-than-promotable supply figure, see
   // DISPLAY_EXCLUDED_STATES.
   remainingSummary(flavorId, locationId) {
