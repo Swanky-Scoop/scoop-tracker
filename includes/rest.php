@@ -108,6 +108,26 @@
 
 
 
+  /**
+   * Slot writes are only a real inventory event when they change the tub
+   * link (slot.tubs — see the Confirm Cabinet flow in
+   * cabinet-workflow-tile.js). current_flavor/immediate_flavor/next_flavor
+   * are cabinet planning/merchandising fields (the ones Cabinet-grid autosave
+   * writes on every field edit, see scoop_planning_allowed_slot_fields) —
+   * logging those to inventory_change balloons the audit table with
+   * planning noise that was never a stock movement. Every other entity type
+   * logs as before; this only narrows the 'slot' case.
+   */
+  function scoop_should_log_inventory_change(array $cfg, array $updated): bool {
+    if (($cfg['pod_name'] ?? '') !== 'slot') return true;
+
+    foreach ($updated as $fields) {
+      if (is_array($fields) && array_key_exists('tubs', $fields)) return true;
+    }
+
+    return false;
+  }
+
   function scoop_inventory_change_phase(array $cfg, array $updated = []): string {
     $entity = $cfg['pod_name'] ?? '';
     $mode   = $cfg['mode'] ?? '';
@@ -506,8 +526,12 @@
 
     $ok = empty($errors);
     if($ok) scoop_cache_bust();
-    
-    scoop_log_post($req, $cfg, $updated, $errors);
+
+    // Errors always get logged (debuggability); successful slot-only
+    // planning edits are skipped — see scoop_should_log_inventory_change().
+    if (!$ok || scoop_should_log_inventory_change($cfg, $updated)) {
+      scoop_log_post($req, $cfg, $updated, $errors);
+    }
 
     return new \WP_REST_Response([
       'ok'      => $ok,

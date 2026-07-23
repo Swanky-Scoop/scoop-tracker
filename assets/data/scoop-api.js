@@ -1,5 +1,6 @@
 import Grid               from "../ui/grid.js";
 import Tile                from "../ui/tile.js";
+import PageStatus          from "../ui/page-status.js";
 import ColumnsProvider    from "../models/_column-provider.js";
 import FormCodec          from "./form-codec.js";
 import CabinetGridModel      from "../models/cabinet-grid-model.js";
@@ -282,6 +283,18 @@ export default class ScoopAPI {
     if (this._domainInflight) return this._domainInflight;
     //if(toast) toast.update(toast, {title:"Data Saved..."});
 
+    // A real fetch is about to happen (not a cache-hit early return above,
+    // not piggy-backing on an already-inflight request) — every bundle grid
+    // shares this one fetch, so mark them all at once. Each grid reports its
+    // own 'fresh'/'stale' back once the fetch resolves (see List.init/
+    // refresh/_onDomainUpdated in _list.js). info.name identifies which
+    // grid's action (Save submit, autosave, filter change) caused this
+    // refresh — absent only for the initial page-load call.
+    this._bundleGrids.forEach(g => {
+      if (g.pageStatusId) PageStatus.setState(g.pageStatusId, 'fetching');
+    });
+    PageStatus.setTrigger(info?.name ?? 'page load');
+
     this._domainInflight = (async () => {
       // bypass in-memory bundle cache on force
       const bundle = await this.getBundleForTypes(this._pageTypes, { cache: !force });
@@ -435,6 +448,25 @@ export default class ScoopAPI {
   async mountAllGrids({ root = document, formCodec = FormCodec } = {}) {
     if (!this.getTypesFromGridHosts(root)) return [];
 
+    // ETA for how long THIS page (URL + this combination of grid types)
+    // typically takes to fully resolve — see PageStatus.beginLoadTiming's
+    // header comment for why this stays client-side. typesKey reflects
+    // every host on the page at this point (analytics included); captured
+    // now because it gets narrowed to bundle-only types further down.
+    PageStatus.beginLoadTiming(`${window.location.pathname}::${this.typesKey}`);
+
+    // Register every shortcode host with PageStatus up front, before any
+    // fetch (analytics self-fetch or the shared bundle fetch) starts — each
+    // host already carries a stable id from shortcode.php. 'unknown' is the
+    // literal starting state until its first fetch begins.
+    this._hosts.forEach(dom => {
+      PageStatus.register(dom.id, {
+        label: `${dom.dataset.gridType ?? 'grid'} (${dom.dataset.location || 'no location'})`,
+        type: dom.dataset.gridType ?? '',
+        location: dom.dataset.location ?? '',
+      });
+    });
+
     // Separate analytics grids from bundle-based grids
     const analyticsHosts = [];
     const bundleHosts    = [];
@@ -462,13 +494,17 @@ export default class ScoopAPI {
           nonce: this.nonce,
         });
 
+        PageStatus.setState(dom.id, 'fetching');
         await model.fetch();
 
+        // PopularPlot isn't a List subclass (see popular-plot.js) so it has
+        // no _reportFresh() hook of its own — mark it directly.
         const plot = new PopularPlot(dom, "Popular", {
           api: this,
           modelInstance: model,
         });
         plot.init(model);
+        PageStatus.setState(dom.id, 'fresh');
         allGrids.push(plot);
         continue;
       }
@@ -480,6 +516,7 @@ export default class ScoopAPI {
           nonce: this.nonce,
         });
 
+        PageStatus.setState(dom.id, 'fetching');
         await model.fetch();
 
         const grid = new Grid(dom, "Flavors", {
@@ -487,6 +524,7 @@ export default class ScoopAPI {
           modelInstance: model,
           formCodec,
           columns: model.columns,
+          pageStatusId: dom.id,
         });
         grid.init(model);
         allGrids.push(grid);
@@ -499,6 +537,7 @@ export default class ScoopAPI {
         nonce: this.nonce,
       });
 
+      PageStatus.setState(dom.id, 'fetching');
       await model.fetch();
 
       const grid = new Grid(dom, "Analytics", {
@@ -506,6 +545,7 @@ export default class ScoopAPI {
         modelInstance: model,
         formCodec,
         columns: model.columns,
+        pageStatusId: dom.id,
       });
       grid.init(model);
       allGrids.push(grid);
@@ -562,7 +602,8 @@ export default class ScoopAPI {
             api: this,
             modelInstance,
             formCodec,
-            columns: modelInstance.columns
+            columns: modelInstance.columns,
+            pageStatusId: dom.id,
         });
       }).filter(Boolean);
 
@@ -577,6 +618,12 @@ export default class ScoopAPI {
 
       allGrids.push(...bundleGrids);
     }
+
+    // Every grid above was mounted synchronously to completion (analytics'
+    // model.fetch()/init() per host, bundle grids' setDomain()->init() in
+    // the forEach) — by this line, every registered grid has already
+    // reported 'fresh', so this is the true resolve moment for the initial load.
+    PageStatus.completeLoadTiming();
 
     return allGrids;
   }

@@ -29,6 +29,7 @@ import TextIt     from "./text-it.js";
 import FindInGrid from "./find-in-grid.js";
 import Toast      from "./toast.js";
 import Details    from "./details.js";
+import PageStatus from "./page-status.js";
 
 export default class List extends El{
   constructor(target, name, config = {}) {
@@ -39,6 +40,7 @@ export default class List extends El{
     this.location = config?.modelInstance?.location ?? 0;
     this.formCodec = config?.formCodec;
     this.msgManager = config?.msgManager;
+    this.pageStatusId = config?.pageStatusId ?? null;
 
     this._fieldSet = false;
     this.fields = null;
@@ -98,6 +100,7 @@ export default class List extends El{
 
     this.FORM.dispatchEvent(new Event("ts:list:init"));
     this._isInit = true;
+    this._reportFresh();
   }
 
   loadConfig({ api, formCodec, domainCodec, modelInstance } = {}) {
@@ -131,6 +134,15 @@ export default class List extends El{
     this._captureBaseline();
     this._applyAutosaveUI();
     this.FORM.dispatchEvent(new Event("ts:list:close-overlays"));
+    this._reportFresh();
+  }
+
+  // Rendered data now matches the last domain snapshot this grid applied —
+  // called from both first-load (init) and every subsequent re-render
+  // (refresh). No-op for grids that weren't registered with PageStatus
+  // (pageStatusId null — e.g. the PopularKey Grid nested inside PopularPlot).
+  _reportFresh() {
+    if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'fresh');
   }
 
   preloadColumns(columns) {
@@ -816,7 +828,7 @@ export default class List extends El{
   _scheduleBackgroundDomainRefresh() {
     clearTimeout(this._domainRefreshTimer);
     this._domainRefreshTimer = setTimeout(() => {
-      this.api?.refreshPageDomain({ force: true }).catch(err =>
+      this.api?.refreshPageDomain({ force: true, info: { name: this.name } }).catch(err =>
         console.error('Background domain refresh failed:', err)
       );
     }, 800);
@@ -995,6 +1007,7 @@ export default class List extends El{
         // background refresh was for OTHER grids' derived state, and this
         // grid gets its own fresh domain next time it rebuilds unforced.
         if (this._autosaveEnabled() && (this._autosaving || this.dirtySet?.size)) {
+          if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'stale');
           return;
         }
 
@@ -1042,6 +1055,7 @@ export default class List extends El{
       this._onDomainUpdated = null;
       this._docListenerBound = false;
     }
+    if (this.pageStatusId) PageStatus.remove(this.pageStatusId);
     this.FORM?.remove();
   }
 
