@@ -15,5 +15,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   Details.refresh();
   api.watchForStaleVersion(SCOOP.version);
   api.watchForIdleTimeout({ loginUrl: SCOOP.loginUrl });
+  api.watchForInventoryChangeFlush();
 
 });

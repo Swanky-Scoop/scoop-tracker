@@ -15,6 +15,7 @@ function scoop_client_routes(): array {
   $out['Bundle']     = rest_url('scoop/v1/bundle');
   $out['Version']    = rest_url('scoop/v1/version');
   $out['IdleLogout'] = rest_url('scoop/v1/idle-logout');
+  $out['FlushInventoryChange'] = rest_url('scoop/v1/flush-inventory-change');
 
   return $out;
 }

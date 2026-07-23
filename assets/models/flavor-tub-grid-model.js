@@ -13,6 +13,12 @@ export default class FlavorTubGridModel extends BaseGridModel{
   constructor(name = 'FlavorTub', domain, attrs = {}) 
   {
     super(name, domain, attrs );
+    // 'use' and 'amount' are low-stakes, atomic edits (picker / rarely-touched
+    // creation-time value) — safe to autosave. 'state' is left off: 'Emptied'
+    // is a one-way, server-enforced transition (see scoop_enforce_tub_rules)
+    // and belongs behind the explicit Save button, not a keystroke debounce.
+    this.autosave = true;
+    this.autosaveFields = new Set(['use', 'amount']);
     this.filter = true;
     this.filterValues = {
       designation: 'all',

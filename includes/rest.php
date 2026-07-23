@@ -356,6 +356,129 @@
     return 'title, change_count, entity, envelope, mode, phase, source, problem, tubs, flavors, details, post_content';
   }
 
+  /**
+   * Session-batched inventory_change logging for UPDATE-mode writes
+   * (tub/slot cell edits, autosaved or manual-submit alike). Creates
+   * (Batch, Closeout) are deliberately NOT routed through here — each one
+   * is already its own meaningful, infrequent event and keeps logging
+   * immediately via scoop_log_post(). Updates are frequent/incremental
+   * (every autosaved keystroke would otherwise mint its own audit row), so
+   * they're staged per-user and rolled into ONE inventory_change record by
+   * scoop_flush_pending_inventory_change() when the client's idle-flush
+   * timer fires (see watchForInventoryChangeFlush in scoop-api.js).
+   */
+  function scoop_pending_inventory_change_key(int $user_id): string {
+    return "scoop_pending_inventory_change_{$user_id}";
+  }
+
+  function scoop_stage_inventory_change(array $cfg, array $updated): void {
+    $user_id = get_current_user_id();
+    if (!$user_id || empty($updated)) return;
+
+    $key     = scoop_pending_inventory_change_key($user_id);
+    $pending = get_transient($key);
+    if (!is_array($pending)) $pending = [];
+
+    $pending[] = [
+      'ts'      => current_time('mysql'),
+      'entity'  => $cfg['pod_name'] ?? '',
+      'mode'    => $cfg['mode']     ?? '',
+      'updated' => $updated,
+    ];
+
+    // TTL resets on every staged change, so an actively-edited session never
+    // expires mid-session — only real inactivity lets the transient lapse.
+    set_transient($key, $pending, 2 * HOUR_IN_SECONDS);
+  }
+
+  function scoop_flush_pending_inventory_change(int $user_id = 0): int {
+    $user_id = $user_id ?: get_current_user_id();
+    if (!$user_id) return 0;
+
+    $key     = scoop_pending_inventory_change_key($user_id);
+    $pending = get_transient($key);
+    delete_transient($key);
+
+    if (!is_array($pending) || empty($pending)) return 0;
+
+    return scoop_write_session_inventory_change($pending, $user_id);
+  }
+
+  function scoop_write_session_inventory_change(array $entries, int $user_id): int {
+    if (!function_exists('pods')) return 0;
+
+    $user       = get_user_by('id', $user_id);
+    $user_login = $user ? $user->user_login : "user {$user_id}";
+
+    $tubs      = [];
+    $flavors   = [];
+    $details   = '';
+    $row_count = 0;
+
+    foreach ($entries as $entry) {
+      $entry_cfg = [
+        'pod_name' => $entry['entity'] ?? '',
+        'mode'     => $entry['mode']   ?? '',
+      ];
+      $updated = $entry['updated'] ?? [];
+
+      $refs    = scoop_inventory_change_refs($entry_cfg, $updated);
+      $tubs    = array_merge($tubs, $refs['tubs']);
+      $flavors = array_merge($flavors, $refs['flavors']);
+
+      foreach ($updated as $row_id => $fields) {
+        if (!is_array($fields)) continue;
+        $row_count++;
+        $details .= '<strong>' . (get_the_title((int) $row_id) ?: "Item {$row_id}") . '</strong><br />';
+        foreach ($fields as $field => $value) {
+          $details .= $field . ' => ' . (get_the_title((int) $value) ?: $value) . '<br />';
+        }
+      }
+    }
+
+    if ($row_count === 0) return 0;
+
+    $tubs    = scoop_inventory_change_unique_ids($tubs);
+    $flavors = scoop_inventory_change_unique_ids($flavors);
+    $date    = date('D m/d');
+    $s       = ($row_count > 1) ? 's' : '';
+    $title   = "{$user_login} updated {$row_count} item{$s} over a session ending {$date}";
+
+    $allowed = [
+      'strong' => [],
+      'br'     => [],
+    ];
+
+    $change_data = [
+      'post_status'  => 'publish',
+      'title'        => $title,
+      'change_count' => $row_count,
+      'entity'       => 'session',
+      'envelope'     => 'session',
+      'mode'         => 'update',
+      'phase'        => 'session',
+      'source'       => 'session',
+      'problem'      => 'none',
+      'tubs'         => $tubs,
+      'flavors'      => $flavors,
+      'details'      => $details,
+      'post_content' => wp_kses($details, $allowed),
+    ];
+
+    $change_id = scoop_inventory_change_add($change_data, [
+      'entity'   => 'session',
+      'envelope' => 'session',
+      'mode'     => 'update',
+      'user_id'  => $user_id,
+    ]);
+
+    if (!$change_id) {
+      error_log("scoop_write_session_inventory_change: inventory_change add returned empty result for user={$user_id}");
+    }
+
+    return $change_id ?: 0;
+  }
+
   function scoop_log_post(\WP_REST_Request $req, array $cfg, array $updated = [], array $errors = [], int $created_id = 0):void
   {
     $user       = wp_get_current_user()->user_login;
@@ -527,10 +650,18 @@
     $ok = empty($errors);
     if($ok) scoop_cache_bust();
 
-    // Errors always get logged (debuggability); successful slot-only
-    // planning edits are skipped — see scoop_should_log_inventory_change().
-    if (!$ok || scoop_should_log_inventory_change($cfg, $updated)) {
+    // Errors always get logged immediately (debuggability). Successful
+    // updates are staged and rolled into a single end-of-session
+    // inventory_change instead of one event per write — see
+    // scoop_stage_inventory_change() and the /flush-inventory-change route.
+    // Planning-only slot edits are still skipped entirely, per
+    // scoop_should_log_inventory_change(). Batch/Closeout creation goes
+    // through scoop_handle_create_post(), not here, and still logs
+    // immediately — each create is its own meaningful, infrequent event.
+    if (!$ok) {
       scoop_log_post($req, $cfg, $updated, $errors);
+    } elseif (scoop_should_log_inventory_change($cfg, $updated)) {
+      scoop_stage_inventory_change($cfg, $updated);
     }
 
     return new \WP_REST_Response([

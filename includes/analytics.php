@@ -77,8 +77,11 @@ function scoop_analytics_handler( \WP_REST_Request $req ): \WP_REST_Response {
   // Cache read — keyed by version + days + location + grid_type. The version
   // is bumped on any relevant save_post (see _cache.php), so writes invalidate
   // every cached analytics response at once. The TTL is just a safety net.
-  $cache_key = scoop_analytics_cache_key( $req );
-  $cached    = get_transient( $cache_key );
+  // force_bust (see bundle.php's matching comment) skips the read only — the
+  // writes below still happen as normal.
+  $cache_key  = scoop_analytics_cache_key( $req );
+  $force_bust = ! empty( $req->get_param( 'force_bust' ) );
+  $cached     = $force_bust ? false : get_transient( $cache_key );
   if ( $cached !== false && is_array( $cached ) ) {
     // Re-stamp trace_id so each cache-hit response still has a unique ID for
     // log correlation. _cache=hit is what distinguishes it from a fresh compute.

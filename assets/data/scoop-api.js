@@ -17,6 +17,18 @@ import InstockFlavorGridModel from "../models/instock-flavor-grid-model.js";
 import CabinetWorkflowGridModel from "../models/cabinet-workflow-grid-model.js";
 import CabinetWorkflowTile      from "../ui/cabinet-workflow-tile.js";
 
+// Some grid types run visibly heavier cold-cache queries than the rest of
+// the bundle (see bundle-fetch.php's date-filter/inventory_change handling
+// for DateActivity/BatchHistory) — give those a larger cache-bust countdown
+// default before this page has built up its own real 'miss' history. Only
+// matters pre-history; PageStatus.beginLoadTiming() prefers real history
+// the moment any exists.
+const ETA_DEFAULT_BUST_MS = 15000;
+const ETA_TYPE_DEFAULT_BUST_MS = {
+  DateActivity: 25000,
+  BatchHistory: 25000,
+};
+
 
 export default class ScoopAPI {
   constructor({ nonce, base = "/", routes = {}, metaData = null, user = null } = {}) {
@@ -45,6 +57,18 @@ export default class ScoopAPI {
     // Request control + caching
     this.controller = new AbortController();
     this._bundleCache = new Map(); // key:string -> bundleJson
+
+    // #bust in the URL hash (e.g. https://.../page/#bust) forces every fetch
+    // this mount makes to skip the server's transient cache read (still
+    // writes fresh data back — see bundle.php/analytics.php's force_bust
+    // handling) — a manual way to exercise the cache-bust path (and its ETA
+    // countdown, see page-status.js) without having to save a record first.
+    this._forceCacheBust = this._hashForcesBust();
+  }
+
+  _hashForcesBust() {
+    const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+    return new URLSearchParams(raw).has('bust');
   }
 
   _normalizeRoutes(routes = {}) {
@@ -188,7 +212,20 @@ export default class ScoopAPI {
     for (const [param, value] of Object.entries(this._bundleFilterParams ?? {})) {
       if (value != null && value !== '') base.searchParams.set(param, String(value));
     }
+    if (this._forceCacheBust) {
+      base.searchParams.set('force_bust', '1');
+    }
     return base;
+  }
+
+  _defaultBustMsForPage() {
+    let ms = ETA_DEFAULT_BUST_MS;
+    for (const type of this._pageTypes ?? []) {
+      if (ETA_TYPE_DEFAULT_BUST_MS[type] != null) {
+        ms = Math.max(ms, ETA_TYPE_DEFAULT_BUST_MS[type]);
+      }
+    }
+    return ms;
   }
 
   _columnsForGridType(name) {
@@ -296,12 +333,21 @@ export default class ScoopAPI {
     });
     PageStatus.setTrigger(info?.name ?? 'page load');
 
+    // ETA/countdown for this fetch specifically — called here (not just once
+    // from mountAllGrids) so it shows up for every real bundle fetch: the
+    // initial load, a Save submit, autosave's background refresh, or a
+    // filter change. this.typesKey is already narrowed to bundle-only types
+    // by the time this runs (see mountAllGrids), so the key stays scoped to
+    // exactly what's being fetched.
+    PageStatus.beginLoadTiming(`${window.location.pathname}::${this.typesKey}`, this._defaultBustMsForPage());
+
     this._domainInflight = (async () => {
       // bypass in-memory bundle cache on force
       const bundle = await this.getBundleForTypes(this._pageTypes, { cache: !force });
       this._domain = bundle?.data ?? {};
       this._lastBundleCacheStatus = bundle?._cache ?? null;
       this._domainInflight = null;
+      PageStatus.completeLoadTiming(this._lastBundleCacheStatus);
 
       document.dispatchEvent(new CustomEvent("ts:domain:updated", {
         detail: { types: this._pageTypes, ts: Date.now() }
@@ -354,21 +400,29 @@ export default class ScoopAPI {
     }, intervalMs);
   }
 
-  // Forces a real re-login after N hours of no genuine interaction — a tab
-  // left open overnight shouldn't stay authenticated forever. Deliberately
-  // driven by actual mousemove/keydown/click, NOT by background traffic like
+  // Shared "is anyone actually at the keyboard" signal, driven by real
+  // mousemove/keydown/click, NOT by background traffic like
   // watchForStaleVersion's poll or autosave — those fire on their own timers
   // regardless of whether she's at the keyboard, so counting them as
-  // "activity" would defeat the timeout.
-  watchForIdleTimeout({ idleMs = 6 * 60 * 60 * 1000, checkIntervalMs = 60 * 1000, loginUrl } = {}) {
-    let lastActivity = Date.now();
-    const bump = () => { lastActivity = Date.now(); };
+  // "activity" would defeat any idle timeout built on top of this. Both
+  // watchForIdleTimeout and watchForInventoryChangeFlush share one tracker
+  // rather than each wiring their own document listeners.
+  _trackRealActivity() {
+    if (this._lastActivity != null) return;
+    this._lastActivity = Date.now();
+    const bump = () => { this._lastActivity = Date.now(); };
     ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt =>
       document.addEventListener(evt, bump, { passive: true })
     );
+  }
+
+  // Forces a real re-login after N hours of no genuine interaction — a tab
+  // left open overnight shouldn't stay authenticated forever.
+  watchForIdleTimeout({ idleMs = 6 * 60 * 60 * 1000, checkIntervalMs = 60 * 1000, loginUrl } = {}) {
+    this._trackRealActivity();
 
     setInterval(async () => {
-      if (Date.now() - lastActivity < idleMs) return;
+      if (Date.now() - this._lastActivity < idleMs) return;
       if (this.hasUnsavedEdits()) return; // autosave hasn't flushed yet, recheck next tick
 
       try {
@@ -379,6 +433,35 @@ export default class ScoopAPI {
 
       alert("You've been logged out after a period of inactivity. Please log back in.");
       location.href = loginUrl || "/wp-login.php";
+    }, checkIntervalMs);
+  }
+
+  // Rolls every 'update' write (tub/slot edits, autosaved or manual-submit
+  // alike) made since the last flush into ONE inventory_change record —
+  // see scoop_stage_inventory_change/scoop_flush_pending_inventory_change in
+  // rest.php. Fires on the same real-activity signal as watchForIdleTimeout
+  // but at a much shorter idle threshold, so a normal break in the day
+  // writes the session's audit trail instead of waiting for the 6h logout.
+  watchForInventoryChangeFlush({ idleMs = 60 * 60 * 1000, checkIntervalMs = 60 * 1000 } = {}) {
+    this._trackRealActivity();
+    let flushedThisIdleStretch = false;
+
+    setInterval(async () => {
+      const idleFor = Date.now() - this._lastActivity;
+
+      if (idleFor < idleMs) {
+        flushedThisIdleStretch = false; // she's back — arm for the next idle stretch
+        return;
+      }
+      if (flushedThisIdleStretch) return; // already flushed, nothing new pending
+      if (this.hasUnsavedEdits()) return; // autosave hasn't landed yet, recheck next tick
+
+      flushedThisIdleStretch = true;
+      try {
+        await this._fetch(this.route("FlushInventoryChange"), { method: "POST" });
+      } catch (err) {
+        console.error("watchForInventoryChangeFlush: flush call failed", err);
+      }
     }, checkIntervalMs);
   }
 
@@ -450,13 +533,6 @@ export default class ScoopAPI {
   async mountAllGrids({ root = document, formCodec = FormCodec } = {}) {
     if (!this.getTypesFromGridHosts(root)) return [];
 
-    // ETA for how long THIS page (URL + this combination of grid types)
-    // typically takes to fully resolve — see PageStatus.beginLoadTiming's
-    // header comment for why this stays client-side. typesKey reflects
-    // every host on the page at this point (analytics included); captured
-    // now because it gets narrowed to bundle-only types further down.
-    PageStatus.beginLoadTiming(`${window.location.pathname}::${this.typesKey}`);
-
     // Register every shortcode host with PageStatus up front, before any
     // fetch (analytics self-fetch or the shared bundle fetch) starts — each
     // host already carries a stable id from shortcode.php. 'unknown' is the
@@ -484,12 +560,6 @@ export default class ScoopAPI {
 
     const allGrids = [];
 
-    // 'hit'/'miss' from every fetch this mount makes — reduced to one
-    // overall cache-status for the page-load ETA below. Any single miss
-    // means the page had to wait on a cold compute somewhere, so 'miss'
-    // wins over 'hit' when both occur on the same page.
-    const cacheStatuses = [];
-
     // ── Analytics grids: self-fetching, bypass the bundle ──
     for (const dom of analyticsHosts) {
       const type     = dom.dataset.gridType;
@@ -500,11 +570,13 @@ export default class ScoopAPI {
           location,
           days,
           nonce: this.nonce,
+          forceCacheBust: this._forceCacheBust,
         });
 
         PageStatus.setState(dom.id, 'fetching');
+        PageStatus.beginLoadTiming(`${window.location.pathname}::Popular`);
         await model.fetch();
-        cacheStatuses.push(model.lastCacheStatus);
+        PageStatus.completeLoadTiming(model.lastCacheStatus);
 
         // PopularPlot isn't a List subclass (see popular-plot.js) so it has
         // no _reportFresh() hook of its own — mark it directly.
@@ -523,11 +595,13 @@ export default class ScoopAPI {
           location,
           days,
           nonce: this.nonce,
+          forceCacheBust: this._forceCacheBust,
         });
 
         PageStatus.setState(dom.id, 'fetching');
+        PageStatus.beginLoadTiming(`${window.location.pathname}::Flavors`);
         await model.fetch();
-        cacheStatuses.push(model.lastCacheStatus);
+        PageStatus.completeLoadTiming(model.lastCacheStatus);
 
         const grid = new Grid(dom, "Flavors", {
           api: this,
@@ -545,11 +619,13 @@ export default class ScoopAPI {
         location,
         days,
         nonce: this.nonce,
+        forceCacheBust: this._forceCacheBust,
       });
 
       PageStatus.setState(dom.id, 'fetching');
+      PageStatus.beginLoadTiming(`${window.location.pathname}::Analytics`);
       await model.fetch();
-      cacheStatuses.push(model.lastCacheStatus);
+      PageStatus.completeLoadTiming(model.lastCacheStatus);
 
       const grid = new Grid(dom, "Analytics", {
         api: this,
@@ -621,7 +697,6 @@ export default class ScoopAPI {
       this._bundleGrids = bundleGrids;
       this._bundleFilterParams = this._bundleFilterParamsForGrids(bundleGrids);
       await this.refreshPageDomain({ force: true });
-      cacheStatuses.push(this._lastBundleCacheStatus);
 
       // Set domain on each bundle grid
       bundleGrids.forEach(g => {
@@ -630,15 +705,6 @@ export default class ScoopAPI {
 
       allGrids.push(...bundleGrids);
     }
-
-    // Every grid above was mounted synchronously to completion (analytics'
-    // model.fetch()/init() per host, bundle grids' setDomain()->init() in
-    // the forEach) — by this line, every registered grid has already
-    // reported 'fresh', so this is the true resolve moment for the initial load.
-    const overallCacheStatus = cacheStatuses.includes('miss')
-      ? 'miss'
-      : (cacheStatuses.includes('hit') ? 'hit' : 'unknown');
-    PageStatus.completeLoadTiming(overallCacheStatus);
 
     return allGrids;
   }

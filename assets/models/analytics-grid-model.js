@@ -26,6 +26,9 @@ export default class AnalyticsGridModel extends BaseGridModel {
    * @param {number}      [options.location]  Location filter ID (0 = all)
    * @param {number}      [options.days]      Analysis period in days (default 30)
    * @param {string}      [options.nonce]     WP REST nonce for authentication
+   * @param {boolean}     [options.forceCacheBust] Skip the server's transient
+   *                                          cache read on this fetch — see
+   *                                          ScoopAPI's #bust hash handling.
    */
   constructor( name = "Analytics", domain = null, options = {} ) {
     // Pass null domain — we handle it ourselves after setting instance state.
@@ -33,6 +36,7 @@ export default class AnalyticsGridModel extends BaseGridModel {
 
     this.days  = options.days  ?? 30;
     this.nonce = options.nonce ?? ( typeof SCOOP !== "undefined" ? SCOOP.nonce : null );
+    this.forceCacheBust = !!options.forceCacheBust;
     this.raw   = null;
 
     // Explicit column build: base won't auto-build (no metaData).
@@ -183,8 +187,12 @@ export default class AnalyticsGridModel extends BaseGridModel {
     if ( this.name ) {
       url.searchParams.set( "grid_type", String( this.name ) );
     }
-    // Cache-bust
+    // Busts the browser's own HTTP cache — does not touch the server's
+    // transient cache (see force_bust below for that).
     url.searchParams.set( "_ts", String( Date.now() ) );
+    if ( this.forceCacheBust ) {
+      url.searchParams.set( "force_bust", "1" );
+    }
 
     const headers = { Accept: "application/json" };
     if ( this.nonce ) {

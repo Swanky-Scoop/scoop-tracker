@@ -106,7 +106,22 @@
       "Bash('/c/Users/gus reiber/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe' -l includes/allergen-icons-ui.php)",
       "Bash(curl -sk -o /dev/null -w \"http:%{http_code}\\\\n\" \"https://ops.swankyscoop.local/wp-admin/admin.php?page=scoop_allergen_icons\" --max-time 15)",
       "Bash('/c/Users/gus reiber/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe' -l 'c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/_specs.php')",
-      "Bash('/c/Users/gus reiber/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe' -l 'c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/bundle-fetch.php')"
+      "Bash('/c/Users/gus reiber/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe' -l 'c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/bundle-fetch.php')",
+      "Bash(curl -s \"https://cdnjs.cloudflare.com/ajax/libs/Iosevka/6.0.0/iosevka-aile/iosevka-aile.min.css\")",
+      "Bash(curl -s \"https://api.cdnjs.com/libraries/iosevka/6.0.0\")",
+      "Bash(curl -s \"https://api.cdnjs.com/libraries/iosevka?fields=name,filename\")",
+      "Bash(curl -s \"https://api.cdnjs.com/libraries/Iosevka\")",
+      "Bash(curl -s \"https://api.cdnjs.com/libraries/Iosevka/6.0.0\")",
+      "Bash(python3 -c ' *)",
+      "WebFetch(domain:typeof.net)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -s \"https://cdnjs.cloudflare.com/ajax/libs/Iosevka/6.0.0/iosevka/iosevka.min.css\")",
+      "Bash(node --check assets/ui/_list.js)",
+      "Bash(node --check assets/models/flavor-tub-grid-model.js)",
+      "PowerShell(node --check \"assets/ui/_list.js\")",
+      "PowerShell(node --check \"assets/models/flavor-tub-grid-model.js\")",
+      "Bash(awk 'NR==890 || NR==896 {print NR\": \"$0}' assets/ui/_list.js)"
     ],
     "additionalDirectories": [
       "c:\\Users\\gus reiber\\OneDrive\\Documents\\git\\scoop-tracker\\assets\\flavors"

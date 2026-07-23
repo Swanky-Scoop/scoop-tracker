@@ -1,3 +1,4 @@
+
 ///////////////////////////////////
 // PageStatus — shared freshness-tracking host. Same singleton-host pattern
 // as Toast (see toast.js): the first grid to call register()/setState()
@@ -53,24 +54,42 @@
 // it depends on server-side state, not anything the client controls).
 //////////////////////////////////
 
+import El from "./_el.js";
+
 export const STATES = ['unknown', 'fetching', 'stale', 'fresh'];
 
 const ETA_STORAGE_KEY = 'scoop_page_load_eta_v1';
 const ETA_SAMPLE_LIMIT = 8; // rolling window — adapts to recent conditions rather than all-time
+const ETA_DEFAULT_MS = 15000; // cache-bust countdown start when this page has no 'miss' history yet
+const COUNTDOWN_TICK_MS = 100;
+
+// PageStatus's public API is entirely static (called as PageStatus.register(),
+// not instantiated — every other List/Tile subclass extends El and calls
+// this.el() as an instance, which doesn't fit here), so one shared helper
+// instance is used internally instead.
+const DOM = new El();
 
 export default class PageStatus {
   static _items = new Map(); // id -> <li>
   static _loadStart = null;
   static _loadKey = null;
+  static _countdownTimer = null;
+  static _pendingCacheStatus = undefined; // set by completeLoadTiming(), consumed once nothing's still 'fetching'
 
   static _ensureHost() {
-    let UL = document.querySelector('body > .PAGE-STATUS');
-    if (UL) return UL;
+    let DIV = document.querySelector('body > .PAGE-STATUS');
+    if (DIV) return DIV;
 
-    UL = document.createElement('ul');
-    UL.classList.add('PAGE-STATUS');
-    document.body.append(UL);
-    return UL;
+    DIV = DOM.el('div', { classes: ['PAGE-STATUS'] });
+    const UL = DOM.el('ul');
+    const h3 = DOM.el('h3', { text: 'Status' });
+    const EM = DOM.el('em'); 
+    DIV.append(h3);
+    DIV.append(EM);
+    DIV.append(UL);
+    document.body.append(DIV);
+
+    return DIV;
   }
 
   static register(id, { label = id, type = '', location = '' } = {}) {
@@ -78,17 +97,19 @@ export default class PageStatus {
 
     let LI = PageStatus._items.get(id);
     if (!LI) {
-      const UL = PageStatus._ensureHost();
-      LI = document.createElement('li');
-      LI.dataset.statusId = id;
-      if (type) LI.dataset.gridType = type;
-      if (location) LI.dataset.location = location;
-      LI.append(document.createTextNode(label), document.createElement('em'));
+      const DIV = PageStatus._ensureHost();
+      const UL = DIV.querySelector('ul');
+      const data = { statusId: id };
+      if (type) data.gridType = type;
+      if (location) data.location = location;
+
+      LI = DOM.el('li', { data });
+      LI.append(document.createTextNode(label), DOM.el('em'));
       UL.append(LI);
       PageStatus._items.set(id, LI);
     }
 
-    PageStatus.setState(id, 'unknown');
+    PageStatus.setState(id, STATES[0]);
     return LI;
   }
 
@@ -109,13 +130,43 @@ export default class PageStatus {
 
     const EM = LI.querySelector('em');
     if (EM) EM.textContent = state;
+
+    PageStatus._recomputeOverallState();
+    PageStatus._tryFinishLoadTiming();
+  }
+
+  // The <DIV> itself carries whichever registered grid's state is furthest
+  // from 'fresh' — 'fresh' is the steady state once every grid agrees, and
+  // any single grid being 'unknown'/'fetching'/'stale' pulls the whole page
+  // out of it. STATES is already ordered worst-to-best (see the header
+  // comment), so "furthest from fresh" is just the lowest index present.
+  // Only grids registered via register() count — the trigger/ETA <li>s
+  // aren't freshness states and don't live in _items.
+  static _recomputeOverallState() {
+    if (!PageStatus._items.size) return;
+    const DIV = PageStatus._ensureHost();
+    const EM = DIV.querySelector(':scope > em');
+
+    let worstIndex = STATES.length - 1; // start at 'fresh', the ideal
+    for (const LI of PageStatus._items.values()) {
+      const index = STATES.indexOf(LI.dataset.state);
+      if (index !== -1 && index < worstIndex) worstIndex = index;
+    }
+
+    const overall = STATES[worstIndex];
+    DIV.classList.remove(...STATES);
+    DIV.classList.add(overall);
+    DIV.dataset.state = overall;
+    DIV.dataset.stateIndex = String(worstIndex);
+    EM.textContent = overall;
   }
 
   // name = the grid (List.name, e.g. "Cabinet") whose Save/autosave/filter
   // change caused the shared bundle to re-fetch — or 'page load' for the
   // initial mount, which isn't caused by any single grid.
   static setTrigger(name) {
-    const UL = PageStatus._ensureHost();
+    const DIV = PageStatus._ensureHost();
+    const UL = DIV.querySelector('ul');
     const label = String(name ?? 'page load');
     const slug = PageStatus._slug(label);
 
@@ -125,8 +176,7 @@ export default class PageStatus {
 
     let TRIGGER_LI = UL.querySelector(':scope > li.PAGE-STATUS-TRIGGER');
     if (!TRIGGER_LI) {
-      TRIGGER_LI = document.createElement('li');
-      TRIGGER_LI.classList.add('PAGE-STATUS-TRIGGER');
+      TRIGGER_LI = DOM.el('li', { classes: ['PAGE-STATUS-TRIGGER'] });
       UL.prepend(TRIGGER_LI);
     }
     TRIGGER_LI.textContent = `Triggered by: ${label}`;
@@ -146,21 +196,16 @@ export default class PageStatus {
   //   <em class="cache-bust" data-cache-status="miss">...</em>
   // </li>
   static _ensureEtaLi() {
-    const UL = PageStatus._ensureHost();
+    const DIV = PageStatus._ensureHost();
+    const UL = DIV.querySelector('ul');
     let LI = UL.querySelector(':scope > li.PAGE-STATUS-ETA');
     if (!LI) {
-      LI = document.createElement('li');
-      LI.classList.add('PAGE-STATUS-ETA');
+      LI = DOM.el('li', { classes: ['PAGE-STATUS-ETA'] });
 
-      const CACHED = document.createElement('em');
-      CACHED.classList.add('cached');
-      CACHED.dataset.cacheStatus = 'hit';
+      const CACHED = DOM.el('em', { classes: ['cached'], data: { cacheStatus: 'hit' } });
+      const BUST   = DOM.el('em', { classes: ['cache-bust'], data: { cacheStatus: 'miss' } });
 
-      const BUST = document.createElement('em');
-      BUST.classList.add('cache-bust');
-      BUST.dataset.cacheStatus = 'miss';
-
-      LI.append(document.createTextNode('Estimated load'), CACHED, BUST);
+      LI.append(CACHED, BUST);
       UL.prepend(LI);
     }
     return LI;
@@ -197,7 +242,12 @@ export default class PageStatus {
   // grid-type combination) has on this device: one for a cache-bust load,
   // one for a cached reload. Which one actually applies isn't known until
   // completeLoadTiming() — see the header comment.
-  static beginLoadTiming(key) {
+  //
+  // defaultMs is the cache-bust countdown's starting point when this page
+  // has no 'miss' history yet — callers with domain knowledge of which grid
+  // types tend to run slow cold queries (e.g. ScoopAPI, for DateActivity/
+  // BatchHistory) can pass a larger one than the generic ETA_DEFAULT_MS.
+  static beginLoadTiming(key, defaultMs = ETA_DEFAULT_MS) {
     PageStatus._loadStart = performance.now();
     PageStatus._loadKey = key;
 
@@ -207,26 +257,97 @@ export default class PageStatus {
     LI.dataset.etaKey = key;
     delete LI.dataset.cacheStatus;
 
-    const CACHED = LI.querySelector('em.cached');
     const BUST   = LI.querySelector('em.cache-bust');
-    CACHED.classList.remove('actual');
     BUST.classList.remove('actual');
 
     const hitAvg  = PageStatus._etaAverageMs(key, 'hit');
     const missAvg = PageStatus._etaAverageMs(key, 'miss');
 
-    CACHED.textContent = (hitAvg  != null) ? `cached ~${(hitAvg  / 1000).toFixed(1)}s` : 'cached: no history yet';
-    BUST.textContent   = (missAvg != null) ? `cache-bust ~${(missAvg / 1000).toFixed(1)}s` : 'cache-bust: no history yet';
+    // Cache-bust is the slow path worth watching live — count down from this
+    // page's own 'miss' history, or defaultMs when there's none yet. If
+    // this load actually turns out to be a cache hit, completeLoadTiming()
+    // stops the countdown well before it reaches zero.
+    BUST.dataset.etaSource = (missAvg != null) ? 'history' : 'default';
+    PageStatus._startBustCountdown(BUST, missAvg != null ? missAvg : defaultMs);
   }
 
-  // Call once, when the initial mount has fully resolved (every grid from
-  // that mount has already reported 'fresh') — cacheStatus ('hit'|'miss')
-  // is which bucket this particular load actually landed in (see
-  // mountAllGrids, which reduces every fetch's own _cache flag down to one
-  // page-level status). Records the actual duration into that bucket's
-  // rolling history and marks which of the two estimates just came true.
+  static _startBustCountdown(EM, durationMs) {
+    PageStatus._stopBustCountdown();
+
+    const deadline = performance.now() + durationMs;
+    EM.classList.add('counting-down');
+    // Global hook so any page chrome (not just the PAGE-STATUS list itself)
+    // can react while a cache-busting refresh is in flight.
+    document.body.classList.add('counting-down');
+
+    const tick = () => {
+      const remainingMs = deadline - performance.now();
+      const overtime = remainingMs < 0;
+
+      // Counting down: decimal seconds, same precision as before. Once the
+      // estimate elapses, the display doesn't just freeze at 0 — it starts
+      // counting back up from 0 to show how far past the estimate this
+      // fetch has run, whole seconds only (floor, so it starts at 0 exactly
+      // as remainingMs crosses zero).
+      const displayText = overtime
+        ? String(Math.floor(-remainingMs / 1000))
+        : (remainingMs / 1000).toFixed(1);
+
+      // Drives the CSS ring (see css.css's .cache-bust.counting-down rules)
+      // — 0 at start, 100 once the estimate elapses, held at 100 through
+      // overtime. Pure custom-property update, no DOM nodes added.
+      const progressPct = durationMs > 0 ? Math.min(100, (Math.max(0, durationMs - remainingMs) / durationMs) * 100) : 100;
+      EM.style.setProperty('--eta-progress', progressPct.toFixed(2));
+      EM.textContent = displayText;
+      EM.dataset.etaRemainingMs = String(Math.round(remainingMs));
+      EM.classList.toggle('overtime', overtime);
+    };
+
+    tick();
+    PageStatus._countdownTimer = setInterval(tick, COUNTDOWN_TICK_MS);
+  }
+
+  static _stopBustCountdown() {
+    if (PageStatus._countdownTimer != null) {
+      clearInterval(PageStatus._countdownTimer);
+      PageStatus._countdownTimer = null;
+    }
+    document.body.classList.remove('counting-down');
+  }
+
+  // Call once, when the fetch that beginLoadTiming() timed has resolved.
+  // cacheStatus ('hit'|'miss') is which bucket this particular fetch landed
+  // in (see refreshPageDomain, which reads it straight off the bundle
+  // response's own _cache flag).
+  //
+  // Doesn't necessarily finish the timer immediately — the network response
+  // landing isn't the same moment the page is done "fetching" as far as
+  // anyone looking at the screen is concerned; every grid still has its own
+  // synchronous rebuild to run off the ts:domain:updated event this call
+  // typically precedes. So this only stashes the outcome and defers to
+  // _tryFinishLoadTiming(), which actually stops the countdown once no
+  // registered grid is still reporting 'fetching' — re-checked every time
+  // any grid's state changes (see setState()).
   static completeLoadTiming(cacheStatus) {
     if (PageStatus._loadStart == null || !PageStatus._loadKey) return;
+    PageStatus._pendingCacheStatus = cacheStatus;
+    PageStatus._tryFinishLoadTiming();
+  }
+
+  static _anyGridFetching() {
+    for (const LI of PageStatus._items.values()) {
+      if (LI.dataset.state === 'fetching') return true;
+    }
+    return false;
+  }
+
+  static _tryFinishLoadTiming() {
+    if (PageStatus._pendingCacheStatus === undefined) return; // nothing awaiting finish
+    if (PageStatus._anyGridFetching()) return; // still visibly fetching — keep the countdown running
+
+    const cacheStatus = PageStatus._pendingCacheStatus;
+    PageStatus._pendingCacheStatus = undefined;
+    PageStatus._stopBustCountdown();
 
     const elapsedMs = performance.now() - PageStatus._loadStart;
     const key = PageStatus._loadKey;
@@ -250,10 +371,12 @@ export default class PageStatus {
     const BUST   = LI.querySelector('em.cache-bust');
     CACHED.classList.toggle('actual', bucket === 'hit');
     BUST.classList.toggle('actual', bucket === 'miss');
+    BUST.classList.remove('counting-down');
+    delete BUST.dataset.etaRemainingMs;
 
     const seconds = `${(elapsedMs / 1000).toFixed(1)}s`;
     if (bucket === 'hit') CACHED.textContent = `cached ${seconds}`;
-    else if (bucket === 'miss') BUST.textContent = `cache-bust ${seconds}`;
+    else if (bucket === 'miss') BUST.textContent = seconds;
 
     PageStatus._loadStart = null;
     PageStatus._loadKey = null;
@@ -264,5 +387,7 @@ export default class PageStatus {
     if (!LI) return;
     LI.remove();
     PageStatus._items.delete(id);
+    PageStatus._recomputeOverallState();
+    PageStatus._tryFinishLoadTiming();
   }
 }
