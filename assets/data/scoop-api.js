@@ -40,6 +40,7 @@ export default class ScoopAPI {
     this._hosts    = null;
     this._domain   = null;
     this._domainInflight = null;
+    this._lastBundleCacheStatus = null; // 'hit'|'miss' from the last bundle fetch's transient cache
 
     // Request control + caching
     this.controller = new AbortController();
@@ -299,6 +300,7 @@ export default class ScoopAPI {
       // bypass in-memory bundle cache on force
       const bundle = await this.getBundleForTypes(this._pageTypes, { cache: !force });
       this._domain = bundle?.data ?? {};
+      this._lastBundleCacheStatus = bundle?._cache ?? null;
       this._domainInflight = null;
 
       document.dispatchEvent(new CustomEvent("ts:domain:updated", {
@@ -482,6 +484,12 @@ export default class ScoopAPI {
 
     const allGrids = [];
 
+    // 'hit'/'miss' from every fetch this mount makes — reduced to one
+    // overall cache-status for the page-load ETA below. Any single miss
+    // means the page had to wait on a cold compute somewhere, so 'miss'
+    // wins over 'hit' when both occur on the same page.
+    const cacheStatuses = [];
+
     // ── Analytics grids: self-fetching, bypass the bundle ──
     for (const dom of analyticsHosts) {
       const type     = dom.dataset.gridType;
@@ -496,6 +504,7 @@ export default class ScoopAPI {
 
         PageStatus.setState(dom.id, 'fetching');
         await model.fetch();
+        cacheStatuses.push(model.lastCacheStatus);
 
         // PopularPlot isn't a List subclass (see popular-plot.js) so it has
         // no _reportFresh() hook of its own — mark it directly.
@@ -518,6 +527,7 @@ export default class ScoopAPI {
 
         PageStatus.setState(dom.id, 'fetching');
         await model.fetch();
+        cacheStatuses.push(model.lastCacheStatus);
 
         const grid = new Grid(dom, "Flavors", {
           api: this,
@@ -539,6 +549,7 @@ export default class ScoopAPI {
 
       PageStatus.setState(dom.id, 'fetching');
       await model.fetch();
+      cacheStatuses.push(model.lastCacheStatus);
 
       const grid = new Grid(dom, "Analytics", {
         api: this,
@@ -610,6 +621,7 @@ export default class ScoopAPI {
       this._bundleGrids = bundleGrids;
       this._bundleFilterParams = this._bundleFilterParamsForGrids(bundleGrids);
       await this.refreshPageDomain({ force: true });
+      cacheStatuses.push(this._lastBundleCacheStatus);
 
       // Set domain on each bundle grid
       bundleGrids.forEach(g => {
@@ -623,7 +635,10 @@ export default class ScoopAPI {
     // model.fetch()/init() per host, bundle grids' setDomain()->init() in
     // the forEach) — by this line, every registered grid has already
     // reported 'fresh', so this is the true resolve moment for the initial load.
-    PageStatus.completeLoadTiming();
+    const overallCacheStatus = cacheStatuses.includes('miss')
+      ? 'miss'
+      : (cacheStatuses.includes('hit') ? 'hit' : 'unknown');
+    PageStatus.completeLoadTiming(overallCacheStatus);
 
     return allGrids;
   }

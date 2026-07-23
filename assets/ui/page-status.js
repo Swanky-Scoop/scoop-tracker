@@ -41,6 +41,16 @@
 // one server-side average blending conditions that don't apply to it. No
 // history yet (first visit on this browser, or localStorage unavailable —
 // e.g. private browsing) just shows that plainly instead of guessing.
+//
+// A cache-bust load (the server had to recompute — no valid transient) and
+// a cached reload (the server served its transient straight back) are
+// different enough in practice that averaging them together would be
+// meaningless — the server already tells the client which one happened via
+// the bundle/analytics response's `_cache: 'hit'|'miss'` field (see
+// bundle.php/analytics.php), so history is kept as two separate rolling
+// buckets per page, and both estimates are shown before the outcome of
+// *this* load is known (which bucket applies isn't knowable in advance —
+// it depends on server-side state, not anything the client controls).
 //////////////////////////////////
 
 export const STATES = ['unknown', 'fetching', 'stale', 'fresh'];
@@ -130,13 +140,27 @@ export default class PageStatus {
       || 'unknown';
   }
 
+  // <li class="PAGE-STATUS-ETA">
+  //   Estimated load
+  //   <em class="cached" data-cache-status="hit">...</em>
+  //   <em class="cache-bust" data-cache-status="miss">...</em>
+  // </li>
   static _ensureEtaLi() {
     const UL = PageStatus._ensureHost();
     let LI = UL.querySelector(':scope > li.PAGE-STATUS-ETA');
     if (!LI) {
       LI = document.createElement('li');
       LI.classList.add('PAGE-STATUS-ETA');
-      LI.append(document.createTextNode('Estimated load'), document.createElement('em'));
+
+      const CACHED = document.createElement('em');
+      CACHED.classList.add('cached');
+      CACHED.dataset.cacheStatus = 'hit';
+
+      const BUST = document.createElement('em');
+      BUST.classList.add('cache-bust');
+      BUST.dataset.cacheStatus = 'miss';
+
+      LI.append(document.createTextNode('Estimated load'), CACHED, BUST);
       UL.prepend(LI);
     }
     return LI;
@@ -161,58 +185,75 @@ export default class PageStatus {
     }
   }
 
-  static _etaAverageMs(key) {
-    const samples = PageStatus._readEtaHistory()[key]?.samples ?? [];
+  // bucket: 'hit' | 'miss'
+  static _etaAverageMs(key, bucket) {
+    const samples = PageStatus._readEtaHistory()[key]?.[bucket] ?? [];
     if (!samples.length) return null;
     return samples.reduce((sum, ms) => sum + ms, 0) / samples.length;
   }
 
   // Call once, as early as possible in the initial page-load mount — starts
-  // the clock and, if this exact page (path + grid-type combination) has
-  // loaded before on this device, shows a rolling-average estimate from
-  // that history.
+  // the clock and shows both rolling-average estimates this page (path +
+  // grid-type combination) has on this device: one for a cache-bust load,
+  // one for a cached reload. Which one actually applies isn't known until
+  // completeLoadTiming() — see the header comment.
   static beginLoadTiming(key) {
     PageStatus._loadStart = performance.now();
     PageStatus._loadKey = key;
 
-    const avgMs = PageStatus._etaAverageMs(key);
     const LI = PageStatus._ensureEtaLi();
     LI.classList.remove('estimating', 'measured');
     LI.classList.add('estimating');
     LI.dataset.etaKey = key;
+    delete LI.dataset.cacheStatus;
 
-    const EM = LI.querySelector('em');
-    if (avgMs != null) {
-      LI.dataset.etaAverageMs = String(Math.round(avgMs));
-      if (EM) EM.textContent = `~${(avgMs / 1000).toFixed(1)}s`;
-    } else {
-      delete LI.dataset.etaAverageMs;
-      if (EM) EM.textContent = 'no history yet';
-    }
+    const CACHED = LI.querySelector('em.cached');
+    const BUST   = LI.querySelector('em.cache-bust');
+    CACHED.classList.remove('actual');
+    BUST.classList.remove('actual');
+
+    const hitAvg  = PageStatus._etaAverageMs(key, 'hit');
+    const missAvg = PageStatus._etaAverageMs(key, 'miss');
+
+    CACHED.textContent = (hitAvg  != null) ? `cached ~${(hitAvg  / 1000).toFixed(1)}s` : 'cached: no history yet';
+    BUST.textContent   = (missAvg != null) ? `cache-bust ~${(missAvg / 1000).toFixed(1)}s` : 'cache-bust: no history yet';
   }
 
   // Call once, when the initial mount has fully resolved (every grid from
-  // that mount has already reported 'fresh') — records the actual duration
-  // into this device's rolling history and shows what actually happened.
-  static completeLoadTiming() {
+  // that mount has already reported 'fresh') — cacheStatus ('hit'|'miss')
+  // is which bucket this particular load actually landed in (see
+  // mountAllGrids, which reduces every fetch's own _cache flag down to one
+  // page-level status). Records the actual duration into that bucket's
+  // rolling history and marks which of the two estimates just came true.
+  static completeLoadTiming(cacheStatus) {
     if (PageStatus._loadStart == null || !PageStatus._loadKey) return;
 
     const elapsedMs = performance.now() - PageStatus._loadStart;
     const key = PageStatus._loadKey;
+    const bucket = (cacheStatus === 'hit' || cacheStatus === 'miss') ? cacheStatus : 'unknown';
 
-    const all = PageStatus._readEtaHistory();
-    const entry = all[key] ?? { samples: [] };
-    entry.samples = [...entry.samples, elapsedMs].slice(-ETA_SAMPLE_LIMIT);
-    all[key] = entry;
-    PageStatus._writeEtaHistory(all);
+    if (bucket !== 'unknown') {
+      const all = PageStatus._readEtaHistory();
+      const entry = all[key] ?? {};
+      entry[bucket] = [...(entry[bucket] ?? []), elapsedMs].slice(-ETA_SAMPLE_LIMIT);
+      all[key] = entry;
+      PageStatus._writeEtaHistory(all);
+    }
 
     const LI = PageStatus._ensureEtaLi();
     LI.classList.remove('estimating');
     LI.classList.add('measured');
+    LI.dataset.cacheStatus = bucket;
     LI.dataset.etaActualMs = String(Math.round(elapsedMs));
 
-    const EM = LI.querySelector('em');
-    if (EM) EM.textContent = `${(elapsedMs / 1000).toFixed(1)}s`;
+    const CACHED = LI.querySelector('em.cached');
+    const BUST   = LI.querySelector('em.cache-bust');
+    CACHED.classList.toggle('actual', bucket === 'hit');
+    BUST.classList.toggle('actual', bucket === 'miss');
+
+    const seconds = `${(elapsedMs / 1000).toFixed(1)}s`;
+    if (bucket === 'hit') CACHED.textContent = `cached ${seconds}`;
+    else if (bucket === 'miss') BUST.textContent = `cache-bust ${seconds}`;
 
     PageStatus._loadStart = null;
     PageStatus._loadKey = null;

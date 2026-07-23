@@ -194,6 +194,11 @@ export default class AnalyticsGridModel extends BaseGridModel {
     const res  = await fetch( url, { credentials: "include", headers } );
     const json = await res.json();
 
+    // 'hit'|'miss' from the server's transient cache (see analytics.php) —
+    // read by ScoopAPI.mountAllGrids to bucket the page-load ETA (see
+    // page-status.js's beginLoadTiming/completeLoadTiming).
+    this.lastCacheStatus = json?._cache ?? null;
+
     if ( ! json?.ok ) {
       console.error( "AnalyticsGridModel: endpoint returned error", json );
       this.raw  = json;
