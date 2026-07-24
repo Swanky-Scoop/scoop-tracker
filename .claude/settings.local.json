@@ -106,7 +106,14 @@
       "Bash('/c/Users/gus reiber/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe' -l includes/allergen-icons-ui.php)",
       "Bash(curl -sk -o /dev/null -w \"http:%{http_code}\\\\n\" \"https://ops.swankyscoop.local/wp-admin/admin.php?page=scoop_allergen_icons\" --max-time 15)",
       "Bash('/c/Users/gus reiber/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe' -l 'c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/_specs.php')",
-      "Bash('/c/Users/gus reiber/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe' -l 'c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/bundle-fetch.php')"
+      "Bash('/c/Users/gus reiber/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe' -l 'c:/Users/gus reiber/OneDrive/Documents/git/scoop-tracker/includes/bundle-fetch.php')",
+      "Bash(git check-ignore *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" https://github.com/gusreiber/scoop-tracker)",
+      "Bash(grep -nE \"AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|gho_[A-Za-z0-9]{36}|xox[baprs]-[A-Za-z0-9-]+|sk-[A-Za-z0-9]{20,}|sk-ant-[A-Za-z0-9-]{20,}|AIza[0-9A-Za-z_-]{35}\")",
+      "Bash(curl -s -D - -o /tmp/body1.html \"https://ops.swankyscoop.net/wp-admin/about.php\")",
+      "Bash(curl -s -D - -o /tmp/body2.html \"https://ops.swankyscoop.net/wp-admin/plugin-install.php\")",
+      "Bash(curl -s -D - -o /dev/null \"https://ops.swankyscoop.net/wp-admin/admin-ajax.php\")",
+      "Bash(curl -s -D - -o /dev/null \"https://ops.swankyscoop.net/wp-cron.php\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\gus reiber\\OneDrive\\Documents\\git\\scoop-tracker\\assets\\flavors"

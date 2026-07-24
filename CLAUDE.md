@@ -12,9 +12,9 @@ The repository root maps directly to `wp-content/plugins/scoop_rest/` on the ser
 
 There is **no build step, no package manager, no test suite**. JS files are loaded directly as ES modules by the browser (`script_loader_tag` filter rewrites the `scoop-grid` handle to `type="module"`).
 
-Deployment is by SFTP-on-save via the VS Code SFTP extension — `.vscode/sftp.json` defines `TEST` (default, `test.swankyscoop.net`) and `OPS` (`ops.swankyscoop.net`) profiles. Saving a file in the editor uploads it; there is no CI.
+Deployment is by GitHub Actions (`.github/workflows/deploy.yml`), via `rsync` over SSH — no SFTP-on-save, no VS Code SFTP extension. A push to `main` auto-deploys to `test.swankyscoop.net`. Deploying to `ops.swankyscoop.net` (production) requires a manual `workflow_dispatch` run with `target: ops`, gated behind the `ops` GitHub environment. The SSH deploy key lives only in the `SFTP_SSH_KEY` Actions secret; the workflow explicitly excludes any `scoop-deploy-key*`/`*.pem`/`*_rsa`/`*_ed25519`/`id_*` files from the rsync payload so a stray key file in the working tree can't get shipped.
 
-To exercise changes, save the file (uploads to TEST) and reload a page that contains a `[scoop_grid ...]` shortcode while logged in. When debugging server-side, set `define('SCOOP_DEBUG_LOG', true)` in `wp-config.php` to enable `scoop_debug_log()` output to the PHP error log.
+To exercise changes, commit and push to `main` (deploys to TEST) and reload a page that contains a `[scoop_grid ...]` shortcode while logged in. When debugging server-side, set `define('SCOOP_DEBUG_LOG', true)` in `wp-config.php` to enable `scoop_debug_log()` output to the PHP error log.
 
 ### Local development mirror (fastest loop)
 
@@ -26,7 +26,7 @@ There is a [Local](https://localwp.com/) (by Flywheel) site, `swank-tracker`, se
 
 Because it's a symlink, **edits to the repo are live on the local site immediately** — no SFTP, no copy. Reload for PHP; hard-refresh for JS (ES module cache). This is the fastest way to validate a change. Reach it with `curl -k` (self-signed cert). The local site has its own database and users, and its Pods config/content can differ from TEST and OPS — don't assume parity (see "Do not suggest" notes on environment drift).
 
-SFTP-on-save still governs the **real** servers (`test.swankyscoop.net`, `ops.swankyscoop.net`); use it to ship once a change is validated locally. The local mirror is for iteration only.
+The GitHub Actions deploy workflow still governs the **real** servers (`test.swankyscoop.net`, `ops.swankyscoop.net`); commit and push to ship once a change is validated locally. The local mirror is for iteration only.
 
 ## Architecture
 
@@ -119,7 +119,7 @@ When working on pricing features, lead with detection and reporting of bad data 
 
 **Any task that writes, updates, or connects live Pods/WordPress records must be validated on TEST before OPS.**
 
-- Use `test.swankyscoop.net` (the default SFTP profile) for all exploratory and repair work.
+- Use `test.swankyscoop.net` (the auto-deploy target on push to `main`) for all exploratory and repair work.
 - Produce a report or dry-run output first; get explicit approval before writing to OPS (`ops.swankyscoop.net`).
 - For multi-step writes (e.g. connecting ingredients → recipes → flavors), remember that all `track_pods_*` tables except `nightly_sales` are `ENGINE=MyISAM` — no transactions, no rollback. Order inserts defensively and plan explicit cleanup on failure.
 
@@ -128,15 +128,15 @@ When working on pricing features, lead with detection and reporting of bad data 
 These approaches have been evaluated and decided against — do not re-propose them:
 
 - Connecting directly to remote servers (test.swankyscoop.net or ops.swankyscoop.net)
-  via SSH, WP-CLI, or any other remote access method. Deployment is by SFTP-on-save
-  and cross-environment coordination is handled by the developer.
+  via SSH, WP-CLI, or any other remote access method. Deployment is by the GitHub
+  Actions workflow (`.github/workflows/deploy.yml`) and cross-environment coordination
+  is handled by the developer.
 - However: DO flag any situation where local file state or query results suggest the
   local DB may be out of sync with TEST or OPS (e.g. missing records, unexpected schema,
   zero results where data is expected). Stop and ask the developer to verify environment
   alignment before proceeding.
 - Adding a build step, package manager, or bundler (Webpack, Vite, etc.)
 - Converting the JS client to React, Vue, or any other framework
-- Replacing SFTP-on-save deployment with CI/CD pipelines
 - Automated vendor price scraping or API-based price feeds (no vendor APIs exist)
 - Converting Pods tables to InnoDB (valid long-term idea, but out of scope — do not suggest unless explicitly asked)
 
