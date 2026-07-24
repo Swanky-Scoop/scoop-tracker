@@ -539,6 +539,54 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   opacity: 0.5;
 }
 
+/* Sizes the loading card itself (not just the shimmer overlay) to fit 6
+   skeleton rows, so form.zGRID-form's own box-shadow wraps the full
+   placeholder instead of just the (still-short) real header content.
+   .scoop-grid is unsized and just grows to contain this. Scoped to the same
+   "no rows yet" condition as the shimmer below, so a populated grid with
+   only a few real rows isn't forced to this height too. */
+.scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr)) > form.zGRID-form {
+  min-height: 13.5rem;
+}
+
+/* Shimmering skeleton placeholder — shown while a grid has no rows yet
+   (before the bundle fetch resolves and List/Grid appends the first
+   <tbody>). No extra DOM: gated purely on the DOM shape that already
+   exists — table.zGRID holds only its <thead> until real data lands — so
+   the shimmer disappears the instant the first row is appended. */
+.scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr))::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-color: var(--color-bg-secondary);
+  background-image:
+    linear-gradient(100deg, transparent 30%, var(--overlay-white) 50%, transparent 70%),
+    repeating-linear-gradient(
+      to bottom,
+      var(--color-bg-main) 0, var(--color-bg-main) 1.5rem,
+      transparent 1.5rem, transparent 2.25rem
+    );
+  background-size: 60% 100%, 100% 100%;
+  background-repeat: no-repeat, repeat-y;
+  background-position: -60% 0, 0 0;
+  animation: scoop-shimmer-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes scoop-shimmer-sweep {
+  to { background-position: 160% 0, 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr))::after {
+    animation: none;
+  }
+}
+
 /* Special Grid Types: Batch & Closeout */
 .scoop-grid.Batch,
 .scoop-grid.Closeout {
