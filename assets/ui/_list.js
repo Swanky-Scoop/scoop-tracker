@@ -29,6 +29,7 @@ import TextIt     from "./text-it.js";
 import FindInGrid from "./find-in-grid.js";
 import Toast      from "./toast.js";
 import Details    from "./details.js";
+import PageStatus from "./page-status.js";
 
 export default class List extends El{
   constructor(target, name, config = {}) {
@@ -39,6 +40,7 @@ export default class List extends El{
     this.location = config?.modelInstance?.location ?? 0;
     this.formCodec = config?.formCodec;
     this.msgManager = config?.msgManager;
+    this.pageStatusId = config?.pageStatusId ?? null;
 
     this._fieldSet = false;
     this.fields = null;
@@ -63,6 +65,10 @@ export default class List extends El{
     this._autosaving = false;
     this._autosavePending = false;
     this._autosaveTimer = null;
+
+    // Unsaved-edit draft persistence (see _persistDraft/_checkForDraft below).
+    this._pendingDraftCells = null;
+    this._draftChecked = false;
 
     this.loadConfig(config);
     this._build();
@@ -98,6 +104,7 @@ export default class List extends El{
 
     this.FORM.dispatchEvent(new Event("ts:list:init"));
     this._isInit = true;
+    this._reportFresh();
   }
 
   loadConfig({ api, formCodec, domainCodec, modelInstance } = {}) {
@@ -130,7 +137,17 @@ export default class List extends El{
     this._rebuildBodies(state);
     this._captureBaseline();
     this._applyAutosaveUI();
+    this._checkForDraft();
     this.FORM.dispatchEvent(new Event("ts:list:close-overlays"));
+    this._reportFresh();
+  }
+
+  // Rendered data now matches the last domain snapshot this grid applied —
+  // called from both first-load (init) and every subsequent re-render
+  // (refresh). No-op for grids that weren't registered with PageStatus
+  // (pageStatusId null — e.g. the PopularKey Grid nested inside PopularPlot).
+  _reportFresh() {
+    if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'fresh');
   }
 
   preloadColumns(columns) {
@@ -435,10 +452,11 @@ export default class List extends El{
     return changes;
   }
 
-  _buildDirtyPayload() {
+  _buildDirtyPayload(fieldFilter = null) {
     const changes = { cells: {} };
     for (const k of this.dirtySet) {
       const [rowIdStr, colKey] = k.split("|");
+      if (fieldFilter && !fieldFilter(colKey)) continue;
       const rowId = Number(rowIdStr);
 
       const input = this.FORM.querySelector(
@@ -503,8 +521,133 @@ export default class List extends El{
         const k = `${rowId}|${colKey}`;
         this.baseline.set(k, val);
         this.dirtySet.delete(k);
+
+        // Clear whatever this save covered out of a resumed draft too, so a
+        // partial resume doesn't keep re-offering already-saved cells.
+        if (this._pendingDraftCells?.[rowId]) {
+          delete this._pendingDraftCells[rowId][colKey];
+          if (!Object.keys(this._pendingDraftCells[rowId]).length) {
+            delete this._pendingDraftCells[rowId];
+          }
+        }
       }
     }
+
+    if (this._pendingDraftCells && !Object.keys(this._pendingDraftCells).length) {
+      this._pendingDraftCells = null;
+    }
+
+    this._persistDraft();
+  }
+
+  // ─── Unsaved-edit draft persistence ────────────────────────────────────────
+  // Manual-submit fields (e.g. FlavorTub's 'state') can sit dirty for minutes
+  // while someone decides, then get lost to an accidental tab close/nav-away.
+  // Every dirty-set change is mirrored to localStorage; on the next mount we
+  // offer to resume-and-save it. Autosaved fields pass through here too but
+  // self-clear within ~250ms in the normal case, so in practice this is a
+  // safety net for the fields that don't autosave.
+
+  _draftKey() {
+    return `scoop:draft:${this.name}:${this.location || 0}`;
+  }
+
+  _persistDraft() {
+    try {
+      const key = this._draftKey();
+      const liveCells = this._buildDirtyPayload().cells;
+
+      // Merge with any not-yet-resolved draft from a prior visit so starting
+      // a fresh edit elsewhere in the grid never silently drops it.
+      const merged = { ...(this._pendingDraftCells || {}) };
+      for (const [rowId, row] of Object.entries(liveCells)) {
+        merged[rowId] = { ...(merged[rowId] || {}), ...row };
+      }
+
+      if (!Object.keys(merged).length) {
+        localStorage.removeItem(key);
+        return;
+      }
+
+      localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), cells: merged }));
+    } catch (err) {
+      console.error('List draft persist failed:', err);
+    }
+  }
+
+  _checkForDraft() {
+    if (this._draftChecked) return;
+    this._draftChecked = true;
+
+    let draft = null;
+    try {
+      const raw = localStorage.getItem(this._draftKey());
+      if (raw) draft = JSON.parse(raw);
+    } catch (err) {
+      console.error('List draft read failed:', err);
+    }
+
+    if (!draft?.cells || !Object.keys(draft.cells).length) return;
+
+    this._pendingDraftCells = draft.cells;
+    this._showDraftBanner(draft);
+  }
+
+  _showDraftBanner(draft) {
+    const rowCount = Object.keys(draft.cells).length;
+    const when = draft.savedAt ? new Date(draft.savedAt).toLocaleString() : 'earlier';
+
+    const toastEl = Toast.addMessage({
+      title: 'Unsaved changes from last visit',
+      message: `${rowCount} row${rowCount === 1 ? '' : 's'} edited ${when} in ${this.name} weren't saved.`,
+    });
+
+    const actions = document.createElement('div');
+    actions.classList.add('draft-actions');
+
+    const resumeBtn = document.createElement('button');
+    resumeBtn.type = 'button';
+    resumeBtn.textContent = 'Resume & Save';
+    resumeBtn.addEventListener('click', () => this._resumeDraft(draft, toastEl));
+
+    const discardBtn = document.createElement('button');
+    discardBtn.type = 'button';
+    discardBtn.textContent = 'Discard';
+    discardBtn.addEventListener('click', () => this._discardDraft(toastEl));
+
+    actions.append(resumeBtn, discardBtn);
+    toastEl.append(actions);
+  }
+
+  async _resumeDraft(draft, toastEl) {
+    if (!this.api || !this.postUrl) return;
+
+    try {
+      const r = await this.api.postJson({ cells: draft.cells }, this.name);
+
+      if (!r.ok || !r.data?.ok) {
+        Toast.addMessage({
+          title: 'Resume failed',
+          message: r?.data ? JSON.stringify(r.data) : `HTTP ${r?.status}`,
+        });
+        return;
+      }
+
+      this._pendingDraftCells = null;
+      localStorage.removeItem(this._draftKey());
+      toastEl.remove();
+      Toast.addMessage({ title: 'Unsaved changes saved', message: 'Your earlier edits were submitted.' });
+      this.api.refreshPageDomain?.({ force: true, info: { name: this.name } });
+    } catch (err) {
+      console.error('List draft resume failed:', err);
+      Toast.addMessage({ title: 'Resume error', message: String(err) });
+    }
+  }
+
+  _discardDraft(toastEl) {
+    this._pendingDraftCells = null;
+    localStorage.removeItem(this._draftKey());
+    toastEl.remove();
   }
 
   _showHide(e, el=e.target){
@@ -738,23 +881,37 @@ export default class List extends El{
     else this.dirtySet.add(k);
 
     // Autosave lists persist each change right away (no save button, no reload).
-    if (this._autosaveEnabled()) this._scheduleAutosave();
+    if (this._fieldAutosaveEnabled(colKey)) this._scheduleAutosave();
+
+    this._persistDraft();
   }
 
   // ─── Autosave ──────────────────────────────────────────────────────────────
   // Opt in per model: `this.autosave = true`. Each field change is POSTed on a
   // short debounce; unlike the normal submit path it does NOT call
   // refreshPageDomain(), so the page/list is never rebuilt out from under the
-  // user mid-edit. The save button is hidden (see _applyAutosaveUI).
+  // user mid-edit. The save button is hidden (see _applyAutosaveUI) unless the
+  // model also sets `autosaveFields` (a Set of column keys) — that opts IN
+  // only those fields to autosave and leaves the rest on the manual Save
+  // button (e.g. FlavorTubGridModel: 'use'/'amount' autosave, 'state' doesn't).
 
   _autosaveEnabled() {
     return !!(this.state && this.state.autosave);
   }
 
+  _fieldAutosaveEnabled(colKey) {
+    if (!this._autosaveEnabled()) return false;
+    const fields = this.state?.autosaveFields;
+    return !fields || fields.has(colKey);
+  }
+
   _applyAutosaveUI() {
     const on = this._autosaveEnabled();
+    const partial = on && !!this.state?.autosaveFields;
     this.FORM.classList.toggle('autosave', on);
-    if (this.SUBMIT) this.SUBMIT.hidden = on;
+    // Partial autosave models still need the Save button for their
+    // manual-only fields (e.g. FlavorTub's 'state').
+    if (this.SUBMIT) this.SUBMIT.hidden = on && !partial;
   }
 
   _scheduleAutosave() {
@@ -766,7 +923,11 @@ export default class List extends El{
     // Coalesce: if a save is already in flight, run once more when it lands.
     if (this._autosaving) { this._autosavePending = true; return; }
 
-    const changes = this._buildDirtyPayload();
+    // Only sweep in fields this model actually autosaves — a dirty 'state'
+    // edit sitting alongside an autosaved 'use'/'amount' change on the same
+    // row must stay pending for the manual Save button.
+    const fields = this.state?.autosaveFields;
+    const changes = this._buildDirtyPayload(fields ? (colKey) => fields.has(colKey) : null);
     if (!Object.keys(changes.cells).length) return;
 
     if (!this.api || !this.postUrl) {
@@ -816,7 +977,7 @@ export default class List extends El{
   _scheduleBackgroundDomainRefresh() {
     clearTimeout(this._domainRefreshTimer);
     this._domainRefreshTimer = setTimeout(() => {
-      this.api?.refreshPageDomain({ force: true }).catch(err =>
+      this.api?.refreshPageDomain({ force: true, info: { name: this.name } }).catch(err =>
         console.error('Background domain refresh failed:', err)
       );
     }, 800);
@@ -840,6 +1001,15 @@ export default class List extends El{
   async _bindEvents() {
     if (this._eventsBound || !this.FORM) return;
     this._eventsBound = true;
+
+    // Warn before navigating away with edits that never made it to the
+    // server — the manual-submit fields (e.g. FlavorTub's 'state') are the
+    // real risk here since autosaved fields clear within ~250ms.
+    window.addEventListener('beforeunload', (e) => {
+      if (!this.dirtySet.size && !this._pendingDraftCells) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
 
     // Listen for BOTH FindIt and TextIt changes
     this.FORM.addEventListener('ts:findit-change', this._handleCellChange.bind(this));
@@ -995,6 +1165,7 @@ export default class List extends El{
         // background refresh was for OTHER grids' derived state, and this
         // grid gets its own fresh domain next time it rebuilds unforced.
         if (this._autosaveEnabled() && (this._autosaving || this.dirtySet?.size)) {
+          if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'stale');
           return;
         }
 
@@ -1042,6 +1213,7 @@ export default class List extends El{
       this._onDomainUpdated = null;
       this._docListenerBound = false;
     }
+    if (this.pageStatusId) PageStatus.remove(this.pageStatusId);
     this.FORM?.remove();
   }
 

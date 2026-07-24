@@ -1,3 +1,6 @@
+@import url('https://cdnjs.cloudflare.com/ajax/libs/Iosevka/6.0.0/iosevka/iosevka.min.css');
+
+
 /* ============================================
    CSS VARIABLES - COLOR PALETTE
    ============================================ */
@@ -277,6 +280,121 @@ html body {
 
 }
 /* ============================================
+   STATUS NOTIFICATIONS
+   ============================================ */
+.PAGE-STATUS {
+  position: fixed;
+  top:1.25rem;
+  right: 0;
+  z-index: 99;
+  padding:1rem .5rem .25rem .75rem;
+  text-align: right;
+  font-size: 0.75rem;
+  display: flex;
+  vertical-align: baseline;
+  line-height: 2rem;
+  background-color: var(--color-green-darkest) ;
+  color: white;
+  border-bottom-left-radius: 1rem;
+
+  &.fresh {
+    opacity: 0.5;
+    color: var(--color-green-base);
+
+    & ul.trigger-page-load{display:none;}
+  }
+
+  & em{
+    font-style: normal;
+    font-weight: bold;
+  }
+  & h3 {
+    &::after {
+      content: ':';
+      margin-right: 0.25rem;
+    }
+    
+    font-weight: 100;
+    font-size: 1em;
+    line-height: 2rem;
+  }
+
+  & > ul > li,
+  & .cache-bust.actual {
+    display:none;
+    &.PAGE-STATUS-ETA {
+      display: block;
+    }
+  }
+
+  &.error {
+    background-color: var(--color-alert-none);
+    color: var(--color-text-white);
+    box-shadow: inset rgba(0, 0, 0, .25) .2rem 0 .25rem;
+    border-bottom: 1px solid var(--color-border-main);
+  }
+
+  &.success {
+    background-color: var(--color-green-dark);
+    color: var(--color-text-white);
+    box-shadow: inset rgba(0, 0, 0, .25) .2rem 0 .25rem;
+    border-bottom: 1px solid var(--color-border-main);
+  }
+}
+/* Circular timer ring around the cache-bust countdown text. Two pseudo-
+   elements, no extra DOM: a dim full-circle track (::after) plus a
+   conic-gradient fill (::before) driven by the --eta-progress custom
+   property (0-100) that page-status.js's _startBustCountdown sets on the
+   element every tick. Both are masked from solid circles into a ring via
+   radial-gradient. Scoped to .counting-down so the ring only exists while
+   the countdown is actually running. */
+.PAGE-STATUS .cache-bust.counting-down {
+  position: relative;
+  display: inline-block;
+  text-align: center;
+  width: 2rem;
+  font-size: .67rem;
+  font-family: "Iosevka","Iosevka Web", monospace;
+  /* Monospace gives '.' the same full character cell as every digit, which
+     reads as an oversized gap around it. A small negative letter-spacing
+     tightens that uniformly (isolating just the '.' glyph would need either
+     wrapping it in its own element in JS or a unicode-range @font-face
+     override — more moving parts for a subtle gain). */
+  letter-spacing: -0.05em;
+  margin-left: 0.33rem;
+}
+
+/* Past the estimate — text and ring both key off currentColor, so this one
+   override recolors both at once. */
+.PAGE-STATUS .cache-bust.counting-down.overtime {
+  color: orange;
+}
+
+.PAGE-STATUS .cache-bust.counting-down::before,
+.PAGE-STATUS .cache-bust.counting-down::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 2rem;
+  height: 2rem;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+}
+
+.PAGE-STATUS .cache-bust.counting-down::after {
+  background: currentColor;
+  opacity: 0.2;
+}
+
+.PAGE-STATUS .cache-bust.counting-down::before {
+  background: conic-gradient(currentColor calc(var(--eta-progress, 0) * 1%), transparent 0);
+  transition: background 0.1s linear;
+}
+
+/* ============================================
    TOAST NOTIFICATIONS
    ============================================ */
 
@@ -354,6 +472,25 @@ html body {
       background-color: transparent;
       border: none;
     }
+
+    & .draft-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+
+      & button {
+        font-size: 0.8rem;
+        padding: 0.3rem 0.6rem;
+        border: 1px solid var(--color-green-darkest);
+        background-color: var(--color-bg-white);
+        cursor: pointer;
+
+        &:hover {
+          background-color: var(--color-green-darkest);
+          color: var(--color-text-white);
+        }
+      }
+    }
   }
 }
 
@@ -400,6 +537,54 @@ html body {
 
 html > body.TS_GRID-UPDATING .scoop-grid {
   opacity: 0.5;
+}
+
+/* Sizes the loading card itself (not just the shimmer overlay) to fit 6
+   skeleton rows, so form.zGRID-form's own box-shadow wraps the full
+   placeholder instead of just the (still-short) real header content.
+   .scoop-grid is unsized and just grows to contain this. Scoped to the same
+   "no rows yet" condition as the shimmer below, so a populated grid with
+   only a few real rows isn't forced to this height too. */
+.scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr)) > form.zGRID-form {
+  min-height: 13.5rem;
+}
+
+/* Shimmering skeleton placeholder — shown while a grid has no rows yet
+   (before the bundle fetch resolves and List/Grid appends the first
+   <tbody>). No extra DOM: gated purely on the DOM shape that already
+   exists — table.zGRID holds only its <thead> until real data lands — so
+   the shimmer disappears the instant the first row is appended. */
+.scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr))::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-color: var(--color-bg-secondary);
+  background-image:
+    linear-gradient(100deg, transparent 30%, var(--overlay-white) 50%, transparent 70%),
+    repeating-linear-gradient(
+      to bottom,
+      var(--color-bg-main) 0, var(--color-bg-main) 1.5rem,
+      transparent 1.5rem, transparent 2.25rem
+    );
+  background-size: 60% 100%, 100% 100%;
+  background-repeat: no-repeat, repeat-y;
+  background-position: -60% 0, 0 0;
+  animation: scoop-shimmer-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes scoop-shimmer-sweep {
+  to { background-position: 160% 0, 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr))::after {
+    animation: none;
+  }
 }
 
 /* Special Grid Types: Batch & Closeout */

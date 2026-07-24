@@ -30,6 +30,22 @@ add_action('rest_api_init', function () {
     },
   ]);
 
+  // Rolls the accumulated 'update' writes (tub/slot edits, staged by
+  // scoop_stage_inventory_change since the last flush) into ONE
+  // inventory_change record. Called by the client's shorter idle-flush timer
+  // (see watchForInventoryChangeFlush), independent of the 6h idle-logout
+  // timer above. No-ops if nothing is pending.
+  register_rest_route('scoop/v1', '/flush-inventory-change', [
+    'methods'  => ['POST'],
+    'callback' => function(\WP_REST_Request $req) {
+      $change_id = scoop_flush_pending_inventory_change();
+      return new \WP_REST_Response(['ok' => true, 'change_id' => $change_id], 200);
+    },
+    'permission_callback' => function(\WP_REST_Request $req) {
+      return is_user_logged_in();
+    },
+  ]);
+
   // Stale-tab check (read-only): current app.js mtime, so a long-lived
   // tab can detect a deploy happened. See assets/version-watch.js.
   register_rest_route('scoop/v1', '/version', [

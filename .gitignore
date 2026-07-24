@@ -1,6 +1,7 @@
-n# Local-only / secret config
+# Local-only / secret config
 .vscode/sftp.json
 .vscode/sftp.local.json
+.claude/settings.local.json
 
 # SSH deploy keys — never commit, never deploy
 scoop-deploy-key
