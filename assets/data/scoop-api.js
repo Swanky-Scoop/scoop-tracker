@@ -418,7 +418,7 @@ export default class ScoopAPI {
 
   // Forces a real re-login after N hours of no genuine interaction — a tab
   // left open overnight shouldn't stay authenticated forever.
-  watchForIdleTimeout({ idleMs = 6 * 60 * 60 * 1000, checkIntervalMs = 60 * 1000, loginUrl } = {}) {
+  watchForIdleTimeout({ idleMs = 6 * 60 * 60 * 1000, checkIntervalMs = 60 * 1000 } = {}) {
     this._trackRealActivity();
 
     setInterval(async () => {
@@ -432,7 +432,11 @@ export default class ScoopAPI {
       }
 
       alert("You've been logged out after a period of inactivity. Please log back in.");
-      location.href = loginUrl || "/wp-login.php";
+      // Built from the browser's actual origin, not a server-computed
+      // home_url() — WP's siteurl/home options can drift from the real host
+      // (e.g. a Local site cloned from prod without remapping URLs), which
+      // would otherwise bounce this tab to the wrong environment entirely.
+      location.href = `${window.location.origin}/wp-login.php?redirect_to=${encodeURIComponent(window.location.href)}`;
     }, checkIntervalMs);
   }
 

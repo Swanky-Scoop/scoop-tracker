@@ -911,6 +911,7 @@ export default class List extends El{
     this.FORM.classList.toggle('autosave', on);
     // Partial autosave models still need the Save button for their
     // manual-only fields (e.g. FlavorTub's 'state').
+    this.FORM.classList.toggle('autosave-partial', partial);
     if (this.SUBMIT) this.SUBMIT.hidden = on && !partial;
   }
 

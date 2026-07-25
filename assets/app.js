@@ -14,7 +14,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await api.mountAllGrids(SCOOP.metaData);
   Details.refresh();
   api.watchForStaleVersion(SCOOP.version);
-  api.watchForIdleTimeout({ loginUrl: SCOOP.loginUrl });
+  api.watchForIdleTimeout();
   api.watchForInventoryChangeFlush();
 
 });

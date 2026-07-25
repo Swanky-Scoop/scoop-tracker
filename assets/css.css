@@ -1491,8 +1491,10 @@ table.zGRID tr .badges .badge.warning {
 /* ── Autosave grids ──────────────────────────────────────────────────────────
    Grids whose model sets `autosave = true` persist each change immediately and
    render no save button. The button is also hidden via the `hidden` attribute
-   in JS; this rule is a backup. Per-cell flashes confirm a save (or an error). */
-.zGRID-form.autosave > button.save { display: none; }
+   in JS; this rule is a backup. Per-cell flashes confirm a save (or an error).
+   Partial-autosave models (e.g. FlavorTub: 'use'/'amount' autosave, 'state'
+   doesn't) get the extra `autosave-partial` class and keep their button. */
+.zGRID-form.autosave:not(.autosave-partial) > button.save { display: none; }
 
 .zGRID td.cell-saved { animation: scoopCellSaved 0.8s ease-out; }
 .zGRID td.cell-error { animation: scoopCellError 0.8s ease-out; }
