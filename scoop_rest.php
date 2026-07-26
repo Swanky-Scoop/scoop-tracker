@@ -75,6 +75,17 @@ scoop_require('includes/flavor-photos.php');
 scoop_require('includes/flavor-photos-ui.php');
 scoop_require('includes/allergen-icons.php');
 scoop_require('includes/allergen-icons-ui.php');
+
+/**
+ * Pods schema sync — see includes/pods-schema/_schema.php
+ */
+scoop_require('includes/pods-schema/_schema.php');
+scoop_require('includes/pods-schema/diff.php');
+scoop_require('includes/pods-schema/apply.php');
+scoop_require('includes/pods-schema/gc.php');
+scoop_require('includes/pods-schema/export.php');
+scoop_require('includes/pods-schema/ui.php');
+
 scoop_require('includes/admin-menu.php');
 
 /**
