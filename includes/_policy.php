@@ -13,8 +13,8 @@ function scoop_access_policy(): array {
         'DateActivity' => ['GET' => true, 'POST' => true],  // ← ADDED THIS
       ],
       'entities' => [
-        'tub'  => ['state','use','amount'],
-        'slot' => ['current_flavor','immediate_flavor','next_flavor','tubs'],
+        'tub'  => ['state','use','amount','slot'],
+        'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
       ],
     ],
 
@@ -41,8 +41,16 @@ function scoop_access_policy(): array {
         'DateActivity' => ['GET' => true, 'POST' => true],  // ← ADDED THIS
       ],
       'entities' => [
-        'tub'  => ['state'],
-        'slot' => ['current_flavor','tubs'],
+        // 'slot' added so add-next/leave-empty/Confirm Cabinet can write
+        // tub.slot (the tub side of the bidirectional slot<->tub link —
+        // see change-tub.md) — this is a normal CabinetWorkflow action,
+        // not an admin-only one.
+        'tub'  => ['state','slot'],
+        // immediate_flavor/next_flavor added so 'leave slot empty' can
+        // reschedule leftover stock into the planning fields (see
+        // ConfirmSwapModal._confirmEmpty in confirm-swap-modal.js) — this
+        // is a normal CabinetWorkflow action, not an admin-only one.
+        'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
       ],
     ],
   ];

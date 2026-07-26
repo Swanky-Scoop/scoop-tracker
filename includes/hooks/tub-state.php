@@ -132,6 +132,7 @@ function scoop_enforce_tub_rules( $pieces, $is_new_item, $id = 0 ) {
   $old_state      = (string) $pod_obj->field('state');
   $old_opened_on  = $pod_obj->field('opened_on');
   $old_emptied_at = $pod_obj->field('emptied_at');
+  $old_slot_id    = function_exists('scoop_rel_id') ? (int) scoop_rel_id($pod_obj->field('slot')) : 0;
 
   // New values from pieces if provided, else fall back to old
   $new_state      = isset($pieces['fields']['state']['value'])      ? (string) $pieces['fields']['state']['value']      : $old_state;
@@ -201,6 +202,37 @@ function scoop_enforce_tub_rules( $pieces, $is_new_item, $id = 0 ) {
       $activate('emptied_at');
       $pieces['object_fields']['post_status']['value'] = 'draft';
       $activate('post_status');
+    }
+
+    // A tub leaving service is unlinked from whatever slot claimed it —
+    // regardless of which GUI/write path emptied it (REST, WP admin, direct
+    // Pods call). tub.slot/slot.tub is a bidirectional Pods sister field
+    // (see change-tub.md), so clearing this side also clears slot.tub via
+    // Pods' own sync. An Opened tub with no slot link is still a valid,
+    // separate state (other GUIs/workflows can open a tub unrelated to any
+    // cabinet slot) — this only guards the reverse: a slot still pointing
+    // at a tub that's no longer Opened.
+    if ($new_state === 'Emptied' && $old_state !== 'Emptied') {
+      $pieces['fields']['slot']['value'] = 0;
+      $activate('slot');
+
+      // Confirm Cabinet's persisted outcome (slot.confirm_state — see
+      // change-tub.md) goes stale the instant the tub it was based on
+      // empties, from ANY path. Reset it here, in the same hook, so
+      // reporting outside the CabinetWorkflow GUI (which can't see a
+      // client-computed value at all) has a chance of noticing before
+      // someone next opens that page and re-runs the check.
+      if ($old_slot_id > 0 && function_exists('pods_api')) {
+        try {
+          pods_api()->save_pod_item([
+            'pod'  => 'slot',
+            'id'   => $old_slot_id,
+            'data' => ['confirm_state' => 'unconfirmed'],
+          ]);
+        } catch (\Throwable $e) {
+          error_log("scoop_enforce_tub_rules: failed to mark slot {$old_slot_id} unconfirmed: " . $e->getMessage());
+        }
+      }
     }
   }
 

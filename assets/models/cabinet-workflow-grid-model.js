@@ -13,13 +13,17 @@ import BaseGridModel from "./_base-grid-model.js";
 const FRONT_OF_HOUSE_USE_ID = 1863;
 const OPEN_TUB_STATE = 'Opened';
 
-// The tub that actually gets promoted to Opened must be physically ready
-// (Freezing) — Hardening/Tempering tubs aren't sitting in the display case
-// yet. This is a narrower pool than the DISPLAY_EXCLUDED_STATES below on
-// purpose: "remaining" (what's shown to staff) is a broader supply-visible
-// number per change-tub.md's decision log; "promotable" (what add-next can
-// actually select) stays physically-ready-only. Don't merge these two.
-const PROMOTABLE_TUB_STATE = 'Freezing';
+// promotablePool's exclusions — deliberately NOT "state === 'Freezing'"
+// (dropped per change-tub.md: any non-Emptied, non-already-claimed-Opened
+// tub is a valid candidate — Hardening/Tempering/__override__ included,
+// not just Freezing). 'Opened' is excluded here specifically because
+// Opened tubs are openUnclaimedPool's job (below), not this pool's — an
+// Opened-and-unclaimed tub should be *adopted*, never re-"promoted."
+// '!Lost' is excluded too (not explicitly requested, but flagged in
+// change-tub.md as an addition worth confirming) — a flagged-lost tub
+// isn't physically available to assign regardless of what Pods thinks its
+// state is.
+const NON_PROMOTABLE_STATES = new Set(['Emptied', OPEN_TUB_STATE, '!Lost']);
 
 // Everything except these counts as "remaining" — i.e. still somewhere in
 // the pipeline (Hardening/Tempering/Freezing/__override__), not yet in
@@ -83,6 +87,7 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
   _fillSlotRow(row, slot) {
     row.slotId   = slot.id;
     row.location = slot.location;
+    row.reload   = Boolean(slot.reload);
 
     const flavorId = Number(slot.current_flavor ?? 0) || 0;
     if (!flavorId) {
@@ -95,7 +100,8 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     row.flavorTitle  = flavor?._title ?? '';
     row.flavorPhoto  = flavor?.photo ?? '';
     row.allergens    = Array.isArray(flavor?.allergens) ? flavor.allergens : [];
-    row.cabinetTitle = this.labelFromMap(slot.cabinet, this._cabinetsById) ?? `Cabinet ${slot.cabinet}`;
+    row.cabinetId    = Number(slot.cabinet ?? 0) || 0;
+    row.cabinetTitle = this.labelFromMap(row.cabinetId, this._cabinetsById) ?? `Cabinet ${row.cabinetId}`;
 
     // Pre-planned alternates for this slot (see change-tub.md's confirm
     // modal decisions) — always the same two fields regardless of which
@@ -107,44 +113,82 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
 
     row.tubCountLocal = this.remainingSummary(flavorId, slot.location);
     row.tubCountTotal = this.remainingSummary(flavorId, null);
-    row.canAddNext    = this._fohTubs(flavorId, slot.location, PROMOTABLE_TUB_STATE).length > 0;
+    row.canAddNext    = this.promotablePool(flavorId).length > 0;
 
-    // Data-integrity check for the "Confirm Cabinet" button (see
-    // change-tub.md / CabinetWorkflowTile._confirmCabinet): a slot with a
-    // flavor assigned should have exactly one Opened FOH tub of that flavor
-    // at its own location. 'openTub' is that tub when there's exactly one
-    // (the button links it to slot.tubs, but only if it isn't already
-    // linked — see currentTubId); 'none'/'multi' just flag the LI via CSS
-    // for a human to sort out — never auto-resolved.
-    row.currentTubId = Number(slot.tubs?.[0] ?? 0) || 0;
+    // slot.tub (renamed from slot.tubs) is a bidirectional Pods sister
+    // field with tub.slot (see change-tub.md) — always read here, never
+    // written from the slot side; Pods keeps it in sync from whatever
+    // wrote tub.slot. 'Opened' tubs with no slot link are a valid,
+    // separate state (other GUIs can open a tub unrelated to any cabinet
+    // slot) — irrelevant here, we only care about *this* slot's own link.
+    row.currentTubId = Number(slot.tub ?? 0) || 0;
 
-    const openTubs = this._fohTubs(flavorId, slot.location, OPEN_TUB_STATE);
-    row.openTubCount = openTubs.length;
+    const linkedTub = row.currentTubId ? (this._tubsById.get(row.currentTubId) ?? null) : null;
+    const linkedIsValid = !!(linkedTub && linkedTub.state === OPEN_TUB_STATE && Number(linkedTub.flavor) === flavorId);
+    row.openTub = linkedIsValid ? linkedTub : null;
 
-    if (openTubs.length === 1) {
-      row.openTubStatus = 'linked';
-      row.openTub = openTubs[0];
-    } else if (openTubs.length === 0) {
-      row.openTubStatus = 'none';
-    } else {
-      row.openTubStatus = 'multi';
-    }
+    // A flavor whose allergens conflict with this cabinet's
+    // prohibited_allergens can never have a valid tub here, regardless of
+    // stock — Confirm Cabinet needs this to know the difference between
+    // "nothing in stock right now" and "this can never work in this
+    // cabinet." See change-tub.md.
+    row.allergenConflict = this._allergenConflict(flavorId, row.cabinetId);
+
+    // Before falling back to promotablePool (what Confirm Cabinet searches
+    // when nothing qualifies below), check for a tub that's ALREADY
+    // Opened, at this slot's own location, matching this flavor,
+    // and not claimed by a different slot — i.e. one that looks like it's
+    // already physically sitting here, just never got formally linked
+    // (opened before this feature existed, or via some other workflow).
+    // Unlike the Freezing-pool search, this check IS location-scoped: an
+    // already-open tub is presumably already physically somewhere, so
+    // "recognizing" it as this slot's should only happen for its own
+    // location, not adopted from afar.
+    const unclaimedOpen = row.openTub ? [] : this.openUnclaimedPool(flavorId, slot.location, row.slotId);
+    row.discrepancy = unclaimedOpen.length > 1;
+
+    // 'impossible' covers both "no eligible tub exists anywhere, open or
+    // fresh" and "this flavor structurally can't go in this cabinet"
+    // (allergen conflict) — Confirm Cabinet never auto-empties/reassigns
+    // to fix either, just flags them for a human. A single unclaimed open
+    // match, or a discrepancy (multiple — still resolved, just flagged),
+    // both count as "not impossible": Confirm Cabinet will adopt/pair one.
+    row.impossible = !row.openTub
+      && unclaimedOpen.length === 0
+      && (row.allergenConflict || this.promotablePool(flavorId).length === 0);
   }
 
-  // Front-of-house tubs of a flavor in a given exact state. locationId ===
-  // null means "all locations".
-  _fohTubs(flavorId, locationId, state) {
+  // Tubs already Opened, of this flavor, at this location, that aren't
+  // claimed by a *different* slot (tub.slot is 0, or already thisSlotId).
+  // excludeIds lets one reconciliation pass avoid handing the same tub to
+  // two different slots (see CabinetWorkflowTile._reconcileCabinet).
+  openUnclaimedPool(flavorId, locationId, thisSlotId, excludeIds = null) {
     const tubs = Array.isArray(this.domain.tub) ? this.domain.tub : [];
     return tubs.filter(t =>
-      Number(t.flavor) === flavorId &&
+      Number(t.flavor) === Number(flavorId) &&
       Number(t.use) === FRONT_OF_HOUSE_USE_ID &&
-      t.state === state &&
-      (locationId == null || Number(t.location) === Number(locationId))
+      t.state === OPEN_TUB_STATE &&
+      Number(t.location) === Number(locationId) &&
+      (Number(t.slot ?? 0) === 0 || Number(t.slot) === Number(thisSlotId)) &&
+      (!excludeIds || !excludeIds.has(Number(t.id)))
     );
   }
 
-  // Same, but by exclusion rather than an exact state — used for the
-  // broader "remaining" display figure (see DISPLAY_EXCLUDED_STATES above).
+  // Discrepancy tie-break: closest to a whole tub (amount nearest 1), not
+  // oldest — this is picking among tubs that are already in service
+  // somewhere, not choosing which fresh one to open, so "most like a
+  // normal single tub" is the more meaningful signal than age.
+  pickClosestToOne(tubs) {
+    return tubs.slice().sort((a, b) =>
+      Math.abs(Number(a.amount ?? 1) - 1) - Math.abs(Number(b.amount ?? 1) - 1)
+    )[0] ?? null;
+  }
+
+  // Front-of-house tubs of a flavor, excluding a given set of states —
+  // used for the broader "remaining" display figure (see
+  // DISPLAY_EXCLUDED_STATES above). locationId === null means "all
+  // locations" (used for tub-count-total and the modal's cross-location
+  // visibility into other locations' stock).
   _fohTubsExcluding(flavorId, locationId, excludeStates) {
     const tubs = Array.isArray(this.domain.tub) ? this.domain.tub : [];
     return tubs.filter(t =>
@@ -159,6 +203,35 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
   // not how many containers (a partial tub's amount < 1).
   _sumAmount(tubs) {
     return tubs.reduce((sum, t) => sum + Number(t.amount ?? 1), 0);
+  }
+
+  // Prohibited-allergen slugs for a cabinet, resolved from
+  // cabinet.prohibited_allergens (ids) against domain.allergen's post_name
+  // — matches flavor.allergens' own representation (slugs), since the two
+  // fields don't share a data shape otherwise.
+  _prohibitedAllergenSlugs(cabinetId) {
+    const cabinet = this._cabinetsById.get(Number(cabinetId));
+    const ids = Array.isArray(cabinet?.prohibited_allergens) ? cabinet.prohibited_allergens : [];
+    if (!ids.length) return new Set();
+
+    const allergens = Array.isArray(this.domain.allergen) ? this.domain.allergen : [];
+    const slugs = new Set();
+    for (const id of ids) {
+      const match = allergens.find(a => Number(a.id) === Number(id));
+      if (match?.post_name) slugs.add(String(match.post_name).toLowerCase());
+    }
+    return slugs;
+  }
+
+  _allergenConflict(flavorId, cabinetId) {
+    const flavor = this._flavorsById.get(Number(flavorId));
+    const flavorAllergens = Array.isArray(flavor?.allergens) ? flavor.allergens : [];
+    if (!flavorAllergens.length) return false;
+
+    const prohibited = this._prohibitedAllergenSlugs(cabinetId);
+    if (!prohibited.size) return false;
+
+    return flavorAllergens.some(a => prohibited.has(String(a).toLowerCase()));
   }
 
   // ─── Public — used by CabinetWorkflowTile and the confirm-swap modal ───
@@ -178,21 +251,38 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
   }
 
   // "N remaining" — broader-than-promotable supply figure, see
-  // DISPLAY_EXCLUDED_STATES.
+  // DISPLAY_EXCLUDED_STATES. Location-scoped (unlike promotablePool below)
+  // because this is purely informational — "how much is here vs.
+  // elsewhere" — not an eligibility gate.
   remainingSummary(flavorId, locationId) {
     return this._sumAmount(this._fohTubsExcluding(Number(flavorId), locationId, DISPLAY_EXCLUDED_STATES));
   }
 
-  promotablePool(flavorId, locationId) {
-    return this._fohTubs(Number(flavorId), locationId, PROMOTABLE_TUB_STATE);
+  // Deliberately NOT location-scoped: a tub of the right flavor can be
+  // physically carried between this shop's own locations (see
+  // change-tub.md's Add Flavor / Confirm Cabinet decisions) — whichever
+  // action assigns one is responsible for correcting tub.location to match
+  // the destination cabinet, not for excluding candidates elsewhere.
+  // excludeIds (a Set of tub ids) lets a single reconciliation pass claim
+  // tubs one slot at a time without two slots racing for the same one —
+  // see CabinetWorkflowTile's Confirm Cabinet rewrite.
+  promotablePool(flavorId, excludeIds = null) {
+    const tubs = Array.isArray(this.domain.tub) ? this.domain.tub : [];
+    return tubs.filter(t =>
+      Number(t.flavor) === Number(flavorId) &&
+      Number(t.use) === FRONT_OF_HOUSE_USE_ID &&
+      !NON_PROMOTABLE_STATES.has(t.state) &&
+      (!excludeIds || !excludeIds.has(Number(t.id)))
+    );
   }
 
-  // The specific tub "add next"/the confirm modal would promote to Opened.
-  // preferWhole toggles the tie-break (the modal's "use full tubs before
-  // partial tubs" checkbox) — default matches change-tub.md's original
-  // hardcoded rule, now a live per-confirmation choice instead of fixed.
-  pickPromotableTub(flavorId, locationId, preferWhole = true) {
-    const pool = this.promotablePool(flavorId, locationId);
+  // The specific tub "add next"/Confirm Cabinet/the confirm modal would
+  // promote to Opened. preferWhole toggles the tie-break (the modal's "use
+  // full tubs before partial tubs" checkbox) — default matches
+  // change-tub.md's original hardcoded rule, now a live per-confirmation
+  // choice instead of fixed.
+  pickPromotableTub(flavorId, preferWhole = true, excludeIds = null) {
+    const pool = this.promotablePool(flavorId, excludeIds);
     const byAge = (a, b) =>
       String(a.created_on ?? '').localeCompare(String(b.created_on ?? '')) ||
       (Number(a.index) || 0) - (Number(b.index) || 0);

@@ -325,6 +325,14 @@ html body {
     &.PAGE-STATUS-ETA {
       display: block;
     }
+    &.PAGE-STATUS-EDITING {
+      display: block;
+    }
+  }
+
+  &.in-progress {
+    background-color: var(--color-alert-opened);
+    color: var(--color-text-white);
   }
 
   &.error {

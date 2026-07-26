@@ -71,6 +71,7 @@ const DOM = new El();
 
 export default class PageStatus {
   static _items = new Map(); // id -> <li>
+  static _editingIds = new Set(); // ids currently reporting a dirty/unsaved form
   static _loadStart = null;
   static _loadKey = null;
   static _countdownTimer = null;
@@ -132,7 +133,46 @@ export default class PageStatus {
     if (EM) EM.textContent = state;
 
     PageStatus._recomputeOverallState();
+    PageStatus._recomputeEditingState();
     PageStatus._tryFinishLoadTiming();
+  }
+
+  // Orthogonal to the fresh/stale/fetching lifecycle above: any grid with a
+  // dirty/unsaved form, autosave in flight or not, reports itself here. A
+  // grid can be simultaneously 'fresh' and mid-edit (a plain Save-button
+  // grid the user hasn't submitted yet), so this doesn't fold into STATES.
+  // Callers pass only an id + boolean — this module still knows nothing
+  // about forms, cells, or autosave.
+  //
+  // Fetching supersedes editing in the display: she already knows she's
+  // mid-edit (she's the one typing) — that's not new information. A
+  // background refresh landing is the thing worth surfacing, so while any
+  // grid is 'fetching' the editing indicator stays suppressed even if
+  // something's dirty; it reappears once the fetch settles.
+  static setEditing(id, dirty) {
+    if (!id) return;
+    if (dirty) PageStatus._editingIds.add(id);
+    else PageStatus._editingIds.delete(id);
+    PageStatus._recomputeEditingState();
+  }
+
+  static _recomputeEditingState() {
+    const DIV = PageStatus._ensureHost();
+    const UL = DIV.querySelector('ul');
+    const anyEditing = PageStatus._editingIds.size > 0 && !PageStatus._anyGridFetching();
+
+    document.body.classList.toggle('in-progress', anyEditing);
+    DIV.classList.toggle('in-progress', anyEditing);
+
+    let LI = UL.querySelector(':scope > li.PAGE-STATUS-EDITING');
+    if (anyEditing) {
+      if (!LI) {
+        LI = DOM.el('li', { classes: ['PAGE-STATUS-EDITING'], text: 'Edits in progress' });
+        UL.prepend(LI);
+      }
+    } else if (LI) {
+      LI.remove();
+    }
   }
 
   // The <DIV> itself carries whichever registered grid's state is furthest
@@ -383,11 +423,17 @@ export default class PageStatus {
   }
 
   static remove(id) {
+    PageStatus._editingIds.delete(id);
+
     const LI = PageStatus._items.get(id);
-    if (!LI) return;
+    if (!LI) {
+      PageStatus._recomputeEditingState();
+      return;
+    }
     LI.remove();
     PageStatus._items.delete(id);
     PageStatus._recomputeOverallState();
+    PageStatus._recomputeEditingState();
     PageStatus._tryFinishLoadTiming();
   }
 }

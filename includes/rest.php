@@ -110,19 +110,24 @@
 
   /**
    * Slot writes are only a real inventory event when they change the tub
-   * link (slot.tubs — see the Confirm Cabinet flow in
-   * cabinet-workflow-tile.js). current_flavor/immediate_flavor/next_flavor
-   * are cabinet planning/merchandising fields (the ones Cabinet-grid autosave
-   * writes on every field edit, see scoop_planning_allowed_slot_fields) —
-   * logging those to inventory_change balloons the audit table with
-   * planning noise that was never a stock movement. Every other entity type
-   * logs as before; this only narrows the 'slot' case.
+   * link (slot.tub — renamed from slot.tubs; see change-tub.md). As of the
+   * tub.slot<->slot.tub bidirectional rewrite, the Confirm Cabinet/add-next/
+   * leave-empty flows no longer write slot.tub directly at all (they write
+   * tub.slot instead, and Pods syncs this side) — so this check now mostly
+   * guards against some other, future direct write to slot.tub. Tub-side
+   * inventory logging (state transitions) is handled separately, below.
+   * current_flavor/immediate_flavor/next_flavor are cabinet planning/
+   * merchandising fields (the ones Cabinet-grid autosave writes on every
+   * field edit, see scoop_planning_allowed_slot_fields) — logging those to
+   * inventory_change balloons the audit table with planning noise that was
+   * never a stock movement. Every other entity type logs as before; this
+   * only narrows the 'slot' case.
    */
   function scoop_should_log_inventory_change(array $cfg, array $updated): bool {
     if (($cfg['pod_name'] ?? '') !== 'slot') return true;
 
     foreach ($updated as $fields) {
-      if (is_array($fields) && array_key_exists('tubs', $fields)) return true;
+      if (is_array($fields) && array_key_exists('tub', $fields)) return true;
     }
 
     return false;

@@ -56,6 +56,11 @@ function scoop_entity_specs(string $key = ''): array {
           'batch'         => ['data_type' => 'int',      'control' => 'find', 'hidden' => true],
           'closeout'      => ['data_type' => 'int',      'control' => 'find', 'hidden' => true],
           'index'         => ['data_type' => 'int'],
+          // Bidirectional sister field with slot.tub (Pods-native 1:1 sync —
+          // see change-tub.md). Written whenever a tub is opened/emptied in
+          // association with a slot; slot.tub is never written directly by
+          // client code, Pods keeps it in sync from this side.
+          'slot'          => ['data_type' => 'int',      'control' => 'find', 'titleMap' => 'slot', 'hidden' => true],
         ],
         'post_fields' => [
           'author_name'   => 'string',
@@ -117,7 +122,7 @@ function scoop_entity_specs(string $key = ''): array {
           return false;
         },
 
-        'writeable' => ['state','use','amount']
+        'writeable' => ['state','use','amount','slot']
       ],
 
       'inventory_change' => [
@@ -168,12 +173,29 @@ function scoop_entity_specs(string $key = ''): array {
           'current_flavor'   => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'flavor'],
           'immediate_flavor' => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'flavor'],
           'next_flavor'      => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'flavor'],
-          // Pods field already exists (id 2434) but was unused until CabinetWorkflow —
-          // see change-tub.md. 'ids' (not 'int') because scoop_relation_ids_out()
-          // always returns an array regardless of the field's single/multi setting.
-          'tubs'             => ['data_type' => 'ids', 'control' => 'find', 'titleMap' => 'tub', 'hidden' => true],
+          // Renamed from 'tubs' (id 2434) — now a proper 1:1 bidirectional
+          // Pods sister field with tub.slot (see change-tub.md). Client
+          // code never writes this side directly; it's kept in sync by
+          // Pods whenever tub.slot is written (ConfirmSwapModal, Confirm
+          // Cabinet). Read-only from the client's perspective in practice,
+          // though still technically writeable server-side.
+          'tub'              => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'tub', 'hidden' => true],
+          // Drives the confirm-swap modal's flavor-line ordering — see
+          // ConfirmSwapModal in assets/ui/confirm-swap-modal.js.
+          'reload'           => ['data_type' => 'bool', 'hidden' => true],
+          // Persisted Confirm Cabinet outcome — 'unconfirmed' / 'filled' /
+          // 'discrepancy' / 'impossible' / 'empty'. Unlike everything else
+          // on this row, this is NOT purely derived-and-computed client
+          // side: it needs to be visible to reporting outside this GUI
+          // (dashboards, alerts on someone NOT looking at this page), which
+          // a client-only computed value structurally can't reach. Written
+          // by CabinetWorkflowTile._reconcileCabinet(), and reset to
+          // 'unconfirmed' by scoop_enforce_tub_rules() in
+          // includes/hooks/tub-state.php whenever a linked tub gets
+          // emptied by ANY path — see change-tub.md.
+          'confirm_state'    => ['data_type' => 'string', 'control' => 'enum', 'hidden' => true],
         ],
-        'writeable' => ['current_flavor','immediate_flavor','next_flavor','tubs'],
+        'writeable' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
       ],
 
       'cabinet' => [
@@ -183,6 +205,12 @@ function scoop_entity_specs(string $key = ''): array {
         'fields'    => [
           'location' => ['data_type' => 'int', 'control' => 'find'],
           'max_tubs' => ['data_type' => 'int', 'control' => 'find'],
+          // Read by cabinet-slot.php server-side already (title/slug
+          // logic); now also needed client-side for CabinetWorkflow's
+          // Confirm Cabinet reconciliation (a flavor whose allergens
+          // intersect this can never have a valid tub for this cabinet —
+          // see change-tub.md).
+          'prohibited_allergens' => ['data_type' => 'ids', 'control' => 'find', 'titleMap' => 'allergen', 'hidden' => true],
         ],
         'writeable' => []
       ],

@@ -243,9 +243,9 @@ Draft markup: `assets/emptyAdd.html`. Decisions made before implementation:
   framing.
 - **"Leave slot empty"**: marks the old tub `Emptied` (it's being
   physically pulled regardless of what replaces it) and clears
-  `slot.current_flavor`/`slot.tubs`. Does **not** touch
-  `immediate_flavor`/`next_flavor` — those are a manager's forward plan,
-  independent of today's swap being skipped.
+  `slot.current_flavor`/`slot.tubs`. Originally: does **not** touch
+  `immediate_flavor`/`next_flavor` at all. **Refined below** — leftover
+  stock now gets rescheduled into them rather than always left alone.
 - **Date/index/batch-quantity in the tub preview come from structured
   fields**, not `post_title` parsing: `tub.created_on`, `tub.index`,
   and `tub.batch → batch.count`. Requires adding `batch` to
@@ -287,6 +287,195 @@ worth knowing before relying on `add-next` in that state.
 
 Not yet built: the "Change Plan" from-scratch picker (`Change Plan`
 button currently just alerts that it isn't built).
+
+### Later enhancements (built)
+
+- **Tub-exhaustion fallback**: if `current_flavor` has no promotable
+  (`Freezing`) tub left, the modal still opens — default target falls
+  through `immediate_flavor` → `next_flavor` → back to `current_flavor`
+  (whichever is set first; the fallback targets' *own* availability isn't
+  re-checked, only `current_flavor`'s triggers the fallback).
+- **`slot.reload` field** (Pods boolean, "Reload current flavor?", added
+  to `includes/_specs.php`'s `slot` fields as `data_type: 'bool'`) — when
+  `false` ("don't reload the current flavor"), it overrides the default
+  target outright (`immediate_flavor` → `next_flavor` → `current_flavor`,
+  *regardless* of `current_flavor`'s own stock — this slot means to move
+  on to the planned rotation, full stop) **and** reorders the three info
+  lines to `[immediate, next, current]` instead of the default
+  `[current, immediate, next]`. Two independent effects from one flag,
+  confirmed explicitly since the wording was ambiguous on both counts.
+- **`add next` button is always visible now**, not omitted when
+  `canAddNext` is false — superseding the original Phase 1 decision
+  ("omitted when there's no local FOH tub"). Reason: the confirm modal is
+  the only path to "leave slot empty," which must stay reachable to mark
+  the existing tub `Emptied` even with zero stock to replace it with. The
+  modal itself still disables `Confirm Swap` and shows "No tub available"
+  in that case — only the button's *visibility* changed, not the modal's
+  own empty-pool handling.
+- **"Leave slot empty" reschedules leftover stock.** If the flavor being
+  removed still has `remainingSummary(flavorId, slot.location) > 0`, it's
+  written into `immediate_flavor` when that field is empty; `next_flavor`
+  is only used when `immediate_flavor` is already occupied *and*
+  `next_flavor` is itself empty (a strict if/else-if sequence, not "either
+  empty slot"). Drops out of the slot's plan entirely with nothing forced
+  in only when both are already taken. Required adding
+  `immediate_flavor`/`next_flavor` to the `editor` role's writeable slot
+  fields in `_policy.php` (previously only `current_flavor`/`tubs` —
+  editor couldn't write the planning fields via the `Cabinet` route at
+  all). `remainingSummary` (broad, excludes only `Opened`/`Emptied`/
+  `!Lost`) was used rather than `promotablePool` (`Freezing`-only) since
+  it's the same number already shown to the user in the modal.
+- **`slot.tubs` renamed to `slot.tub`, and it's now a real bidirectional
+  Pods sister field with a new `tub.slot`** (1:1, Pods-native sync — you
+  set it up in the Pods admin). Client code **never writes `slot.tub`
+  directly anymore** — only `tub.slot`, paired with whatever write is
+  already touching that tub (`state: 'Opened', slot: slotId` when opening;
+  `state: 'Emptied', slot: 0` when emptying), and Pods keeps `slot.tub` in
+  sync from that side. Rationale: since every write goes through
+  `pods_api()->save_pod_item()` (never raw SQL), either side syncs
+  correctly regardless of which we write — so writing both risked nothing
+  but two call sites disagreeing about the same fact, with no upside.
+  Touched: `_specs.php` (`tub.slot` new field + writeable; `slot.tub`
+  rename, `data_type` changed `ids`→`int` since it's genuinely 1:1 now),
+  `_policy.php` (`tub.slot` added to `_default`/`editor`), `rest.php`
+  (`scoop_should_log_inventory_change()` was matching the literal string
+  `'tubs'` — would've silently stopped logging slot-side tub-link changes
+  the moment the field renamed; fixed to `'tub'`), `ConfirmSwapModal
+  ._confirm`/`_confirmEmpty`, `CabinetWorkflowTile._confirmCabinet` (now
+  posts to the `FlavorTub` route, not `Cabinet` — it's writing tubs now,
+  not slots), and the model's `row.currentTubId` read.
+
+### Confirm Cabinet rebuilt: search-and-claim reconciliation, auto-run, `'impossible'`
+
+Superseded the earlier "link an already-Opened tub" design. New job: make
+sure every slot with a `current_flavor` ends up with exactly one valid
+tub — `Opened`, matching flavor, linked via `tub.slot` — actively finding
+and opening a fresh one when nothing already qualifies, not just detecting
+whether one already does.
+
+- **Trigger**: runs automatically, once, on first render (`'ts:list:init'`
+  fires only from `List.init()`, which only happens the first time
+  `setDomain()` lands — later domain refreshes go through `List.refresh()`
+  and don't re-fire it). The `Confirm Cabinet` button still exists too, for
+  re-running on demand — both call the same `_reconcileCabinet()`.
+- **Blocks the GUI while running**: `FRAME.style.pointerEvents = 'none'`
+  (a real block, not just a `.reconciling` CSS hook) for the duration —
+  per your requirement, the grid isn't usable until the pass completes.
+  The automatic run doesn't `alert()` its result (would fire on every page
+  load); the manual button still does.
+- **Per-slot claim, not a global count**: processes every slot needing a
+  tub, tracking claimed tub ids across the whole pass, so two slots that
+  legitimately want the same flavor can't both grab the same physical tub
+  — this is what actually closes the gap flagged earlier (the old
+  flavor+location heuristic couldn't tell "two valid slots, same flavor"
+  from "one tub, wrongly detected twice"). Already-valid links are claimed
+  first (before the search runs) so the search can't steal a tub a
+  different slot is already correctly using.
+- **`row.impossible`** (replaces `'none'`/`'multi'`, which are obsolete now
+  that `tub.slot` is a scalar 1:1 link — there's no "multi" to detect
+  anymore): true when either (a) the flavor's allergens conflict with the
+  cabinet's `prohibited_allergens` (new field, `_specs.php`/`cabinet`), or
+  (b) no `Freezing` tub of that flavor exists *anywhere* (search is
+  global, not location-scoped — see below). `current_flavor` is left
+  alone, no tub forced in — flagged with an `impossible` class on the
+  `<li>` for a human, same "surface it, don't silently correct" standard
+  as before.
+- **Location doesn't gate eligibility, for the search or for `add-next`
+  either now** — extended from the earlier Add Flavor-only rule for
+  consistency: a tub of the right flavor can be physically carried
+  between this shop's own locations, so `promotablePool`/
+  `pickPromotableTub` dropped their `locationId` param entirely (this was
+  a real change from `add-next`'s original location-scoped behavior — flag
+  if that wasn't intended to extend this far). Whichever action assigns a
+  cross-location tub corrects `tub.location` to match the destination
+  cabinet as part of the same write (`ConfirmSwapModal._confirm` and
+  `_reconcileCabinet` both do this now). `remainingSummary` (the
+  local/total *display* numbers) is unaffected — still location-scoped,
+  since that's informational, not an eligibility gate.
+- **Tub-side hook, not JS**: a tub can be `Opened` with no slot at all —
+  explicitly a valid, separate state (other GUIs/workflows can open a tub
+  unrelated to any cabinet slot). What has to hold is the reverse: a slot
+  never keeps pointing at a tub that's no longer `Opened`. Since "another
+  GUI marks a tub Emptied" is a different code path entirely, this can't
+  be enforced from this feature's JS — added to
+  `scoop_enforce_tub_rules()` in `includes/hooks/tub-state.php` instead
+  (same hook that already auto-stamps `emptied_at`): whenever a tub
+  transitions to `Emptied` (`old_state !== 'Emptied'`), `slot` gets forced
+  to `0` in the same save, and Pods' bidirectional sync clears `slot.tub`
+  too — regardless of which GUI, REST call, or direct Pods save triggered
+  it. This is why "someone will need to reconfirm the slots" before using
+  this GUI again is already handled: Confirm Cabinet re-runs (blocking)
+  every time the page loads.
+- **`_confirm()`'s "This box is not empty" checkbox** (unchecked by
+  default): checked means the old tub isn't a real stock event — it stays
+  `Opened`, just gets `slot: 0` (unlinked), instead of `state: 'Emptied'`.
+  No `state` field is sent at all in that case, so `tub-state.php`'s hook
+  has nothing to react to.
+
+### Bug fix: reconciliation ignored already-Opened, unlinked tubs
+
+Confirm Cabinet only ever searched the `Freezing` pool, so any tub already
+`Opened` at a slot's location (opened before this feature existed, or via
+another workflow) but never linked was invisible to it — reported
+`impossible` when a valid tub was sitting right there. Fixed with a new
+step between "already linked" and "search Freezing": `openUnclaimedPool()`
+finds `Opened` tubs of the flavor, at the slot's own location (this check
+*is* location-scoped, unlike the Freezing search — an already-open tub is
+presumably already physically somewhere, so only recognize it for its own
+location), not claimed by a different slot. Exactly one match → adopt it
+(link only, no state change). More than one → **`discrepancy`** (new
+class, `_fillSlotRow`/`buildItemDom`): pair the one with `amount` closest
+to 1 (`pickClosestToOne` — nearest-to-whole is the more meaningful signal
+here than age, unlike the Freezing pool's oldest-first rule), still link
+it, just flagged for a human. Both `row.impossible` and `row.discrepancy`
+are computed live in the model (not just as a `_reconcileCabinet()`
+side-effect) so they stay accurate between full reconciliation runs.
+
+**`promotablePool`'s search widened**: was `state === 'Freezing'` only.
+Now excludes only `Emptied` (hard exclude) and `Opened` (handled
+exclusively by `openUnclaimedPool` instead — an Opened-and-unclaimed tub
+should be *adopted*, never "promoted" a second time) —
+Hardening/Tempering/`__override__` all qualify now, per your correction.
+Also excluded `!Lost` here, which wasn't explicitly requested — flagging
+that addition: a flagged-lost tub isn't physically assignable regardless
+of its Pods `state`, but say if that's wrong. `add-next`'s live pick
+(`ConfirmSwapModal`) shares this same widened pool automatically (same
+method) but does **not** yet get the "prefer an already-Opened unclaimed
+tub first" two-tier preference — that's currently Confirm-Cabinet-only.
+Worth doing there too if a staffer clicking `add next` should also adopt
+a sitting-open tub instead of opening a fresh one; flagging as a known
+asymmetry, not yet built.
+
+Considered making this a persisted Pods field on `slot` instead of
+computed — recommended against by default (every value is 100% derivable,
+persisting risks drift). **Reversed**: confirmed the "loud flags/alarms"
+requirement needs to reach people not looking at this page (email/
+dashboard/another tool) — a client-only computed value structurally can't
+do that, nothing server-side can react to something that only exists in
+one browser tab. Built:
+
+- **New field, `slot.confirm_state`** — `unconfirmed` / `filled` /
+  `discrepancy` / `impossible` / `empty` (pick/custom-simple, same pattern
+  as `tub.state`). **You need to create this field in Pods admin**
+  yourself (local now; remember TEST/OPS later) — I wired the code
+  assuming it exists, but can't create Pods fields from here.
+  `_specs.php`/`_policy.php` updated (writeable for `_default`/`editor`).
+- **Written by `_reconcileCabinet()`** — every slot, every run (not just
+  ones this pass changed), batched into a `Cabinet` POST alongside the
+  `FlavorTub` writes. Means every page load's automatic run bumps
+  `scoop_cache_version` (global, not per-row — matches existing behavior,
+  just a bit more often now) even when nothing needed fixing. Not
+  optimized to skip unchanged slots — would need reading the current value
+  back first, which nothing does today.
+- **Reset to `unconfirmed` proactively** — `scoop_enforce_tub_rules()`
+  (`tub-state.php`) reads the tub's *old* `slot` value before clearing it
+  on the Emptied transition, and writes `confirm_state: 'unconfirmed'` to
+  that slot in the same hook — so the flag goes stale the instant a linked
+  tub empties via ANY path, not just when someone next opens this GUI.
+- **Not built**: the actual alarm/reach channel (email, wp-admin widget,
+  whatever). This is the infrastructure that makes one possible — reading
+  `confirm_state` and doing something loud with it is a separate,
+  not-yet-specced piece.
 
 ## Stubbed for later (no-op now)
 

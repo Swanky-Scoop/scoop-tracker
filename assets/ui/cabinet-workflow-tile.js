@@ -6,10 +6,6 @@
 // directly from the row object here, in buildItemDom. List still calls
 // buildFieldDom once per (empty) fields array entry, so it's overridden
 // defensively but never actually produces visible output.
-//
-// Phase 1 only (see change-tub.md "Build phases"): add-next/add-special/
-// add-flavor buttons render with the right visibility, but are not wired to
-// any click handler yet — that's Phase 2/3 and the not-yet-designed modal.
 //////////////////////////////////
 import Tile from "./tile.js";
 import ConfirmSwapModal from "./confirm-swap-modal.js";
@@ -31,7 +27,7 @@ export default class CabinetWorkflowTile extends Tile {
       classes: ['confirm-cabinet'],
       attrs: { type: 'button' },
     });
-    this.CONFIRM_CABINET.addEventListener('click', () => this._confirmCabinet());
+    this.CONFIRM_CABINET.addEventListener('click', () => this._reconcileCabinet({ alertResult: true }));
 
     this.FRAME.append(this.CONFIRM_CABINET);
 
@@ -48,58 +44,158 @@ export default class CabinetWorkflowTile extends Tile {
       const row = (this.items ?? []).find(r => r.slotId === slotId);
       if (row) this.SWAP_MODAL.open(row);
     });
+
+    // GUI is blocked (pointer-events off, not just visually flagged) until
+    // the first reconciliation pass completes — see change-tub.md. Runs
+    // once, on the first render only ('ts:list:init' fires at the end of
+    // List.init(), which only happens the first time setDomain() lands);
+    // ts:domain:updated-triggered refreshes go through List.refresh(), not
+    // init(), so this doesn't re-fire and re-block on every later save.
+    this.FORM.addEventListener('ts:list:init', () => {
+      this._reconcileCabinet({ alertResult: false });
+    }, { once: true });
   }
 
-  // Bootstraps slot.tubs links (see change-tub.md): every row whose
-  // openTubStatus is 'linked' (computed in CabinetWorkflowGridModel —
-  // exactly one Opened FOH tub of that slot's flavor at its own location)
-  // AND isn't already linked to that same tub gets it written to
-  // slot.tubs, via the existing 'Cabinet' write route (same pod/post_type
-  // as this model — slot — just a different envelope key; no dedicated
-  // route needed for a single-field write). 'none'/'multi' rows are never
-  // auto-resolved here — buildItemDom already flags them on the LI every
-  // render, straight from the row data — this handler only reports them.
-  async _confirmCabinet() {
+  // Confirm Cabinet: makes sure every slot with a current_flavor has
+  // exactly one valid tub — Opened, matching that flavor, linked via
+  // tub.slot (see change-tub.md). Runs automatically (blocking) on first
+  // load, and again on demand via the button.
+  //
+  // For each slot without an already-valid link, in order:
+  //   1. A tub already Opened at this slot's own location, matching the
+  //      flavor, not claimed by a different slot (openUnclaimedPool) — it's
+  //      presumably already physically sitting here, just never got linked.
+  //      Exactly one: adopt it (link only, no state change — already
+  //      Opened). More than one: ambiguous — pair the one with `amount`
+  //      closest to 1 (see pickClosestToOne), flag the slot 'discrepancy'
+  //      rather than silently guessing right.
+  //   2. Otherwise, the oldest non-Emptied, non-Opened tub of that flavor
+  //      (Hardening/Tempering/Freezing/__override__ all qualify — only
+  //      Emptied is a hard exclude, per change-tub.md), from anywhere
+  //      (location doesn't gate this — see
+  //      CabinetWorkflowGridModel.promotablePool) — opened, linked, and its
+  //      location corrected to match this cabinet (same rule as Add Flavor).
+  //   3. Otherwise — or if the flavor's allergens conflict with the
+  //      cabinet's prohibited_allergens — 'impossible': current_flavor
+  //      stays, no tub gets forced in.
+  // Every tub this pass touches (adopted, discrepancy pair, or freshly
+  // opened) is claimed immediately so a later slot in the same pass can't
+  // also grab it.
+  async _reconcileCabinet({ alertResult = true } = {}) {
     if (!this.api) return;
 
-    const cells = {};
-    const toLink = [];
-    const problems = [];
+    this.FRAME.classList.add('reconciling');
+    this.FRAME.style.pointerEvents = 'none';
 
-    for (const row of this.items ?? []) {
-      if (row.empty) continue;
+    try {
+      const allRows = this.items ?? [];
+      const rows = allRows.filter(r => !r.empty);
+      const claimed = new Set();
 
-      if (row.openTubStatus === 'linked' && row.openTub) {
-        if (row.openTub.id !== row.currentTubId) {
-          cells[row.slotId] = { tubs: row.openTub.id };
-          toLink.push(row);
+      // Already-valid links are claimed first so nothing below can also
+      // hand that same tub to a different slot needing the same flavor.
+      for (const row of rows) {
+        if (row.openTub) claimed.add(Number(row.openTub.id));
+      }
+
+      const tubCells = {};
+      // slot.confirm_state (see change-tub.md) — persisted so reporting
+      // outside this GUI can see it; written for every slot every run,
+      // not just the ones this pass changed something for.
+      const slotCells = {};
+      const assigned = [];
+      const discrepancies = [];
+      const impossible = [];
+
+      for (const row of allRows) {
+        if (row.empty) {
+          slotCells[row.slotId] = { confirm_state: 'empty' };
+          continue;
         }
-      } else if (row.openTubStatus === 'none') {
-        problems.push(`${row.flavorTitle} (${row.cabinetTitle}): no Opened tub found`);
-      } else if (row.openTubStatus === 'multi') {
-        problems.push(`${row.flavorTitle} (${row.cabinetTitle}): ${row.openTubCount} Opened tubs found`);
-      }
-    }
 
-    if (Object.keys(cells).length) {
-      const r = await this.api.postJson({ cells }, 'Cabinet');
-      if (!r.ok || !r.data?.ok) {
-        alert(`Confirm Cabinet: saving failed.\n${r?.data?.error ?? `HTTP ${r?.status}`}`);
-        return;
-      }
-      await this.api.refreshPageDomain({ force: true });
-    }
+        if (row.openTub) {
+          slotCells[row.slotId] = { confirm_state: 'filled' };
+          continue;
+        }
 
-    alert(this._confirmCabinetMessage(toLink, problems));
+        if (row.allergenConflict) {
+          impossible.push(row);
+          slotCells[row.slotId] = { confirm_state: 'impossible' };
+          continue;
+        }
+
+        const unclaimedOpen = this.modelInstance.openUnclaimedPool(row.flavorId, row.location, row.slotId, claimed);
+        if (unclaimedOpen.length > 0) {
+          const picked = unclaimedOpen.length === 1 ? unclaimedOpen[0] : this.modelInstance.pickClosestToOne(unclaimedOpen);
+          unclaimedOpen.forEach(t => claimed.add(Number(t.id))); // claim all candidates, not just the pick
+          tubCells[picked.id] = { slot: row.slotId }; // already Opened — link only
+
+          if (unclaimedOpen.length > 1) {
+            discrepancies.push(row);
+            slotCells[row.slotId] = { confirm_state: 'discrepancy' };
+          } else {
+            assigned.push(row);
+            slotCells[row.slotId] = { confirm_state: 'filled' };
+          }
+          continue;
+        }
+
+        const candidate = this.modelInstance.pickPromotableTub(row.flavorId, true, claimed);
+        if (!candidate) {
+          impossible.push(row);
+          slotCells[row.slotId] = { confirm_state: 'impossible' };
+          continue;
+        }
+
+        claimed.add(Number(candidate.id));
+        tubCells[candidate.id] = { state: 'Opened', slot: row.slotId, location: row.location };
+        assigned.push(row);
+        slotCells[row.slotId] = { confirm_state: 'filled' };
+      }
+
+      if (Object.keys(tubCells).length) {
+        const r = await this.api.postJson({ cells: tubCells }, 'FlavorTub');
+        if (!r.ok || !r.data?.ok) {
+          alert(`Confirm Cabinet: saving failed.\n${r?.data?.error ?? `HTTP ${r?.status}`}`);
+          return;
+        }
+      }
+
+      if (Object.keys(slotCells).length) {
+        const rSlots = await this.api.postJson({ cells: slotCells }, 'Cabinet');
+        if (!rSlots.ok || !rSlots.data?.ok) {
+          alert(`Confirm Cabinet: tubs updated, but recording slot status failed.\n${rSlots?.data?.error ?? `HTTP ${rSlots?.status}`}`);
+          return;
+        }
+      }
+
+      if (Object.keys(tubCells).length || Object.keys(slotCells).length) {
+        await this.api.refreshPageDomain({ force: true });
+      }
+
+      if (alertResult) alert(this._confirmCabinetMessage(assigned, discrepancies, impossible));
+
+    } finally {
+      this.FRAME.classList.remove('reconciling');
+      this.FRAME.style.pointerEvents = '';
+    }
   }
 
-  _confirmCabinetMessage(toLink, problems) {
-    const lines = toLink.length
-      ? [`Linked ${toLink.length} slot(s):`, ...toLink.map(row => `- ${row.flavorTitle} (${row.cabinetTitle})`)]
+  _confirmCabinetMessage(assigned, discrepancies, impossible) {
+    const lines = assigned.length
+      ? [`Linked ${assigned.length} slot(s):`, ...assigned.map(row => `- ${row.flavorTitle} (${row.cabinetTitle})`)]
       : ['No changes needed.'];
 
-    if (problems.length) {
-      lines.push('', 'Slots needing attention:', ...problems.map(p => `- ${p}`));
+    if (discrepancies.length) {
+      lines.push('', 'Multiple open tubs matched (paired closest to a whole tub):',
+        ...discrepancies.map(row => `- ${row.flavorTitle} (${row.cabinetTitle})`));
+    }
+
+    if (impossible.length) {
+      lines.push('', 'Slots with no valid tub:', ...impossible.map(row => {
+        const reason = row.allergenConflict ? 'allergen conflict with cabinet' : 'no eligible tub found';
+        return `- ${row.flavorTitle} (${row.cabinetTitle}): ${reason}`;
+      }));
     }
 
     return lines.join('\n');
@@ -108,9 +204,7 @@ export default class CabinetWorkflowTile extends Tile {
   buildItemDom(row) {
     const el = this.el;
 
-    const statusClass = row.openTubStatus === 'none'  ? 'none-opened'
-                       : row.openTubStatus === 'multi' ? 'multi-opened'
-                       : null;
+    const statusClass = row.impossible ? 'impossible' : row.discrepancy ? 'discrepancy' : null;
 
     const LI = el('li', {
       classes: ['slot', row.empty ? 'empty' : this._slug(row.flavorTitle), statusClass],
@@ -141,16 +235,19 @@ export default class CabinetWorkflowTile extends Tile {
 
     LI.append(DIV);
 
-    // Omitted (not disabled) when there's no local FOH tub to advance to —
-    // see change-tub.md's "add next" pool definition.
-    if (row.canAddNext) {
-      LI.append(el('button', {
-        text: 'add next',
-        classes: ['add-next'],
-        attrs: { type: 'button' },
-        data: { slotId: row.slotId },
-      }));
-    }
+    // Always shown, even with 0 promotable tubs — the confirm-swap modal
+    // is also the only path to "leave slot empty," which must still be
+    // reachable to mark the existing tub Emptied when nothing's left to
+    // replace it with. The modal itself disables Confirm Swap and shows
+    // "No tub available" in that case; row.canAddNext is no longer used to
+    // gate this button (superseded change-tub.md decision — was omitted
+    // entirely before).
+    LI.append(el('button', {
+      text: 'add next',
+      classes: ['add-next'],
+      attrs: { type: 'button' },
+      data: { slotId: row.slotId },
+    }));
 
     LI.append(el('button', {
       text: 'add special',

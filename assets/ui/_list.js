@@ -150,6 +150,14 @@ export default class List extends El{
     if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'fresh');
   }
 
+  // Reports this grid's dirty/unsaved-edit boolean to PageStatus — see
+  // PageStatus.setEditing(). Covers every List (autosave or manual-Save),
+  // since dirtySet tracking itself isn't autosave-specific.
+  _reportEditingState() {
+    if (!this.pageStatusId) return;
+    PageStatus.setEditing(this.pageStatusId, !!(this.dirtySet?.size || this._autosaving));
+  }
+
   preloadColumns(columns) {
     this.setFields(columns, true);
     this._captureBaseline(); // optional: only if inputs already exist (often they won't yet)
@@ -482,6 +490,8 @@ export default class List extends El{
       const k = `${f.rowId}|${f.colKey}`;
       this.baseline.set(k, f.value);
     }
+
+    this._reportEditingState();
   }
 
   _normValue(colKey, raw) {
@@ -538,6 +548,7 @@ export default class List extends El{
     }
 
     this._persistDraft();
+    this._reportEditingState();
   }
 
   // ─── Unsaved-edit draft persistence ────────────────────────────────────────
@@ -884,6 +895,7 @@ export default class List extends El{
     if (this._fieldAutosaveEnabled(colKey)) this._scheduleAutosave();
 
     this._persistDraft();
+    this._reportEditingState();
   }
 
   // ─── Autosave ──────────────────────────────────────────────────────────────
@@ -938,6 +950,7 @@ export default class List extends El{
 
     this._autosaving = true;
     this.FORM.classList.add('autosaving');
+    this._reportEditingState();
 
     try {
       const r = await this.api.postJson(changes, this.name);
@@ -963,6 +976,7 @@ export default class List extends El{
     } finally {
       this._autosaving = false;
       this.FORM.classList.remove('autosaving');
+      this._reportEditingState();
       if (this._autosavePending) {
         this._autosavePending = false;
         this._scheduleAutosave();
