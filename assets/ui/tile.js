@@ -59,7 +59,7 @@ export default class Tile extends List {
 
     const WRAPPER = el('div', {
       classes: ['group', this._groupTypeClass(group), (group.collapsible ? 'collapsible' : 'static'), (opened ? 'opened' : 'closed')],
-      data: { groupType: group.groupType, rowType: group.rowType, groupContainer: '' },
+      data: { groupType: group.groupType, rowType: group.rowType, groupContainer: '', groupId: group.groupId },
     });
 
     const UL = el('ul');

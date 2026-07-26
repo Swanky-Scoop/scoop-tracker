@@ -46,7 +46,7 @@ export default class Grid extends List {
 
     const TBODY = el('tbody', {
       classes: ['groupBody', this._groupTypeClass(group), (group.collapsible ? 'collapsible' : 'static'), (opened ? 'opened' : 'closed')],
-      data: { rowType: group.rowType, groupType: group.groupType, groupContainer: '' },
+      data: { rowType: group.rowType, groupType: group.groupType, groupContainer: '', groupId: group.groupId },
     });
 
     if (!group.label) return TBODY;

@@ -41,7 +41,14 @@
   --color-alert-opened-border: #630;
   --color-alert-last: rgba(255, 255, 0, 0.25);
   --color-alert-last-border: #660;
-  
+
+  /* Unsaved-edit ("dirty") Colors — a row with any unsaved cell, the specific
+     cell that changed, and the group containing a dirty row. Tweak freely;
+     nothing else keys off these values. */
+  --color-dirty-row-bg: #FBF3D8;
+  --color-dirty-cell-bg: #F0C674;
+  --color-dirty-group-outline: #5A2A18;
+
   /* Border Colors */
   --color-border-main: rgba(0, 50, 0, 1);
   --color-border-light: rgba(50, 100, 50, 0.33);
@@ -544,7 +551,7 @@ html body {
 }
 
 html > body.TS_GRID-UPDATING .scoop-grid {
-  opacity: 0.5;
+  opacity: 0.85;
 }
 
 /* Sizes the loading card itself (not just the shimmer overlay) to fit 6
@@ -1619,12 +1626,31 @@ table.zGRID tr .badges .badge.warning {
    Grids whose model sets `autosave = true` persist each change immediately and
    render no save button. The button is also hidden via the `hidden` attribute
    in JS; this rule is a backup. Per-cell flashes confirm a save (or an error).
-   Partial-autosave models (e.g. FlavorTub: 'use'/'amount' autosave, 'state'
-   doesn't) get the extra `autosave-partial` class and keep their button. */
+   A model may still opt some fields into autosave and leave the rest manual
+   (`autosaveFields` — no grid currently does this; autosave has turned out to
+   need to be all-or-nothing per grid, see flavor-tub-grid-model.js) — that
+   gets the extra `autosave-partial` class and keeps the button. */
 .zGRID-form.autosave:not(.autosave-partial) > button.save { display: none; }
 
 .zGRID td.cell-saved { animation: scoopCellSaved 0.8s ease-out; }
 .zGRID td.cell-error { animation: scoopCellError 0.8s ease-out; }
+
+/* ── Unsaved edits ("dirty" state) ────────────────────────────────────────
+   Live while a field differs from its last-saved baseline — see
+   List._refreshDirtyMarks(). Tag-agnostic on purpose (Grid uses <tr>/<td>,
+   Tile uses <li>/<div>) so both views pick these up the same way. */
+[data-row-id].row-dirty {
+  background-color: var(--color-dirty-row-bg);
+}
+
+.cell-dirty {
+  background-color: var(--color-dirty-cell-bg) !important;
+}
+
+[data-group-container].group-dirty {
+  outline: 2px solid var(--color-dirty-group-outline);
+  outline-offset: -1px;
+}
 
 @keyframes scoopCellSaved {
   0%   { background: #b6e0b6; }

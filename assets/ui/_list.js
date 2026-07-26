@@ -48,6 +48,14 @@ export default class List extends El{
     this.itemGroups = [];
     this.itemGroupDom = [];
 
+    // Survives a rebuild (refresh() rebuilds every group container from
+    // scratch, so the DOM's own .opened/.closed classes are lost) — keyed by
+    // group.groupId, the one thing that's stable for the same group across a
+    // domain refresh even though its DOM node isn't. Only holds entries the
+    // user has actually toggled; groups never touched keep falling back to
+    // the model's own collapsed default (see _buildItemGroups).
+    this._groupOpenOverrides = new Map();
+
     this.sortField = null;
     this.sortDirection = 'asc';
 
@@ -244,7 +252,8 @@ export default class List extends El{
     const onlyOneGroup = this.itemGroups.length === 1;
 
     for (const g of this.itemGroups) {
-      const opened = onlyOneGroup ? true : !g.collapsed;
+      const override = g.groupId != null ? this._groupOpenOverrides.get(String(g.groupId)) : undefined;
+      const opened = onlyOneGroup ? true : (override !== undefined ? override : !g.collapsed);
       const CONTAINER = this.buildGroupDom(g, this.fields, opened);
       this.FRAME.append(CONTAINER);
       this.itemGroupDom.push(CONTAINER);
@@ -531,6 +540,7 @@ export default class List extends El{
         const k = `${rowId}|${colKey}`;
         this.baseline.set(k, val);
         this.dirtySet.delete(k);
+        this._refreshDirtyMarks(rowId, colKey);
 
         // Clear whatever this save covered out of a resumed draft too, so a
         // partial resume doesn't keep re-offering already-saved cells.
@@ -666,6 +676,11 @@ export default class List extends El{
         const CONTAINER = e.target.closest("[data-group-container], TBODY");
         CONTAINER?.classList.toggle('opened');
         CONTAINER?.classList.toggle('closed');
+
+        const groupId = CONTAINER?.dataset.groupId;
+        if (groupId != null) {
+          this._groupOpenOverrides.set(groupId, CONTAINER.classList.contains('opened'));
+        }
     }
 
     this.FORM.dispatchEvent(new Event("ts:list:close-overlays"));
@@ -891,11 +906,39 @@ export default class List extends El{
     if (before === after) this.dirtySet.delete(k);
     else this.dirtySet.add(k);
 
+    this._refreshDirtyMarks(rowId, colKey);
+
     // Autosave lists persist each change right away (no save button, no reload).
     if (this._fieldAutosaveEnabled(colKey)) this._scheduleAutosave();
 
     this._persistDraft();
     this._reportEditingState();
+  }
+
+  // Reflects dirtySet onto the DOM as it changes, at three levels: the
+  // specific cell that's unsaved, the row it's in (dirty if ANY of its cells
+  // are), and the group it's in (dirty if ANY of its rows are) — see
+  // css.css's --color-dirty-* variables for what these classes look like.
+  // Called both live as the user types (_handleCellChange) and once a change
+  // is confirmed saved (_commitPosted), so it always reflects dirtySet's
+  // current truth rather than assuming who called it last.
+  _refreshDirtyMarks(rowId, colKey) {
+    const h = this.FORM.querySelector(
+      `input[type="hidden"][name="${this.name}[cells][${rowId}][${colKey}]"]`
+    );
+    if (!h) return;
+
+    const CELL = h.closest('td, [data-field]') ?? h.parentElement;
+    CELL?.classList.toggle('cell-dirty', this.dirtySet.has(`${rowId}|${colKey}`));
+
+    const ROW = h.closest('[data-row-id]');
+    if (!ROW) return;
+
+    const rowDirty = [...this.dirtySet].some(k => k.startsWith(`${rowId}|`));
+    ROW.classList.toggle('row-dirty', rowDirty);
+
+    const GROUP = ROW.closest('[data-group-container]');
+    if (GROUP) GROUP.classList.toggle('group-dirty', !!GROUP.querySelector('.row-dirty'));
   }
 
   // ─── Autosave ──────────────────────────────────────────────────────────────
@@ -905,7 +948,14 @@ export default class List extends El{
   // user mid-edit. The save button is hidden (see _applyAutosaveUI) unless the
   // model also sets `autosaveFields` (a Set of column keys) — that opts IN
   // only those fields to autosave and leaves the rest on the manual Save
-  // button (e.g. FlavorTubGridModel: 'use'/'amount' autosave, 'state' doesn't).
+  // button. Mixing the two on one grid (FlavorTubGridModel used to: 'use'/
+  // 'amount' autosaved, 'state' didn't) turned out to be a bad idea in
+  // practice — a full-domain refresh (e.g. a filter change) rebuilds the
+  // whole grid from server truth, which silently drops whatever's still
+  // pending on the manual side right as the autosaved side visibly lands,
+  // reading as data loss even though nothing autosaved was actually lost.
+  // Autosave needs to be all-or-nothing per grid until/unless that gets
+  // fixed some other way.
 
   _autosaveEnabled() {
     return !!(this.state && this.state.autosave);
@@ -1154,13 +1204,25 @@ export default class List extends El{
           });
 
           this._postSubmitFocus = true;
-          await this.api.refreshPageDomain({ force: true, toast:TOAST, info:{name:this.name, response:r} });
-          // Usually handled by the ts:domain:updated listener after it rebuilds
-          // the DOM; this is a fallback if that listener didn't run/consume it.
-          if (this._postSubmitFocus) {
-            this._postSubmitFocus = false;
-            this._focusAfterSubmit();
-          }
+
+          // The save is already confirmed and this grid already reflects it
+          // (_commitPosted above applied it optimistically), so the submit
+          // button doesn't need to stay disabled for the length of this
+          // refresh too — it's re-enabled below in `finally` as soon as this
+          // fires, not once it resolves. It's still kicked off immediately
+          // (not awaited later) so every grid on the page starts re-checking
+          // its state with the server right away.
+          this.api.refreshPageDomain({ force: true, toast:TOAST, info:{name:this.name, response:r} })
+            .then(() => {
+              // Usually handled by the ts:domain:updated listener after it
+              // rebuilds the DOM; this is a fallback if that listener didn't
+              // run/consume it.
+              if (this._postSubmitFocus) {
+                this._postSubmitFocus = false;
+                this._focusAfterSubmit();
+              }
+            })
+            .catch(err => console.error("Post-save domain refresh failed:", err));
         }
 
       } catch (err) {

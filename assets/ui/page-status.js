@@ -72,6 +72,7 @@ const DOM = new El();
 export default class PageStatus {
   static _items = new Map(); // id -> <li>
   static _editingIds = new Set(); // ids currently reporting a dirty/unsaved form
+  static _anyEditing = false; // mirrors _recomputeEditingState's anyEditing — see _updateHeaderText
   static _loadStart = null;
   static _loadKey = null;
   static _countdownTimer = null;
@@ -160,6 +161,7 @@ export default class PageStatus {
     const DIV = PageStatus._ensureHost();
     const UL = DIV.querySelector('ul');
     const anyEditing = PageStatus._editingIds.size > 0 && !PageStatus._anyGridFetching();
+    PageStatus._anyEditing = anyEditing;
 
     document.body.classList.toggle('in-progress', anyEditing);
     DIV.classList.toggle('in-progress', anyEditing);
@@ -173,6 +175,29 @@ export default class PageStatus {
     } else if (LI) {
       LI.remove();
     }
+
+    PageStatus._updateHeaderText();
+  }
+
+  // The header <em> (next to "Status:") normally just echoes the overall
+  // freshness word (see _recomputeOverallState) — but while a dirty edit is
+  // in progress that word is misleading (a grid can be 'fresh' and mid-edit
+  // at the same time, per the comment above setEditing), so the header
+  // borrows the same anyEditing signal to say "Edit in progress" instead,
+  // and reverts to the freshness word once the edit resolves (saved or
+  // cancelled) and _recomputeEditingState runs again.
+  static _updateHeaderText() {
+    const DIV = PageStatus._ensureHost();
+    const EM = DIV.querySelector(':scope > em');
+    if (!EM) return;
+
+    if (PageStatus._anyEditing) {
+      EM.textContent = 'Edit in progress';
+      return;
+    }
+
+    const state = DIV.dataset.state;
+    if (state) EM.textContent = state.charAt(0).toUpperCase() + state.slice(1);
   }
 
   // The <DIV> itself carries whichever registered grid's state is furthest
@@ -185,7 +210,6 @@ export default class PageStatus {
   static _recomputeOverallState() {
     if (!PageStatus._items.size) return;
     const DIV = PageStatus._ensureHost();
-    const EM = DIV.querySelector(':scope > em');
 
     let worstIndex = STATES.length - 1; // start at 'fresh', the ideal
     for (const LI of PageStatus._items.values()) {
@@ -198,7 +222,7 @@ export default class PageStatus {
     DIV.classList.add(overall);
     DIV.dataset.state = overall;
     DIV.dataset.stateIndex = String(worstIndex);
-    EM.textContent = overall;
+    PageStatus._updateHeaderText();
   }
 
   // name = the grid (List.name, e.g. "Cabinet") whose Save/autosave/filter

@@ -13,12 +13,14 @@ export default class FlavorTubGridModel extends BaseGridModel{
   constructor(name = 'FlavorTub', domain, attrs = {}) 
   {
     super(name, domain, attrs );
-    // 'use' and 'amount' are low-stakes, atomic edits (picker / rarely-touched
-    // creation-time value) — safe to autosave. 'state' is left off: 'Emptied'
-    // is a one-way, server-enforced transition (see scoop_enforce_tub_rules)
-    // and belongs behind the explicit Save button, not a keystroke debounce.
-    this.autosave = true;
-    this.autosaveFields = new Set(['use', 'amount']);
+    // Was partial autosave ('use'/'amount' autosaved, 'state' manual-only),
+    // but mixing the two on one grid meant a filter change (or any other
+    // full-domain refresh) silently discarded whatever was still pending on
+    // the manual side while the autosaved side had already landed — from the
+    // user's seat, indistinguishable from data loss. Autosave needs to be
+    // all-or-nothing per grid; FlavorTub is all-manual now, same as 'state'
+    // always was ('Emptied' is a one-way, server-enforced transition — see
+    // scoop_enforce_tub_rules — so a deliberate Save was always right for it).
     this.filter = true;
     this.filterValues = {
       designation: 'all',
