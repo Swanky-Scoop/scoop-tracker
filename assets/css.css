@@ -545,16 +545,18 @@ html > body.TS_GRID-UPDATING .scoop-grid {
    .scoop-grid is unsized and just grows to contain this. Scoped to the same
    "no rows yet" condition as the shimmer below, so a populated grid with
    only a few real rows isn't forced to this height too. */
-.scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr)) > form.zGRID-form {
+.scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr)):not(:has(li[data-row-id])) > form.zGRID-form,
+.scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr)):not(:has(li[data-row-id])) > form.zTILE-form {
   min-height: 13.5rem;
 }
 
 /* Shimmering skeleton placeholder — shown while a grid has no rows yet
    (before the bundle fetch resolves and List/Grid appends the first
-   <tbody>). No extra DOM: gated purely on the DOM shape that already
-   exists — table.zGRID holds only its <thead> until real data lands — so
-   the shimmer disappears the instant the first row is appended. */
-.scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr))::after {
+   <tbody> row or, for the card view, the first <li>). No extra DOM: gated
+   purely on the DOM shape that already exists — table.zGRID holds only its
+   <thead>, and .zTILE's group <ul> stays empty, until real data lands — so
+   the shimmer disappears the instant the first row/card is appended. */
+.scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr)):not(:has(li[data-row-id]))::after {
   content: '';
   position: absolute;
   top: 0;
@@ -1201,6 +1203,75 @@ table.zGRID tr {
   z-index: 8;
   top: 2rem;
 }
+
+
+/* ============================================
+   MODAL - Cabinet Workflow grid
+   ============================================ */
+body > .modal{
+  position: fixed;
+  top: 0;
+  left: 50%;
+  bottom: 100%;
+  right: 50%;
+  background-color: rgba(0,0,0,.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+
+  &.show{
+    z-index: 99;
+    bottom:0;
+    left:0;
+    right:0;
+
+    & > form {
+      opacity: 1;
+      
+    }
+  }
+  & * {
+
+    display: flex;
+    text-align: center;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    gap:.25rem;
+  }
+
+  & > form{
+    padding:2rem;
+    max-height: 90vh;
+    max-width: 95vw;
+    width: 40rem;
+    background-color: #32620E;
+    flex-direction: column;
+    opacity: 0;
+    transition-delay: 300ms;
+
+    & > button.close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+    }
+   
+    & > .img {
+      height: 50vw;
+      width: 50vw;
+      max-width: 50vh;
+      max-height: 50vh;
+      overflow: hidden;
+      flex-direction: column;
+      background-color: darkgreen;
+      & > img {
+        position: absolute;
+      }
+    }
+  }
+}
+
 /* ============================================
    CABINET VIEW - Cabinet Workflow grid
    ============================================ */
@@ -1217,16 +1288,58 @@ table.zGRID tr {
       flex-direction: column;
       justify-content: center;
       align-items: center;
+      overflow: hidden;
+      color:white;
+      background-color: white;
+      box-shadow: inset 0 10rem 10rem -5rem rgba(0,0,0,.5);
+      padding:1rem;
+      border-radius: .25rem;
+      
+      &:hover,
+      &:focus-within {
+        box-shadow: inset 0 10rem 10rem -5rem rgba(0,0,0,.33), 0 0 0 3px green;
+        & * {
+          opacity: 1 !important;
+        }
+        & > img{
+          opacity: .8;
+          filter: blur(3px) saturate(1.5) brightness(1);
+          transform: scale(.67);
+        }
+      }
+      &:focus-within {
+        box-shadow: inset 0 10rem 10rem -5rem rgba(0,0,0,.33), 0 0 0 3px green, 0 0 3px 5px yellowgreen, 0 .25rem 2rem var(--shadow-dark);
+        & > img {
+          opacity: .85;
+          filter: blur(3px) saturate(1.5) brightness(1);
+          transform: scale(.75);
+        }
+      }
 
+      & * {
+        z-index: 2;
+        opacity: .9;
+      }
+      & > img {
+        z-index: 1;
+        position: absolute;
+        filter: blur(6px) saturate(1.5) brightness(0.5) ;
+        mix-blend-mode: multiply;
+        transform: scale(0.5);
+        box-shadow: inset 0 10rem 10rem -5rem rgba(0,0,0,1);
+        opacity: .75;
+      }
       & .available {
         font-size: 0;
         & em{
           font-size: .75rem;
           font-style: normal;
+          text-shadow: 0 1px 0.125rem var(--shadow-dark), 0 1px 0.125rem var(--shadow-dark);
         }
         & .tub-count-local:after{
           content: ' / ';
           font-size: .75rem;
+          text-shadow: 0 1px 0.125rem var(--shadow-dark), 0 1px 0.125rem var(--shadow-dark);
         }
       }
 
@@ -1236,24 +1349,30 @@ table.zGRID tr {
       }
       & .add-next{
         top:0; left:0; 
-        opacity: 0;
+        background-color: transparent;
         font-size: 0;
+        border: none;
+        box-shadow: inset 0 10rem 10rem -5rem var(--shadow-dark);
       }
       & .add-special{}
     }
     & h3 {
       font-size: 1rem;
-      font-weight: bold;
-      margin: 0;
+      font-weight: 600;
+      line-height: 1.33em;
+      margin: .125rem;
       padding: 0;
+      opacity: .75;
     }
     & .multiple.allergens ul{
       display: flex;
+      margin:.125rem;
       & li{
         font-size: 0;
-        height: 1rem; width: 1rem;
+        height: 1.5rem; width: 1.5rem;
         border-radius: 50%;
-        border: 1px solid var(--color-green-dark);
+        margin:3px;
+        box-shadow: 0 0 0 2px var(--color-border-light);
       }
     }
     & .web_id,

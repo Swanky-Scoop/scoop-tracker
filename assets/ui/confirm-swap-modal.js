@@ -121,7 +121,7 @@ export default class ConfirmSwapModal extends El {
 
     this.CONFIRM_BTN.disabled = !tub;
 
-    this._renderFlavorLine(this.CURRENT_P, 'Currently:', row.flavorId, row.flavorTitle, row.location, false);
+    this._renderFlavorLine(this.CURRENT_P, '', row.flavorId, row.flavorTitle, row.location, false);
     this._renderFlavorLine(this.IMMEDIATE_P, 'Next scheduled flavor is', row.immediateFlavorId, row.immediateFlavorTitle, row.location, true);
     this._renderFlavorLine(this.NEXT_P, 'Then scheduled flavor is', row.nextFlavorId, row.nextFlavorTitle, row.location, true);
   }
@@ -163,7 +163,7 @@ export default class ConfirmSwapModal extends El {
       P.append(flavorTitle);
     }
 
-    P.append('. There are ', this.el('b', { text: String(total) }), ' remaining tubs, ', this.el('b', { text: String(here) }), ' are here.');
+    P.append(' has ', this.el('b', { text: String(total) }), ' remaining tubs, ', this.el('b', { text: String(here) }), ' are here.');
   }
 
   async _confirm() {
