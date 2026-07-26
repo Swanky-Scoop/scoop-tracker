@@ -9,23 +9,57 @@ const DESIGNATION_FIELDS = [
 
 const FRONT_OF_HOUSE_USE_ID = 1863;
 
+// Server-side ceiling: how long after emptied_at a tub is even fetched, and
+// still correctable — see SCOOP_TUB_EMPTIED_REVERT_HOURS in
+// includes/hooks/tub-state.php (governs whether a revert is accepted) and
+// the tub SQL WHERE clause in includes/bundle-fetch.php (governs whether
+// the bundle includes it at all). Must match. The 'emptied_window' filter
+// below only narrows DISPLAY within whatever's already been fetched, so
+// none of its options can exceed this.
+const RECENTLY_EMPTIED_CEILING_HOURS = 48;
+
+// GUI-selectable look-back windows for the 'emptied_window' filter, entirely
+// client-side (no refetch on change — everything within the ceiling above
+// is already in the bundle). Spaced so a roughly-daily session that shifts
+// by up to ~4h can still be bracketed from either side. Filtered against the
+// ceiling rather than hardcoded up to it, so lowering the ceiling can't
+// silently leave a now-invalid option in the dropdown. Defaults to '4h', not
+// 'off' — recently-emptied tubs are common/expected enough to show up front
+// rather than requiring an opt-in click every time.
+const EMPTIED_WINDOW_OPTIONS = [
+  { key: 'off', label: 'Hide' },
+  ...[4, 8, 12, 24, 36, 48]
+    .filter(hours => hours <= RECENTLY_EMPTIED_CEILING_HOURS)
+    .map(hours => ({ key: `${hours}h`, label: `Last ${hours} hours`, hours })),
+];
+
 export default class FlavorTubGridModel extends BaseGridModel{
-  constructor(name = 'FlavorTub', domain, attrs = {}) 
+  constructor(name = 'FlavorTub', domain, attrs = {})
   {
     super(name, domain, attrs );
     // Was partial autosave ('use'/'amount' autosaved, 'state' manual-only),
-    // but mixing the two on one grid meant a filter change (or any other
-    // full-domain refresh) silently discarded whatever was still pending on
-    // the manual side while the autosaved side had already landed — from the
-    // user's seat, indistinguishable from data loss. Autosave needs to be
-    // all-or-nothing per grid; FlavorTub is all-manual now, same as 'state'
-    // always was ('Emptied' is a one-way, server-enforced transition — see
-    // scoop_enforce_tub_rules — so a deliberate Save was always right for it).
+    // then went all-manual for a while: mixing the two on one grid meant a
+    // filter change (or any other full-domain refresh) silently discarded
+    // whatever was still pending on the manual side while the autosaved side
+    // had already landed — from the user's seat, indistinguishable from data
+    // loss. Autosave needs to be all-or-nothing per grid.
+    //
+    // Now full autosave instead of all-manual — every writeable field,
+    // 'state' included. 'state' was the reason it stayed manual originally
+    // ('Emptied' used to be a fully permanent, one-way transition — a
+    // mis-click had no way back, so a deliberate Save made sense as a last
+    // checkpoint). That's no longer true: the 'emptied_window' filter keeps a
+    // recently-emptied tub visible and its 'state' genuinely writeable
+    // server-side for RECENTLY_EMPTIED_CEILING_HOURS after emptied_at (see
+    // _activeTubs and scoop_enforce_tub_rules), so an autosaved mis-click is
+    // just as correctable as a manual one was.
+    this.autosave = true;
     this.filter = true;
     this.filterValues = {
       designation: 'all',
       allergens: 'all',
       use_badge: 'all',
+      emptied_window: '4h',
     };
     this.setShowList(['index', 'state', 'use', 'amount', 'author_name', 'post_modified']);
   }
@@ -65,6 +99,14 @@ export default class FlavorTubGridModel extends BaseGridModel{
         mode: 'client',
         default: 'all',
         options: this._useFilterOptions(),
+      },
+      {
+        key: 'emptied_window',
+        label: 'Recently Emptied',
+        type: 'select',
+        mode: 'client',
+        default: '4h',
+        options: EMPTIED_WINDOW_OPTIONS.map(({ key, label }) => ({ key, label })),
       },
     ];
   }
@@ -107,6 +149,7 @@ export default class FlavorTubGridModel extends BaseGridModel{
         ].filter(Boolean),
         fillRow       : (row, item, i) => {
           this.fillRowFromColumns(row, item, i);
+          if (item.state === 'Emptied') row._recentlyEmptied = true;
         },
         collapsed     : true,
         groupType     :'flavor',
@@ -116,8 +159,31 @@ export default class FlavorTubGridModel extends BaseGridModel{
   }
 
   _activeTubs(items = []) {
-    return this.filterByLocation(items)
-      .filter(t => t.state !== "Emptied");
+    const windowHours = this._emptiedWindowHours();
+    const located = this.filterByLocation(items);
+
+    if (!windowHours) return located.filter(t => t.state !== "Emptied");
+
+    const cutoff = Date.now() - windowHours * 60 * 60 * 1000;
+    return located.filter(t => {
+      if (t.state !== "Emptied") return true;
+      const emptiedMs = this._parseServerDateMs(t.emptied_at);
+      return emptiedMs !== null && emptiedMs >= cutoff;
+    });
+  }
+
+  _emptiedWindowHours() {
+    const opt = EMPTIED_WINDOW_OPTIONS.find(o => o.key === this.getFilterValue('emptied_window'));
+    return opt?.hours ?? 0;
+  }
+
+  // Shared by _activeTubs (emptied_at) and _sortGroupsByModifiedDesc
+  // (post_modified/changed_on/post_date) — server datetimes come back as
+  // "YYYY-MM-DD HH:MM:SS", which Date only parses reliably with a 'T'.
+  _parseServerDateMs(raw) {
+    if (!raw) return null;
+    const ts = new Date(String(raw).replace(' ', 'T')).getTime();
+    return Number.isFinite(ts) ? ts : null;
   }
 
   // Reorder the flavor groups so the flavor with the most recently modified
@@ -135,9 +201,7 @@ export default class FlavorTubGridModel extends BaseGridModel{
 
   _modifiedTime(tub) {
     const raw = tub?.post_modified || tub?.changed_on || tub?.post_date || '';
-    if (!raw) return -Infinity;
-    const ts = new Date(String(raw).replace(' ', 'T')).getTime();
-    return Number.isFinite(ts) ? ts : -Infinity;
+    return this._parseServerDateMs(raw) ?? -Infinity;
   }
 
   _filterGroups(groupsMap, designationsByFlavorId) {

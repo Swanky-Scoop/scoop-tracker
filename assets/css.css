@@ -49,6 +49,12 @@
   --color-dirty-cell-bg: #F0C674;
   --color-dirty-group-outline: #5A2A18;
 
+  /* Recently-emptied tub row (still correctable — see RECENTLY_EMPTIED_HOURS
+     in flavor-tub-grid-model.js and scoop_enforce_tub_rules). Pale red by
+     default; swap for a dark grey (e.g. #4A4A4A) if red reads as too alarming
+     for something that's often just routine end-of-day bookkeeping. */
+  --color-recently-emptied-row-bg: #F6DCDC;
+
   /* Border Colors */
   --color-border-main: rgba(0, 50, 0, 1);
   --color-border-light: rgba(50, 100, 50, 0.33);
@@ -332,14 +338,18 @@ html body {
     &.PAGE-STATUS-ETA {
       display: block;
     }
-    &.PAGE-STATUS-EDITING {
-      display: block;
-    }
   }
 
+  /* Mid-edit, the header <em> already reads "Edit in progress" (see
+     page-status.js's _updateHeaderText) — the load-time readout is stale,
+     unrelated info at that point, not worth showing alongside it. */
   &.in-progress {
     background-color: var(--color-alert-opened);
     color: var(--color-text-white);
+
+    & > ul > li.PAGE-STATUS-ETA {
+      display: none;
+    }
   }
 
   &.error {
@@ -1635,21 +1645,60 @@ table.zGRID tr .badges .badge.warning {
 .zGRID td.cell-saved { animation: scoopCellSaved 0.8s ease-out; }
 .zGRID td.cell-error { animation: scoopCellError 0.8s ease-out; }
 
+/* ── Recently-emptied tub rows ────────────────────────────────────────────
+   FlavorTubGridModel keeps a tub visible (and correctable) for
+   RECENTLY_EMPTIED_HOURS after it's marked Emptied — see that file's
+   _activeTubs(). !important so it always wins over .row-dirty/
+   .row-dirty-clearing below: Emptied is the more important signal at the
+   row level, even while she's actively correcting it. The one cell she's
+   actually typing into still gets its own orange via .cell-dirty
+   (also !important, more local/urgent than either row-level color). */
+.row-recently-emptied {
+  background-color: var(--color-recently-emptied-row-bg) !important;
+}
+
 /* ── Unsaved edits ("dirty" state) ────────────────────────────────────────
-   Live while a field differs from its last-saved baseline — see
-   List._refreshDirtyMarks(). Tag-agnostic on purpose (Grid uses <tr>/<td>,
-   Tile uses <li>/<div>) so both views pick these up the same way. */
+   Covers two states that read the same visually — changed-not-saved
+   (dirtySet) and changed-but-not-yet-confirmed-by-a-real-refresh
+   (awaitingRefreshSet) — see the constructor comment on awaitingRefreshSet
+   in _list.js for why the color deliberately does NOT clear the instant a
+   save POST confirms: the server can rewrite/revert what was sent (see
+   scoop_enforce_tub_rules), so only a genuine domain refetch actually
+   proves the value stuck. Tag-agnostic on purpose (Grid uses <tr>/<td>,
+   Tile uses <li>/<div>) so both views pick these up the same way.
+
+   The *-clearing variants aren't toggled by a timer — List._onDomainUpdated
+   stamps them onto the freshly-rebuilt elements that just got confirmed by
+   a real refresh (see _flashResolvedMarks/_flashClearing), so the fade only
+   ever plays once resolution is genuine. DIRTY_CLEAR_FADE_MS there must
+   match the transition durations here. */
 [data-row-id].row-dirty {
   background-color: var(--color-dirty-row-bg);
+}
+
+[data-row-id].row-dirty-clearing {
+  background-color: transparent;
+  transition: background-color 0.6s ease-out;
 }
 
 .cell-dirty {
   background-color: var(--color-dirty-cell-bg) !important;
 }
 
+.cell-dirty-clearing {
+  background-color: transparent !important;
+  transition: background-color 0.6s ease-out;
+}
+
 [data-group-container].group-dirty {
   outline: 2px solid var(--color-dirty-group-outline);
   outline-offset: -1px;
+}
+
+[data-group-container].group-dirty-clearing {
+  outline: 2px solid transparent;
+  outline-offset: -1px;
+  transition: outline-color 0.6s ease-out;
 }
 
 @keyframes scoopCellSaved {

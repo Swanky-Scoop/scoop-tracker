@@ -114,9 +114,21 @@ function scoop_entity_specs(string $key = ''): array {
             }
           }
 
-          // Other grids need: active tubs (not Emptied)
-          if ($has_other_grids && $state !== 'Emptied') {
-            return true;
+          // Other grids need: active tubs, plus ones emptied recently enough
+          // to still count as "active" for FlavorTubGridModel's purposes
+          // (see RECENTLY_EMPTIED_HOURS there) and, per scoop_enforce_tub_rules,
+          // still be correctable — SCOOP_TUB_EMPTIED_REVERT_HOURS (defined in
+          // hooks/tub-state.php) is the single window all three are keyed
+          // off of, so anything the bundle includes is also still fixable.
+          if ($has_other_grids) {
+            if ($state !== 'Emptied') return true;
+
+            $emptied_at = $row['emptied_at'] ?? '';
+            if (!scoop_nodate($emptied_at)) {
+              $hours = defined('SCOOP_TUB_EMPTIED_REVERT_HOURS') ? SCOOP_TUB_EMPTIED_REVERT_HOURS : 0;
+              $ts    = strtotime((string) $emptied_at);
+              if ($ts !== false && $ts >= (time() - $hours * HOUR_IN_SECONDS)) return true;
+            }
           }
 
           return false;

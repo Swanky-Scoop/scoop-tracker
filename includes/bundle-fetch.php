@@ -350,9 +350,20 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     // Reverted: always exclude Emptied here. Details falls back to a plain
     // "tub #id" label for tubs old enough to have been trimmed — a small
     // cosmetic downgrade, not a crash.
+    //
+    // One bounded exception: tubs emptied within the last
+    // SCOOP_TUB_EMPTIED_REVERT_HOURS (see hooks/tub-state.php) still pass —
+    // FlavorTubGridModel's "recently emptied" filter and scoop_enforce_tub_rules'
+    // revert window both key off that same fixed ceiling, so this stays a
+    // small, bounded addition to the result set, not the unbounded "entire
+    // history" query that crashed things before. The cutoff is computed from
+    // current_time('mysql') (not SQL NOW()) to match the clock emptied_at was
+    // actually stamped with — see scoop_touch_tub_post_modified.
     $include_empty = ! empty( $ctx['include_empty_tubs'] );
     if ( ! $include_empty ) {
-      $where_clauses[] = "state != 'Emptied'";
+      $revert_hours = defined( 'SCOOP_TUB_EMPTIED_REVERT_HOURS' ) ? (int) SCOOP_TUB_EMPTIED_REVERT_HOURS : 0;
+      $cutoff_sql   = esc_sql( date( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) - ( $revert_hours * HOUR_IN_SECONDS ) ) );
+      $where_clauses[] = "(state != 'Emptied' OR emptied_at >= '{$cutoff_sql}')";
     }
 
     // DateActivity-only tub bundles should not scan every historical tub.

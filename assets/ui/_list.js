@@ -31,6 +31,12 @@ import Toast      from "./toast.js";
 import Details    from "./details.js";
 import PageStatus from "./page-status.js";
 
+// Fade duration for a dirty marker resolving once the domain that confirms
+// it actually lands — see _flashResolvedMarks(). Must match the
+// `transition` durations on .cell-dirty-clearing/.row-dirty-clearing/
+// .group-dirty-clearing in css.css.
+const DIRTY_CLEAR_FADE_MS = 600;
+
 export default class List extends El{
   constructor(target, name, config = {}) {
     super();
@@ -61,6 +67,15 @@ export default class List extends El{
 
     this.baseline = new Map();
     this.dirtySet = new Set();
+    // A cell moves here from dirtySet the instant its save is confirmed
+    // (_commitPosted) — it's no longer at risk of being lost, but the DOM
+    // still hasn't been rebuilt from a domain fetch that actually reflects
+    // it, so it's not "current" yet either. Only clears once a genuine
+    // domain refresh lands and rebuilds this grid — see _onDomainUpdated.
+    // Three states this + dirtySet together capture: dirty (in dirtySet) =
+    // changed, not saved; here-not-dirtySet = changed, not refreshed; in
+    // neither = current.
+    this.awaitingRefreshSet = new Set();
     this.state = null;
     this.filter = null;
     this._isInit = false;
@@ -540,6 +555,7 @@ export default class List extends El{
         const k = `${rowId}|${colKey}`;
         this.baseline.set(k, val);
         this.dirtySet.delete(k);
+        this.awaitingRefreshSet.add(k);
         this._refreshDirtyMarks(rowId, colKey);
 
         // Clear whatever this save covered out of a resumed draft too, so a
@@ -915,30 +931,98 @@ export default class List extends El{
     this._reportEditingState();
   }
 
-  // Reflects dirtySet onto the DOM as it changes, at three levels: the
-  // specific cell that's unsaved, the row it's in (dirty if ANY of its cells
-  // are), and the group it's in (dirty if ANY of its rows are) — see
+  // Reflects dirtySet + awaitingRefreshSet onto the DOM as they change, at
+  // three levels: the specific cell, the row it's in (marked if ANY of its
+  // cells are), and the group it's in (marked if ANY of its rows are) — see
   // css.css's --color-dirty-* variables for what these classes look like.
-  // Called both live as the user types (_handleCellChange) and once a change
-  // is confirmed saved (_commitPosted), so it always reflects dirtySet's
-  // current truth rather than assuming who called it last.
+  // "Marked" here means changed-not-saved OR changed-not-refreshed — both
+  // read the same visually (still unsettled); see the constructor comment
+  // on awaitingRefreshSet for why they're tracked as two sets instead of
+  // one. Called live as the user types (_handleCellChange), once a change
+  // is confirmed saved (_commitPosted), and once it's actually resolved by
+  // a real domain refresh (_flashResolvedMarks) — always instant, both
+  // directions; the visible "fade" only happens at the third point, once a
+  // fetched domain has actually confirmed the value, not on a guessed timer.
   _refreshDirtyMarks(rowId, colKey) {
     const h = this.FORM.querySelector(
       `input[type="hidden"][name="${this.name}[cells][${rowId}][${colKey}]"]`
     );
     if (!h) return;
 
+    const k = `${rowId}|${colKey}`;
     const CELL = h.closest('td, [data-field]') ?? h.parentElement;
-    CELL?.classList.toggle('cell-dirty', this.dirtySet.has(`${rowId}|${colKey}`));
+    CELL?.classList.toggle('cell-dirty', this.dirtySet.has(k) || this.awaitingRefreshSet.has(k));
 
     const ROW = h.closest('[data-row-id]');
     if (!ROW) return;
 
-    const rowDirty = [...this.dirtySet].some(k => k.startsWith(`${rowId}|`));
-    ROW.classList.toggle('row-dirty', rowDirty);
+    const rowMarked = [...this.dirtySet, ...this.awaitingRefreshSet].some(key => key.startsWith(`${rowId}|`));
+    ROW.classList.toggle('row-dirty', rowMarked);
 
     const GROUP = ROW.closest('[data-group-container]');
-    if (GROUP) GROUP.classList.toggle('group-dirty', !!GROUP.querySelector('.row-dirty'));
+    if (!GROUP) return;
+
+    const groupRowIds = new Set(
+      [...GROUP.querySelectorAll('[data-row-id]:not(.group)')].map(el => el.dataset.rowId)
+    );
+    const groupMarked = [...this.dirtySet, ...this.awaitingRefreshSet].some(key => groupRowIds.has(key.split('|')[0]));
+    GROUP.classList.toggle('group-dirty', groupMarked);
+  }
+
+  // Called from _onDomainUpdated right after a real domain refresh rebuilds
+  // this grid — resolvedKeys is whatever was in awaitingRefreshSet just
+  // before that rebuild (already cleared by the caller, and the fresh DOM
+  // it just built has none of the dirty/awaiting classes on it, since
+  // _refreshDirtyMarks was never called for the new elements). This briefly
+  // stamps the *-clearing variant onto the elements that correspond to
+  // those resolved keys, then lets css.css's transition fade them out over
+  // DIRTY_CLEAR_FADE_MS — so confirmation reads as a deliberate fade rather
+  // than the marker just never having been there.
+  _flashResolvedMarks(resolvedKeys) {
+    if (!resolvedKeys.length) return;
+
+    const resolvedRows = new Set();
+    const resolvedGroups = new Set();
+
+    for (const k of resolvedKeys) {
+      const [rowIdStr, colKey] = k.split('|');
+      const rowId = Number(rowIdStr);
+
+      const h = this.FORM.querySelector(
+        `input[type="hidden"][name="${this.name}[cells][${rowId}][${colKey}]"]`
+      );
+      if (!h) continue; // no longer rendered (e.g. filtered out by the refresh)
+
+      const CELL = h.closest('td, [data-field]') ?? h.parentElement;
+      this._flashClearing(CELL, 'cell-dirty', 'cell-dirty-clearing');
+
+      const ROW = h.closest('[data-row-id]');
+      if (ROW) resolvedRows.add(ROW);
+
+      const GROUP = ROW?.closest('[data-group-container]');
+      if (GROUP) resolvedGroups.add(GROUP);
+    }
+
+    resolvedRows.forEach(ROW => this._flashClearing(ROW, 'row-dirty', 'row-dirty-clearing'));
+    resolvedGroups.forEach(GROUP => this._flashClearing(GROUP, 'group-dirty', 'group-dirty-clearing'));
+  }
+
+  // The *-clearing classes only define the FADED-OUT end state (transparent
+  // + a transition) — on a freshly-rebuilt element there's nothing colored
+  // to transition FROM, so swapping straight to *-clearing would just be
+  // transparent the whole time, no visible flash at all. So: apply the
+  // solid dirtyClass first, force the browser to actually paint that (the
+  // offsetWidth read below flushes pending style changes — a plain
+  // classList.add() followed immediately by another change would otherwise
+  // get coalesced into one paint with no transition to animate across),
+  // *then* swap to clearingClass so the transition has a real start point.
+  _flashClearing(EL, dirtyClass, clearingClass) {
+    if (!EL) return;
+    EL.classList.add(dirtyClass);
+    void EL.offsetWidth;
+    EL.classList.remove(dirtyClass);
+    EL.classList.add(clearingClass);
+    setTimeout(() => EL.classList.remove(clearingClass), DIRTY_CLEAR_FADE_MS);
   }
 
   // ─── Autosave ──────────────────────────────────────────────────────────────
@@ -1258,7 +1342,18 @@ export default class List extends El{
 
           // Refresh with updated model
           if (this._isInit) {
+            // Whatever's still pending here is about to be genuinely
+            // resolved by this rebuild — snapshot it before refresh()
+            // rebuilds the DOM out from under it (fresh elements carry no
+            // dirty/awaiting classes at all), then flash the fade on the
+            // new elements that correspond to it. See awaitingRefreshSet's
+            // constructor comment and _flashResolvedMarks.
+            const resolvedKeys = [...this.awaitingRefreshSet];
+            this.awaitingRefreshSet.clear();
+
             await this.refresh(this.modelInstance);
+            this._flashResolvedMarks(resolvedKeys);
+
             if (this._postSubmitFocus) {
               this._postSubmitFocus = false;
               this._focusAfterSubmit();

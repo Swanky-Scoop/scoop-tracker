@@ -169,38 +169,18 @@ export default class FindIt extends El {
 
   // Reset to "no selection": blanks the committed value AND the visible text so
   // the cell never shows a stray, unselected string. Used by the blur handler
-  // when the field is empty or the typed text matches nothing.
+  // when the field is empty or the typed text matches nothing. "0" and ""
+  // both mean "no selection" in this codebase (see clear() vs this) — either
+  // counts as already-empty so tabbing through an already-unset field
+  // doesn't fire a spurious change.
   _clearValue() {
+    const alreadyEmpty = this.value === "" || this.value === "0";
+
     this.value   = "";
     this.display = "";
     if (this.HDN) this.HDN.value = "";
     if (this.INP) this.INP.value = "";
-    this.HDN?.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
-  }
-
-  clear() {    
-    this.HDN.value = "0";
-    this.INP.value = "";
-    this.value = "0";
-    this.display = "";
-    this._applyFilter("", { noPaint: !this.isOpen });
-    
-    this.HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
-  }
-
-  select(op) {
-    
-    const key = op?.key;
-
-    this.value   = key == null ? "0" : String(key);
-    this.display = String(op?.label ?? "");
-
-    this.HDN.value = this.value;
-    this.INP.value = this.display;
-
-    this.onSelect?.(op);
-    this.HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
-    this.close();
+    if (!alreadyEmpty) this.HDN?.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
   }
 
   update(value = (this.value ?? ''), { refresh = true, resolve = this.resolve } = {}) {
@@ -249,25 +229,34 @@ export default class FindIt extends El {
   }
 
   clear() {
+    const alreadyEmpty = this.value === "0" || this.value === "";
+
     this.HDN.value = "0";
     this.INP.value = "";
     this.value = "0";
     this.display = "";
     this._applyFilter("", { noPaint: !this.isOpen });
-    this.HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
+    if (!alreadyEmpty) this.HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
   }
 
+  // Tabbing into a cell and back out without touching anything re-runs the
+  // blur handler below, which calls this with whatever option still matches
+  // the unchanged display text — same key, same label. Only dispatch (and
+  // thus only mark the cell dirty) when the selection actually moved.
   select(op) {
     const key = op?.key;
+    const newValue   = key == null ? "0" : String(key);
+    const newDisplay = String(op?.label ?? "");
+    const unchanged  = newValue === this.value && newDisplay === this.display;
 
-    this.value   = key == null ? "0" : String(key);
-    this.display = String(op?.label ?? "");
+    this.value   = newValue;
+    this.display = newDisplay;
 
     this.HDN.value = this.value;
     this.INP.value = this.display;
 
     this.onSelect?.(op);
-    this.HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
+    if (!unchanged) this.HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
     this.close();
   }
 

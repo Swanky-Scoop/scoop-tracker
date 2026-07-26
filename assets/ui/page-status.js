@@ -159,22 +159,11 @@ export default class PageStatus {
 
   static _recomputeEditingState() {
     const DIV = PageStatus._ensureHost();
-    const UL = DIV.querySelector('ul');
     const anyEditing = PageStatus._editingIds.size > 0 && !PageStatus._anyGridFetching();
     PageStatus._anyEditing = anyEditing;
 
     document.body.classList.toggle('in-progress', anyEditing);
     DIV.classList.toggle('in-progress', anyEditing);
-
-    let LI = UL.querySelector(':scope > li.PAGE-STATUS-EDITING');
-    if (anyEditing) {
-      if (!LI) {
-        LI = DOM.el('li', { classes: ['PAGE-STATUS-EDITING'], text: 'Edits in progress' });
-        UL.prepend(LI);
-      }
-    } else if (LI) {
-      LI.remove();
-    }
 
     PageStatus._updateHeaderText();
   }

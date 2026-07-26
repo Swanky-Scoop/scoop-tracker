@@ -69,7 +69,10 @@ export default class Grid extends List {
   }
 
   buildItemDom(row) {
-    return this.el('tr', { classes: ['row'], data: { rowId: row?.id?.rowId ?? row?.id ?? 0 } });
+    return this.el('tr', {
+      classes: ['row', row?._recentlyEmptied ? 'row-recently-emptied' : null],
+      data: { rowId: row?.id?.rowId ?? row?.id ?? 0 },
+    });
   }
 
   buildFieldDom(col, data) {

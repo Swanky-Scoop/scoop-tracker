@@ -97,6 +97,18 @@ function scoop_auto_update_tub_changed_on($pieces, $is_new_item) {
   return $pieces;
 }
 
+// How long after emptied_at a tub's state can still be reverted away from
+// 'Emptied' (see scoop_enforce_tub_rules below) — must match
+// RECENTLY_EMPTIED_HOURS in assets/models/flavor-tub-grid-model.js (which
+// governs whether the tub even shows as "active" client-side) and the
+// tub entity's bundle filter in includes/_specs.php (which governs whether
+// the bundle includes it at all), so anything visible is also correctable.
+// Past this window the transition is locked forever, same as it always was
+// (override in wp-config.php).
+if (!defined('SCOOP_TUB_EMPTIED_REVERT_HOURS')) {
+  define('SCOOP_TUB_EMPTIED_REVERT_HOURS', 48);
+}
+
 /**
  * Enforce tub state transition rules and auto-set state-based timestamps
  * Priority 10 (default) - runs after created_on is set and changed_on is updated
@@ -175,11 +187,32 @@ function scoop_enforce_tub_rules( $pieces, $is_new_item, $id = 0 ) {
     if ($state_changed) {
 
       if ($old_state === 'Emptied') {
-        
-        // Revert just the state field (do not return $old_all)
-        $pieces['fields']['state']['value'] = $old_state;
-        $activate('state');
-        $new_state = $old_state;
+
+        $emptied_ts     = scoop_nodate($old_emptied_at) ? false : strtotime($old_emptied_at);
+        $revert_horizon = time() - (SCOOP_TUB_EMPTIED_REVERT_HOURS * HOUR_IN_SECONDS);
+
+        if ($emptied_ts === false || $emptied_ts < $revert_horizon) {
+          // Past the correction window (or no emptied_at to measure from) —
+          // locked forever, as before.
+          $pieces['fields']['state']['value'] = $old_state;
+          $activate('state');
+          $new_state = $old_state;
+        } else {
+          // Within the window — allow the revert, but clear the now-stale
+          // emptied_at so the tub stops reading as "recently emptied" once
+          // it's active again (it's system-controlled, only meaningful while
+          // state actually is 'Emptied' — see the timestamp block above).
+          $pieces['fields']['emptied_at']['value'] = '0000-00-00 00:00:00';
+          $activate('emptied_at');
+          $new_emptied_at = '0000-00-00 00:00:00';
+
+          // Restore the post_status demotion from when it emptied (see the
+          // 'Emptied' auto-set-timestamps block below) — an un-emptied tub
+          // is active again and belongs back in 'publish', symmetric with
+          // how it was demoted to 'draft' on the way in.
+          $pieces['object_fields']['post_status']['value'] = 'publish';
+          $activate('post_status');
+        }
 
       } elseif ($old_state === 'Opened' && !in_array($new_state, ['Opened', 'Emptied'], true)) {
         
