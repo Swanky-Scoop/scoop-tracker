@@ -1261,6 +1261,21 @@ export default class List extends El{
           return;
         }
 
+        // Opt-out for grids that shouldn't be repainted by refreshes they
+        // didn't cause (model sets `repaintOnRefresh = false` — e.g.
+        // Batch/Closeout, floating "create new" widgets that always render
+        // one blank row and have nothing persisted for the repaint to bring
+        // "up to date"; any other grid's save on the page would otherwise
+        // wipe whatever's mid-typed here). Still let the grid's OWN
+        // post-submit refresh through — _postSubmitFocus is only set right
+        // before that specific refresh, and that's what resets the form
+        // back to blank after a successful create.
+        if (this.state?.repaintOnRefresh === false && !this._postSubmitFocus) {
+          if (this.modelInstance) this.modelInstance.setDomain(this.api.getDomainSnapshot());
+          if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'fresh');
+          return;
+        }
+
         this._reloading = true;
         try {
           // Get fresh domain from API

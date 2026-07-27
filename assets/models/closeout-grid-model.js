@@ -6,6 +6,12 @@ export default class CloseoutGridModel extends BaseGridModel{
   {
     super(name, domain, attrs );
       this.submitMode = 'all';
+      // Always a single blank "create new closeout" row, not a view onto
+      // persisted data — a background refresh from some other grid's save
+      // has nothing here to bring up to date, so don't let it repaint
+      // mid-typing. See the repaintOnRefresh check in _list.js's
+      // _onDomainUpdated.
+      this.repaintOnRefresh = false;
   }
 
   buildCols() {
