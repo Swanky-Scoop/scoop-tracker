@@ -149,8 +149,8 @@ export default class ConfirmSwapModal extends El {
     this.CONFIRM_BTN.disabled = !tub;
 
     this._renderFlavorLine(this.CURRENT_P, '', row.flavorId, row.flavorTitle, row.location, false);
-    this._renderFlavorLine(this.IMMEDIATE_P, 'Next scheduled flavor is', row.immediateFlavorId, row.immediateFlavorTitle, row.location, true);
-    this._renderFlavorLine(this.NEXT_P, 'Then scheduled flavor is', row.nextFlavorId, row.nextFlavorTitle, row.location, true);
+    this._renderFlavorLine(this.IMMEDIATE_P, 'Next-up,', row.immediateFlavorId, row.immediateFlavorTitle, row.location, true);
+    this._renderFlavorLine(this.NEXT_P, 'After that,', row.nextFlavorId, row.nextFlavorTitle, row.location, true);
 
     // reload === false: planned rotation takes priority over current_flavor
     // in both the default target (_defaultFlavorId) and here, the display
@@ -198,7 +198,7 @@ export default class ConfirmSwapModal extends El {
       P.append(flavorTitle);
     }
 
-    P.append(' has ', this.el('b', { text: String(total) }), ' remaining tubs, ', this.el('b', { text: String(here) }), ' are here.');
+    P.append(' has ', this.el('b', { text: String(total) }), ' and ', this.el('b', { text: String(here) }), ' here.');
   }
 
   async _confirm() {

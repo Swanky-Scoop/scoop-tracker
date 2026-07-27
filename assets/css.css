@@ -335,8 +335,10 @@ html body {
   }
 
   & > ul > li,
+  & .cached,
   & .cache-bust.actual {
     display:none;
+
     &.PAGE-STATUS-ETA {
       display: block;
     }
