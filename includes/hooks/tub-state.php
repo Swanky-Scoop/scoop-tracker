@@ -106,7 +106,7 @@ function scoop_auto_update_tub_changed_on($pieces, $is_new_item) {
 // Past this window the transition is locked forever, same as it always was
 // (override in wp-config.php).
 if (!defined('SCOOP_TUB_EMPTIED_REVERT_HOURS')) {
-  define('SCOOP_TUB_EMPTIED_REVERT_HOURS', 48);
+  define('SCOOP_TUB_EMPTIED_REVERT_HOURS', 96);
 }
 
 /**

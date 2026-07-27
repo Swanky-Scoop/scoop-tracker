@@ -16,7 +16,7 @@ const FRONT_OF_HOUSE_USE_ID = 1863;
 // the bundle includes it at all). Must match. The 'emptied_window' filter
 // below only narrows DISPLAY within whatever's already been fetched, so
 // none of its options can exceed this.
-const RECENTLY_EMPTIED_CEILING_HOURS = 48;
+const RECENTLY_EMPTIED_CEILING_HOURS = 96;
 
 // GUI-selectable look-back windows for the 'emptied_window' filter, entirely
 // client-side (no refetch on change — everything within the ceiling above
@@ -28,7 +28,7 @@ const RECENTLY_EMPTIED_CEILING_HOURS = 48;
 // rather than requiring an opt-in click every time.
 const EMPTIED_WINDOW_OPTIONS = [
   { key: 'off', label: 'Hide' },
-  ...[4, 8, 12, 24, 36, 48]
+  ...[4, 8, 12, 24, 36, 48, 72, 96]
     .filter(hours => hours <= RECENTLY_EMPTIED_CEILING_HOURS)
     .map(hours => ({ key: `${hours}h`, label: `${hours} hrs`, hours })),
 ];
