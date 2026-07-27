@@ -37,23 +37,21 @@ export default class FlavorTubGridModel extends BaseGridModel{
   constructor(name = 'FlavorTub', domain, attrs = {})
   {
     super(name, domain, attrs );
-    // Was partial autosave ('use'/'amount' autosaved, 'state' manual-only),
-    // then went all-manual for a while: mixing the two on one grid meant a
-    // filter change (or any other full-domain refresh) silently discarded
-    // whatever was still pending on the manual side while the autosaved side
-    // had already landed — from the user's seat, indistinguishable from data
-    // loss. Autosave needs to be all-or-nothing per grid.
+    // History: partial autosave ('use'/'amount' autosaved, 'state'
+    // manual-only) → all-manual (mixing the two meant a filter change, or
+    // any other full-domain refresh, silently discarded whatever was still
+    // pending on the manual side while the autosaved side had already
+    // landed) → full autosave, every writeable field including 'state'.
+    // Autosave needs to be all-or-nothing per grid either way.
     //
-    // Now full autosave instead of all-manual — every writeable field,
-    // 'state' included. 'state' was the reason it stayed manual originally
-    // ('Emptied' used to be a fully permanent, one-way transition — a
-    // mis-click had no way back, so a deliberate Save made sense as a last
-    // checkpoint). That's no longer true: the 'emptied_window' filter keeps a
-    // recently-emptied tub visible and its 'state' genuinely writeable
-    // server-side for RECENTLY_EMPTIED_CEILING_HOURS after emptied_at (see
-    // _activeTubs and scoop_enforce_tub_rules), so an autosaved mis-click is
-    // just as correctable as a manual one was.
-    this.autosave = true;
+    // Back to all-manual: full autosave raced a background domain refresh
+    // against active typing — _commitPosted cleared a field's dirty flag as
+    // soon as its own autosave POST resolved, even if the user had typed
+    // more into that same field while the POST was in flight, so the next
+    // refresh rebuilt the DOM from the (now stale) committed value and
+    // discarded those newer keystrokes. That race is fixed in _list.js, but
+    // this grid moves back to manual Save regardless while that fix bakes.
+    this.autosave = false;
     this.filter = true;
     this.filterValues = {
       designation: 'all',

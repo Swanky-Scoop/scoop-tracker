@@ -592,8 +592,18 @@ export default class List extends El{
       for (const [colKey, val] of Object.entries(row ?? {})) {
         const k = `${rowId}|${colKey}`;
         this.baseline.set(k, val);
-        this.dirtySet.delete(k);
-        this.awaitingRefreshSet.add(k);
+
+        // She may have kept typing while this POST was in flight (autosave
+        // debounces 250ms, then waits on the network) — the live input can
+        // already differ from the value we just committed. Only clear the
+        // dirty flag if it still matches; otherwise leave it dirty so the
+        // next autosave sweep picks up the newer keystrokes instead of a
+        // background domain refresh rebuilding the DOM out from under her
+        // and discarding them (see the dirty guard in _onDomainUpdated).
+        if (this._normValue(colKey, this._liveValue(rowId, colKey)) === this._normValue(colKey, val)) {
+          this.dirtySet.delete(k);
+          this.awaitingRefreshSet.add(k);
+        }
         this._refreshDirtyMarks(rowId, colKey);
 
         // Clear whatever this save covered out of a resumed draft too, so a
@@ -938,6 +948,20 @@ export default class List extends El{
     return null;
   }
 
+  // Reads a cell's current live DOM value, normalized the same way
+  // _handleCellChange compares it — shared with _commitPosted so it can
+  // tell whether a field is still dirty after an autosave POST that may
+  // have raced with more typing.
+  _liveValue(rowId, colKey) {
+    const input = this.FORM.querySelector(
+      `input[type="hidden"][name="${this.name}[cells][${rowId}][${colKey}]"]`
+    );
+    if (!input) return null;
+    return (input.name.indexOf('[state]') === -1)
+      ? this.formCodec.normalizeScalar(input.value ?? "")
+      : input.value;
+  }
+
   _handleCellChange(e)
   {
     const h = e.target.closest('input[type="hidden"][name]');
@@ -951,8 +975,7 @@ export default class List extends El{
     const colKey = parsed[3];
     const k = `${rowId}|${colKey}`;
 
-    const v = (h.name.indexOf('[state]') === -1) ?
-      this.formCodec.normalizeScalar(h.value ?? "") : h.value;
+    const v = this._liveValue(rowId, colKey);
 
     const before = this._normValue(colKey, this.baseline.get(k));
     const after  = this._normValue(colKey, v);
