@@ -161,7 +161,33 @@ export default class ScoopAPI {
     try { data = text ? JSON.parse(text) : null; }
     catch { data = { ok: false, error: "Non-JSON response", raw: text }; }
 
+    // WP's cookie-auth check runs before any route's own permission_callback
+    // and fails with this specific code whenever the session cookie or its
+    // nonce is no longer valid — expired session, logged out in another tab,
+    // etc. That's distinct from a logged-in user just lacking permission for
+    // a route (which fails its own permission_callback instead, with a
+    // different code) — only THIS code means "not really logged in anymore",
+    // so it's the one safe to treat as a session timeout and bounce to login.
+    if (data?.code === 'rest_cookie_invalid_nonce') {
+      this._redirectToLogin();
+    }
+
     return { ok: res.ok, status: res.status, data, res };
+  }
+
+  // Shared by the reactive 401/expired-nonce check in _fetch above and the
+  // proactive 6h idle-logout below. Guarded so a burst of requests that all
+  // fail at once (e.g. autosave + a background refresh landing together)
+  // only navigates once instead of racing multiple redirects.
+  _redirectToLogin() {
+    if (this._redirectingToLogin) return;
+    this._redirectingToLogin = true;
+
+    // Built from the browser's actual origin, not a server-computed
+    // home_url() — WP's siteurl/home options can drift from the real host
+    // (e.g. a Local site cloned from prod without remapping URLs), which
+    // would otherwise bounce this tab to the wrong environment entirely.
+    location.href = `${window.location.origin}/wp-login.php?redirect_to=${encodeURIComponent(window.location.href)}`;
   }
 
   async getJson(url = this.baseUrl) {
@@ -432,11 +458,7 @@ export default class ScoopAPI {
       }
 
       alert("You've been logged out after a period of inactivity. Please log back in.");
-      // Built from the browser's actual origin, not a server-computed
-      // home_url() — WP's siteurl/home options can drift from the real host
-      // (e.g. a Local site cloned from prod without remapping URLs), which
-      // would otherwise bounce this tab to the wrong environment entirely.
-      location.href = `${window.location.origin}/wp-login.php?redirect_to=${encodeURIComponent(window.location.href)}`;
+      this._redirectToLogin();
     }, checkIntervalMs);
   }
 

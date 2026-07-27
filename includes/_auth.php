@@ -120,15 +120,32 @@ function scoop_write_permission($route_key, $route_auth_callback = 'scoop_user_c
     return function(\WP_REST_Request $req) use ($route_key, $route_auth_callback) {
         // Session/cookie auth only - no Basic Auth for writes
         if (!is_user_logged_in()) return false;
-        
+
         $user = wp_get_current_user();
         $method = $req->get_method();
-        
+
         // If additional auth callback provided, use it
-        $allowed = is_callable($route_auth_callback) 
+        $allowed = is_callable($route_auth_callback)
             ? call_user_func($route_auth_callback, $user, $route_key, $method)
             : true;
-        
+
         return $allowed;
     };
+}
+
+/**
+ * The homepage carries the [scoop_grid ...] shell for a logged-out visitor —
+ * previously that just rendered shortcode.php's "You must be logged in"
+ * paragraph in place. Send them to wp-login instead, same as an expired
+ * session gets bounced there client-side (see ScoopAPI._redirectToLogin in
+ * assets/data/scoop-api.js).
+ */
+add_action('template_redirect', 'scoop_require_login_for_homepage');
+function scoop_require_login_for_homepage() {
+    if (!is_front_page()) return;
+    if (is_user_logged_in()) return;
+
+    $current_url = home_url(esc_url_raw($_SERVER['REQUEST_URI'] ?? '/'));
+    wp_safe_redirect(wp_login_url($current_url));
+    exit;
 }
