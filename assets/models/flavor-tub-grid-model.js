@@ -68,6 +68,11 @@ export default class FlavorTubGridModel extends BaseGridModel{
     // column) that's the resolved label, which is what was actually asked
     // for here, not the underlying use post id.
     this.rowClassFields = ['state', 'use'];
+    // "Updated" (post_modified) reads as "2 hours ago"/"yesterday"/etc.
+    // instead of a plain date — see BaseGridModel._formatTimeAgo. Now that
+    // this grid is full autosave, post_modified changes on nearly every
+    // edit, so freshness-at-a-glance is more useful here than a calendar date.
+    this.relativeTimeFields = ['post_modified'];
     this.setShowList(['index', 'state', 'use', 'amount', 'author_name', 'post_modified']);
   }
 

@@ -10,6 +10,21 @@ import Indexer         from "../data/indexer.js";
 import Flavor          from "./_flavor.js";
 import ColumnsProvider from "./_column-provider.js";
 
+// _formatTimeAgo's day-scale tiers past "yesterday" — first one whose
+// `under` (days) the actual gap still falls under wins, so keep it ordered
+// finest-to-coarsest. A "year" is a flat 365 days from today, not calendar
+// years, per how this was asked for. Past 400 days the vague bucket stops
+// being useful and _formatTimeAgo falls through to an exact "X days old"
+// instead — no tier needed for that, it's the loop's fallback.
+const TIME_AGO_DAY_TIERS = [
+  { under: 7,   label: n => `${n} days ago` },
+  { under: 30,  label: () => 'More than a week ago' },
+  { under: 60,  label: () => 'More than 30 days ago' },
+  { under: 90,  label: () => 'More than 60 days ago' },
+  { under: 365, label: () => 'More than 90 days ago' },
+  { under: 400, label: () => 'More than a year ago' },
+];
+
 export default class BaseGridModel {
   
   // BaseGridModel - Split _build() into two phases
@@ -453,13 +468,20 @@ export default class BaseGridModel {
         ? this.titleFrom(id, col)
         : raw ?? "";
 
-      if (col.type === 'datetime') {
+      // col.type is the hand-authored-model convention, col.dataType is what
+      // server-driven metadata columns carry (see _list.js's
+      // _renderFieldValue for the same split) — check both, or a
+      // server-metadata datetime column (e.g. FlavorTub's post_modified)
+      // never hits this branch at all and shows the raw ISO string instead.
+      if ((col.type ?? col.dataType) === 'datetime') {
         const date = new Date(raw);
         display = Number.isFinite(date.getTime())
-          ? date.toLocaleDateString('en-US', this.dateFormat)
+          ? (this.relativeTimeFields?.includes(col.key)
+              ? this._formatTimeAgo(date)
+              : date.toLocaleDateString('en-US', this.dateFormat))
           : '';
       }
-      
+
       row[key] = {
         id,
         rowId:     rowData?.id || i,
@@ -478,6 +500,44 @@ export default class BaseGridModel {
         write:     col.write ?? false
       };
     }
+  }
+
+  // Opt-in per model via this.relativeTimeFields = ['post_modified', ...] —
+  // a list of datetime column keys that should render as "2 hours ago" /
+  // "yesterday" / "3 days ago" instead of a plain locale date. Coarsens in
+  // widening steps past a week (see TIME_AGO_DAY_TIERS) — this is meant to
+  // answer "how fresh is this" at a glance, not serve as a precise audit
+  // trail; the exact timestamp is still in the underlying data for anything
+  // that needs it (e.g. Details).
+  _formatTimeAgo(date) {
+    const now = Date.now();
+    const diffMs = now - date.getTime();
+    if (diffMs < 0) return 'just now'; // clock skew — a future timestamp shouldn't read as nonsense
+
+    const MINUTE = 60 * 1000, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
+
+    if (diffMs < MINUTE) return 'just now';
+    if (diffMs < HOUR) {
+      const m = Math.floor(diffMs / MINUTE);
+      return `${m} minute${m === 1 ? '' : 's'} ago`;
+    }
+    if (diffMs < DAY) {
+      const h = Math.floor(diffMs / HOUR);
+      return `${h} hour${h === 1 ? '' : 's'} ago`;
+    }
+
+    // Calendar-day based from here, not a raw 24h multiple — a 6pm edit
+    // read at 9am the next morning is 15h ago by the clock, but should read
+    // "yesterday", not still be stuck under the hour bucket above.
+    const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const dayDiff = Math.round((startOfDay(new Date(now)) - startOfDay(date)) / DAY);
+
+    if (dayDiff <= 1) return 'yesterday';
+
+    for (const tier of TIME_AGO_DAY_TIERS) {
+      if (dayDiff < tier.under) return tier.label(dayDiff);
+    }
+    return `${dayDiff} days old`;
   }
 
   //invalidate() { this._cache = null; this._inflight = null; }
