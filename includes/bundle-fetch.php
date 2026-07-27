@@ -477,6 +477,18 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
         $row['author_name'] = scoop_text_out(
           get_the_author_meta( 'display_name', (int) ( $pod->row['post_author'] ?? 0 ) )
         );
+      } elseif ( $field === 'editor_name' ) {
+        // Not a Pods/post field — stamped as postmeta by scoop_stamp_tub_editor
+        // (includes/hooks/tub-state.php) on every real edit. Display-only
+        // fallback to the original author until a tub gets its first edit
+        // post-deploy — deliberately NOT backfilled into the postmeta itself,
+        // since that would make "never edited" indistinguishable from
+        // "actually edited by the original author" once a real edit happens.
+        $editor_id = (int) get_post_meta( $id, 'scoop_last_editor_id', true );
+        $editor_id = $editor_id ?: (int) ( $pod->row['post_author'] ?? 0 );
+        $row['editor_name'] = $editor_id
+          ? scoop_text_out( get_the_author_meta( 'display_name', $editor_id ) )
+          : '';
       } else{
         $row[ $field ] = scoop_cast( $pod->field( $field ), $type );
       }

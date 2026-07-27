@@ -65,6 +65,27 @@ function scoop_touch_tub_post_modified($pieces, $is_new_item) {
 }
 
 /**
+ * Track who last edited a tub — separate from post_author, which is the
+ * record's original creator, set once at creation (see batch-tub.php) and
+ * never touched again. WordPress has no built-in "last edited by" for
+ * non-wp-admin save paths, so this is tracked as our own postmeta.
+ *
+ * Uses save_post_tub (fires after the DB write actually lands, any save
+ * path — REST, WP admin, direct Pods API) rather than the pre_save filters
+ * above, so a failed/rejected save can't stamp an editor that didn't happen.
+ */
+add_action('save_post_tub', 'scoop_stamp_tub_editor', 10, 3);
+function scoop_stamp_tub_editor($post_id, $post, $update) {
+  if (!$update) return; // creation has no "editor" yet, just an author
+  if (wp_is_post_revision($post_id) || wp_is_post_autosave($post_id)) return;
+
+  $user_id = get_current_user_id();
+  if (!$user_id) return; // no known human actor (e.g. unauthenticated cron/CLI) — leave prior value alone
+
+  update_post_meta($post_id, 'scoop_last_editor_id', $user_id);
+}
+
+/**
  * Auto-update changed_on field whenever tub is edited
  * Priority 8 - runs before state rules
  */

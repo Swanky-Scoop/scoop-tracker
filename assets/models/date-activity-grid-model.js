@@ -249,7 +249,7 @@ export default class DateActivityGridModel extends BaseGridModel{
       opened_on: phase === 'opened' ? (tub?.opened_on || activityAt) : (tub?.opened_on || ''),
       emptied_at: phase === 'emptied' ? (tub?.emptied_at || activityAt) : (tub?.emptied_at || ''),
       post_modified: activityAt,
-      author_name: change.author_name || tub?.author_name || '',
+      author_name: change.author_name || tub?.editor_name || '',
     };
   }
 
@@ -258,6 +258,10 @@ export default class DateActivityGridModel extends BaseGridModel{
       ...tub,
       _activityKind: 'tub',
       _activityAt: this._eventTimeForTub(tub) || tub.post_modified || '',
+      // tub no longer carries author_name (removed — see FlavorTub's Editor
+      // column); this row's "Who" (buildCols' author_name column) reads the
+      // tub's last editor instead.
+      author_name: tub.editor_name || '',
     };
   }
 

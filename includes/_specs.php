@@ -45,7 +45,7 @@ function scoop_entity_specs(string $key = ''): array {
           'use'           => ['data_type' => 'int',      'control' => 'find', 'titleMap' => 'use'],
           'flavor'        => ['data_type' => 'int',      'control' => 'find', 'titleMap' => 'flavor'],
           'amount'        => ['data_type' => 'float',    'control' => 'text'  ],
-          'author_name'   => ['data_type' => 'string',   'label'   => 'Author'],
+          'editor_name'   => ['data_type' => 'string',   'label'   => 'Editor'],
           'date'          => ['data_type' => 'datetime', 'control' => 'text', 'label' => 'Posted'],
           'created_on'    => ['data_type' => 'datetime', 'control' => 'text', 'label' => 'Made'],
           'changed_on'    => ['data_type' => 'datetime', 'control' => 'text', 'label' => 'Changed'],
@@ -63,7 +63,7 @@ function scoop_entity_specs(string $key = ''): array {
           'slot'          => ['data_type' => 'int',      'control' => 'find', 'titleMap' => 'slot', 'hidden' => true],
         ],
         'post_fields' => [
-          'author_name'   => 'string',
+          'editor_name'   => 'string',
           'post_modified' => 'datetime',
           'post_date'     => 'datetime',
         ],
