@@ -521,7 +521,7 @@ html body {
     min-width: 100%;
   }
 
-  &:not(.Batch):not(.Closeout):before {
+  &:not(.Batch):before {
     content: '';
     display: inline-block;
     background-color: var(--overlay-dark);
@@ -555,8 +555,8 @@ html > body.TS_GRID-UPDATING .scoop-grid {
    .scoop-grid is unsized and just grows to contain this. Scoped to the same
    "no rows yet" condition as the shimmer below, so a populated grid with
    only a few real rows isn't forced to this height too. */
-.scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr)):not(:has(li[data-row-id])) > form.zGRID-form,
-.scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr)):not(:has(li[data-row-id])) > form.zTILE-form {
+.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])) > form.zGRID-form,
+.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])) > form.zTILE-form {
   min-height: 13.5rem;
 }
 
@@ -566,7 +566,7 @@ html > body.TS_GRID-UPDATING .scoop-grid {
    purely on the DOM shape that already exists — table.zGRID holds only its
    <thead>, and .zTILE's group <ul> stays empty, until real data lands — so
    the shimmer disappears the instant the first row/card is appended. */
-.scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr)):not(:has(li[data-row-id]))::after {
+.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id]))::after {
   content: '';
   position: absolute;
   top: 0;
@@ -594,14 +594,13 @@ html > body.TS_GRID-UPDATING .scoop-grid {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .scoop-grid:not(.Batch):not(.Closeout):not(:has(tbody tr))::after {
+  .scoop-grid:not(.Batch):not(:has(tbody tr))::after {
     animation: none;
   }
 }
 
-/* Special Grid Types: Batch & Closeout */
-.scoop-grid.Batch,
-.scoop-grid.Closeout {
+/* Special Grid Types: Batch */
+.scoop-grid.Batch {
   display: block;
   box-shadow: none;
   position: fixed;
@@ -666,12 +665,6 @@ html > body.TS_GRID-UPDATING .scoop-grid {
       text-align: left;
     }
   }
-}
-
-.scoop-grid.Closeout {
-  left: 0;
-  top: auto;
-  bottom: 0;
 }
 
 /* ============================================
