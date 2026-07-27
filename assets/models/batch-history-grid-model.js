@@ -75,10 +75,10 @@ export default class BatchHistoryGridModel extends BaseGridModel {
       mode: 'server',
       default: 'last_48_hours',
       options: [
-        { key: 'last_24_hours', label: 'Last 24 hours' },
-        { key: 'last_48_hours', label: 'Last 48 hours' },
-        { key: 'last_7_days',   label: 'Last 7 days'   },
-        { key: 'last_30_days',  label: 'Last 30 days'  },
+        { key: 'last_24_hours', label: '24 hrs' },
+        { key: 'last_48_hours', label: '48 hrs' },
+        { key: 'last_7_days',   label: '7 days'   },
+        { key: 'last_30_days',  label: '30 days'  },
       ],
     }));
   }

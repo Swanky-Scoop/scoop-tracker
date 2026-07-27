@@ -30,7 +30,7 @@ const EMPTIED_WINDOW_OPTIONS = [
   { key: 'off', label: 'Hide' },
   ...[4, 8, 12, 24, 36, 48]
     .filter(hours => hours <= RECENTLY_EMPTIED_CEILING_HOURS)
-    .map(hours => ({ key: `${hours}h`, label: `Last ${hours} hours`, hours })),
+    .map(hours => ({ key: `${hours}h`, label: `${hours} hrs`, hours })),
 ];
 
 export default class FlavorTubGridModel extends BaseGridModel{
@@ -61,6 +61,13 @@ export default class FlavorTubGridModel extends BaseGridModel{
       use_badge: 'all',
       emptied_window: '4h',
     };
+    // Row-level `state-<value>`/`use-<value>` classes (e.g. "state-Opened",
+    // "use-Front_of_House" — _slug() doesn't lowercase) — see
+    // List._rowClasses. Default 'display' mode: for 'state' (a plain enum
+    // column) that's the raw value itself; for 'use' (a relation/titleMap
+    // column) that's the resolved label, which is what was actually asked
+    // for here, not the underlying use post id.
+    this.rowClassFields = ['state', 'use'];
     this.setShowList(['index', 'state', 'use', 'amount', 'author_name', 'post_modified']);
   }
 
@@ -73,7 +80,7 @@ export default class FlavorTubGridModel extends BaseGridModel{
         mode: 'client',
         default: 'all',
         options: [
-          { key: 'all', label: 'All designations' },
+          { key: 'all', label: 'All' },
           { key: 'none', label: 'None' },
           { key: 'current', label: 'Current' },
           { key: 'immediate', label: 'Immediate' },
@@ -87,7 +94,7 @@ export default class FlavorTubGridModel extends BaseGridModel{
         mode: 'client',
         default: 'all',
         options: [
-          { key: 'all', label: 'Any allergens' },
+          { key: 'all', label: 'Any' },
           { key: 'dairy', label: 'Dairy' },
           { key: 'non-dairy', label: 'Non-Dairy' },
         ],
@@ -102,7 +109,7 @@ export default class FlavorTubGridModel extends BaseGridModel{
       },
       {
         key: 'emptied_window',
-        label: 'Recently Emptied',
+        label: 'Time',
         type: 'select',
         mode: 'client',
         default: '4h',
@@ -149,7 +156,6 @@ export default class FlavorTubGridModel extends BaseGridModel{
         ].filter(Boolean),
         fillRow       : (row, item, i) => {
           this.fillRowFromColumns(row, item, i);
-          if (item.state === 'Emptied') row._recentlyEmptied = true;
         },
         collapsed     : true,
         groupType     :'flavor',
@@ -293,7 +299,7 @@ export default class FlavorTubGridModel extends BaseGridModel{
   _useFilterOptions() {
     const options = [
       { key: 'all', label: 'All uses' },
-      { key: 'any', label: 'Any non-Front-of-House' },
+      { key: 'any', label: 'Non Front' },
     ];
 
     const useIds = this._nonFrontUseIds(this._activeTubs(this.domain?.tub ?? []));

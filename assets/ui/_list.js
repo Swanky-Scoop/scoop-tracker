@@ -443,6 +443,44 @@ export default class List extends El{
       .replace(/[^a-zA-Z0-9_-]/g, '') || 'item';
   }
 
+  // Optional per-model hook: this.state.rowClassFields — an array of column
+  // keys (or { key, value: 'display'|'logical' } objects) whose resolved
+  // cell value becomes a `${key}-${slug}` class on the row's <tr>/<li>. Can
+  // list as many fields as the model wants, including every field it shows.
+  // _slug() doesn't lowercase, so e.g. 'state' displaying "Opened" becomes
+  // class "state-Opened", not "state-opened" — match that casing in CSS.
+  //
+  // 'display' (the default) reads row[key].display — the human-readable
+  // value already resolved by fillRowFromColumns: for a relation/titleMap
+  // column that's the looked-up label ("Vanilla"), for a plain scalar/enum
+  // column (e.g. 'state') it's the raw value itself, since fillRowFromColumns
+  // only does a titleMap lookup when there IS a titleMap.
+  //
+  // 'logical' reads row[key].id instead — the raw foreign-key id. Only
+  // meaningful for relation/titleMap columns; a plain scalar column has no
+  // distinct id separate from its display value (fillRowFromColumns sets id
+  // = Number(raw), which is just NaN for a non-numeric scalar like 'state'),
+  // so 'logical' isn't useful there — use 'display' for those.
+  //
+  // Skips a field entirely (no class) rather than falling through to
+  // _slug's 'item' default when the resolved value is empty — an unset
+  // field shouldn't render as a literal "-item" class.
+  _rowClasses(row) {
+    const fields = this.state?.rowClassFields;
+    if (!fields?.length || !row) return [];
+
+    return fields.map(entry => {
+      const { key, value: mode = 'display' } = (typeof entry === 'string') ? { key: entry } : (entry ?? {});
+      if (!key) return null;
+
+      const cell = row[key];
+      const raw = mode === 'logical' ? cell?.id : cell?.display;
+      if (raw == null || raw === '' || (typeof raw === 'number' && !Number.isFinite(raw))) return null;
+
+      return `${key}-${this._slug(String(raw))}`;
+    }).filter(Boolean);
+  }
+
   _getBadgeDom(badges){
     if(!badges || badges.length === 0) return null;
     const BDGs = this.el("span", {classes:["badges"] } );

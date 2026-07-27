@@ -49,11 +49,13 @@
   --color-dirty-cell-bg: #F0C674;
   --color-dirty-group-outline: #5A2A18;
 
-  /* Recently-emptied tub row (still correctable — see RECENTLY_EMPTIED_HOURS
-     in flavor-tub-grid-model.js and scoop_enforce_tub_rules). Pale red by
-     default; swap for a dark grey (e.g. #4A4A4A) if red reads as too alarming
-     for something that's often just routine end-of-day bookkeeping. */
-  --color-recently-emptied-row-bg: #F6DCDC;
+  /* Emptied tub row (targets .state-Emptied — see List._rowClasses and
+     FlavorTubGridModel's rowClassFields). Only recently-emptied tubs are
+     ever rendered at all (see RECENTLY_EMPTIED_CEILING_HOURS and
+     scoop_enforce_tub_rules), so no separate "recently" distinction is
+     needed here — any row with this class is, by construction, still
+     correctable. */
+  --color-state-emptied-row-bg: darkgrey;
 
   /* Border Colors */
   --color-border-main: rgba(0, 50, 0, 1);
@@ -1645,16 +1647,16 @@ table.zGRID tr .badges .badge.warning {
 .zGRID td.cell-saved { animation: scoopCellSaved 0.8s ease-out; }
 .zGRID td.cell-error { animation: scoopCellError 0.8s ease-out; }
 
-/* ── Recently-emptied tub rows ────────────────────────────────────────────
-   FlavorTubGridModel keeps a tub visible (and correctable) for
-   RECENTLY_EMPTIED_HOURS after it's marked Emptied — see that file's
-   _activeTubs(). !important so it always wins over .row-dirty/
-   .row-dirty-clearing below: Emptied is the more important signal at the
-   row level, even while she's actively correcting it. The one cell she's
-   actually typing into still gets its own orange via .cell-dirty
-   (also !important, more local/urgent than either row-level color). */
-.row-recently-emptied {
-  background-color: var(--color-recently-emptied-row-bg) !important;
+/* ── Emptied tub rows ──────────────────────────────────────────────────────
+   .state-Emptied comes from FlavorTubGridModel's rowClassFields (generic
+   List._rowClasses mechanism — see _list.js), not a bespoke flag. !important
+   so it always wins over .row-dirty/.row-dirty-clearing below: Emptied is
+   the more important signal at the row level, even while she's actively
+   correcting it. The one cell she's actually typing into still gets its own
+   orange via .cell-dirty (also !important, more local/urgent than either
+   row-level color). */
+.state-Emptied {
+  background-color: var(--color-state-emptied-row-bg) !important;
 }
 
 /* ── Unsaved edits ("dirty" state) ────────────────────────────────────────

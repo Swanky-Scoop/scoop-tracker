@@ -70,7 +70,7 @@ export default class Grid extends List {
 
   buildItemDom(row) {
     return this.el('tr', {
-      classes: ['row', row?._recentlyEmptied ? 'row-recently-emptied' : null],
+      classes: ['row', ...this._rowClasses(row)],
       data: { rowId: row?.id?.rowId ?? row?.id ?? 0 },
     });
   }
