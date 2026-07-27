@@ -8,10 +8,9 @@ on:
       target:
         description: "Deploy target"
         required: true
-        default: "test"
+        default: "test-ink"
         type: choice
         options:
-          - test
           - ops
           - test-ink
           - ops-ink
@@ -28,53 +27,6 @@ env:
   RSYNC_ARGS: "-rltvz"
 
 jobs:
-  deploy-test:
-    name: Deploy to TEST (swankyscoop.net)
-    if: >-
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' && inputs.target == 'test')
-    runs-on: ubuntu-latest
-    concurrency:
-      group: deploy-test
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Load SSH key into agent
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SFTP_SSH_KEY }}
-
-      - name: Add server to known_hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -T 10 -p "$REMOTE_PORT" "$REMOTE_HOST" >> ~/.ssh/known_hosts
-
-      - name: Deploy to test.swankyscoop.net via rsync
-        run: |
-          rsync $RSYNC_ARGS \
-            --exclude='.git' \
-            --exclude='.gitignore' \
-            --exclude='.gitattributes' \
-            --exclude='.github' \
-            --exclude='.vscode' \
-            --exclude='.claude' \
-            --exclude='triage' \
-            --exclude='data-exports' \
-            --exclude='*.md' \
-            --exclude='_domain.json' \
-            --exclude='response.json' \
-            --exclude='*_response.json' \
-            --exclude='dump.txt' \
-            --exclude='.prettierrc' \
-            --exclude='scoop-deploy-key*' \
-            --exclude='*.pem' \
-            --exclude='*_rsa' \
-            --exclude='*_ed25519' \
-            --exclude='id_*' \
-            -e "ssh -p $REMOTE_PORT" \
-            ./ "$REMOTE_USER@$REMOTE_HOST:/home/swannvoe/test.swankyscoop.net/wp-content/plugins/scoop_rest/"
-
   deploy-ops:
     name: Deploy to OPS (swankyscoop.net, production)
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'ops'
