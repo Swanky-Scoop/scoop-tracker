@@ -89,10 +89,6 @@ export default class List extends El{
     this._autosavePending = false;
     this._autosaveTimer = null;
 
-    // Unsaved-edit draft persistence (see _persistDraft/_checkForDraft below).
-    this._pendingDraftCells = null;
-    this._draftChecked = false;
-
     this.loadConfig(config);
     this._build();
 
@@ -160,7 +156,6 @@ export default class List extends El{
     this._rebuildBodies(state);
     this._captureBaseline();
     this._applyAutosaveUI();
-    this._checkForDraft();
     this.FORM.dispatchEvent(new Event("ts:list:close-overlays"));
     this._reportFresh();
   }
@@ -605,134 +600,10 @@ export default class List extends El{
           this.awaitingRefreshSet.add(k);
         }
         this._refreshDirtyMarks(rowId, colKey);
-
-        // Clear whatever this save covered out of a resumed draft too, so a
-        // partial resume doesn't keep re-offering already-saved cells.
-        if (this._pendingDraftCells?.[rowId]) {
-          delete this._pendingDraftCells[rowId][colKey];
-          if (!Object.keys(this._pendingDraftCells[rowId]).length) {
-            delete this._pendingDraftCells[rowId];
-          }
-        }
       }
     }
 
-    if (this._pendingDraftCells && !Object.keys(this._pendingDraftCells).length) {
-      this._pendingDraftCells = null;
-    }
-
-    this._persistDraft();
     this._reportEditingState();
-  }
-
-  // ─── Unsaved-edit draft persistence ────────────────────────────────────────
-  // Manual-submit fields (e.g. FlavorTub's 'state') can sit dirty for minutes
-  // while someone decides, then get lost to an accidental tab close/nav-away.
-  // Every dirty-set change is mirrored to localStorage; on the next mount we
-  // offer to resume-and-save it. Autosaved fields pass through here too but
-  // self-clear within ~250ms in the normal case, so in practice this is a
-  // safety net for the fields that don't autosave.
-
-  _draftKey() {
-    return `scoop:draft:${this.name}:${this.location || 0}`;
-  }
-
-  _persistDraft() {
-    try {
-      const key = this._draftKey();
-      const liveCells = this._buildDirtyPayload().cells;
-
-      // Merge with any not-yet-resolved draft from a prior visit so starting
-      // a fresh edit elsewhere in the grid never silently drops it.
-      const merged = { ...(this._pendingDraftCells || {}) };
-      for (const [rowId, row] of Object.entries(liveCells)) {
-        merged[rowId] = { ...(merged[rowId] || {}), ...row };
-      }
-
-      if (!Object.keys(merged).length) {
-        localStorage.removeItem(key);
-        return;
-      }
-
-      localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), cells: merged }));
-    } catch (err) {
-      console.error('List draft persist failed:', err);
-    }
-  }
-
-  _checkForDraft() {
-    if (this._draftChecked) return;
-    this._draftChecked = true;
-
-    let draft = null;
-    try {
-      const raw = localStorage.getItem(this._draftKey());
-      if (raw) draft = JSON.parse(raw);
-    } catch (err) {
-      console.error('List draft read failed:', err);
-    }
-
-    if (!draft?.cells || !Object.keys(draft.cells).length) return;
-
-    this._pendingDraftCells = draft.cells;
-    this._showDraftBanner(draft);
-  }
-
-  _showDraftBanner(draft) {
-    const rowCount = Object.keys(draft.cells).length;
-    const when = draft.savedAt ? new Date(draft.savedAt).toLocaleString() : 'earlier';
-
-    const toastEl = Toast.addMessage({
-      title: 'Unsaved changes from last visit',
-      message: `${rowCount} row${rowCount === 1 ? '' : 's'} edited ${when} in ${this.name} weren't saved.`,
-    });
-
-    const actions = document.createElement('div');
-    actions.classList.add('draft-actions');
-
-    const resumeBtn = document.createElement('button');
-    resumeBtn.type = 'button';
-    resumeBtn.textContent = 'Resume & Save';
-    resumeBtn.addEventListener('click', () => this._resumeDraft(draft, toastEl));
-
-    const discardBtn = document.createElement('button');
-    discardBtn.type = 'button';
-    discardBtn.textContent = 'Discard';
-    discardBtn.addEventListener('click', () => this._discardDraft(toastEl));
-
-    actions.append(resumeBtn, discardBtn);
-    toastEl.append(actions);
-  }
-
-  async _resumeDraft(draft, toastEl) {
-    if (!this.api || !this.postUrl) return;
-
-    try {
-      const r = await this.api.postJson({ cells: draft.cells }, this.name);
-
-      if (!r.ok || !r.data?.ok) {
-        Toast.addMessage({
-          title: 'Resume failed',
-          message: r?.data ? JSON.stringify(r.data) : `HTTP ${r?.status}`,
-        });
-        return;
-      }
-
-      this._pendingDraftCells = null;
-      localStorage.removeItem(this._draftKey());
-      toastEl.remove();
-      Toast.addMessage({ title: 'Unsaved changes saved', message: 'Your earlier edits were submitted.' });
-      this.api.refreshPageDomain?.({ force: true, info: { name: this.name } });
-    } catch (err) {
-      console.error('List draft resume failed:', err);
-      Toast.addMessage({ title: 'Resume error', message: String(err) });
-    }
-  }
-
-  _discardDraft(toastEl) {
-    this._pendingDraftCells = null;
-    localStorage.removeItem(this._draftKey());
-    toastEl.remove();
   }
 
   _showHide(e, el=e.target){
@@ -988,7 +859,6 @@ export default class List extends El{
     // Autosave lists persist each change right away (no save button, no reload).
     if (this._fieldAutosaveEnabled(colKey)) this._scheduleAutosave();
 
-    this._persistDraft();
     this._reportEditingState();
   }
 
@@ -1216,7 +1086,7 @@ export default class List extends El{
     // server — the manual-submit fields (e.g. FlavorTub's 'state') are the
     // real risk here since autosaved fields clear within ~250ms.
     window.addEventListener('beforeunload', (e) => {
-      if (!this.dirtySet.size && !this._pendingDraftCells) return;
+      if (!this.dirtySet.size) return;
       e.preventDefault();
       e.returnValue = '';
     });
