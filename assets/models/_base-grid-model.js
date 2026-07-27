@@ -474,7 +474,12 @@ export default class BaseGridModel {
       // server-metadata datetime column (e.g. FlavorTub's post_modified)
       // never hits this branch at all and shows the raw ISO string instead.
       if ((col.type ?? col.dataType) === 'datetime') {
-        const date = new Date(raw);
+        // Server sends ISO-8601 with an explicit offset for real
+        // 'datetime'-typed fields (scoop_datetime_out / mysql2date('c', ...)
+        // anchored to wp_timezone()), but normalize a bare
+        // "YYYY-MM-DD HH:MM:SS" too — Date only parses that reliably with a
+        // 'T' — so this never silently misreads the moment as local-only.
+        const date = new Date(String(raw).replace(' ', 'T'));
         display = Number.isFinite(date.getTime())
           ? (this.relativeTimeFields?.includes(col.key)
               ? this._formatTimeAgo(date)
@@ -511,7 +516,7 @@ export default class BaseGridModel {
   // that needs it (e.g. Details).
   _formatTimeAgo(date) {
     const now = Date.now();
-    const diffMs = now - date.getTime();
+    const diffMs = now - date.getTime(); // both sides are absolute epoch ms — timezone-agnostic
     if (diffMs < 0) return 'just now'; // clock skew — a future timestamp shouldn't read as nonsense
 
     const MINUTE = 60 * 1000, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
@@ -526,11 +531,11 @@ export default class BaseGridModel {
       return `${h} hour${h === 1 ? '' : 's'} ago`;
     }
 
-    // Calendar-day based from here, not a raw 24h multiple — a 6pm edit
-    // read at 9am the next morning is 15h ago by the clock, but should read
-    // "yesterday", not still be stuck under the hour bucket above.
-    const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const dayDiff = Math.round((startOfDay(new Date(now)) - startOfDay(date)) / DAY);
+    // Whole days elapsed, straight off the same absolute-ms diff used above —
+    // no local-calendar reconstruction (getFullYear/getMonth/getDate), which
+    // runs in the browser's timezone and could disagree with the hour bucket
+    // above about whether a day had actually passed.
+    const dayDiff = Math.floor(diffMs / DAY);
 
     if (dayDiff <= 1) return 'yesterday';
 
