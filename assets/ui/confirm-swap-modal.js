@@ -87,9 +87,11 @@ export default class ConfirmSwapModal extends El {
     const EMPTY_P = el('p', { classes: ['none'] });
     EMPTY_P.append(this.EMPTY_BTN);
 
+    this.REPLACE_LABEL = el('p', { text: 'Replace flavor' });
+
     this.FORM.append(
       this.CLOSE,
-      el('p', { text: 'Replace flavor' }),
+      this.REPLACE_LABEL,
       this.REMOVE_TITLE,
       el('p', { text: 'with' }),
       this.IMG_BOX,
@@ -136,12 +138,21 @@ export default class ConfirmSwapModal extends El {
     const row = this._row;
     if (!row) return;
 
-    this.REMOVE_TITLE.textContent = row.flavorTitle;
+    // row.empty (opened via "Add Flavor" on an empty slot, not "add next")
+    // has no current flavor to name as being replaced.
+    this.REPLACE_LABEL.textContent = row.empty ? 'Add flavor' : 'Replace flavor';
+    this.REMOVE_TITLE.textContent = row.empty ? '(slot is empty)' : row.flavorTitle;
 
     const target = this.model.flavorInfo(this._selectedFlavorId);
     const tub = this.model.pickPromotableTub(this._selectedFlavorId, this._preferWhole);
 
-    this.IMG.src = target.photo || '';
+    // target.photo can be '' (no photo set) — assigning that to img.src
+    // resolves to the *current page's own URL*, which makes the browser
+    // re-fetch the whole document as an "image" (a well-known <img> gotcha).
+    // That stray full-page GET is what looked like "a page refresh" when
+    // picking a flavor with no photo. removeAttribute avoids issuing it.
+    if (target.photo) this.IMG.src = target.photo;
+    else this.IMG.removeAttribute('src');
     this.IMG.alt = target.title;
     this.IMG_TITLE.textContent = target.title;
     this.IMG_META.textContent = tub ? this._tubMetaText(tub) : 'No tub available for this flavor.';
@@ -240,8 +251,12 @@ export default class ConfirmSwapModal extends El {
       return;
     }
 
-    await this.api.refreshPageDomain({ force: true });
+    // Close before the refetch, not after: closing only after
+    // refreshPageDomain resolves left the dialog stuck open (looking
+    // "unresponsive") for however long the bundle refetch took, and stuck
+    // open for good if that refetch ever threw.
     this.close();
+    await this.api.refreshPageDomain({ force: true });
   }
 
   // Clears the slot, but leftover stock of the flavor being removed isn't
@@ -278,7 +293,7 @@ export default class ConfirmSwapModal extends El {
       return;
     }
 
-    await this.api.refreshPageDomain({ force: true });
     this.close();
+    await this.api.refreshPageDomain({ force: true });
   }
 }

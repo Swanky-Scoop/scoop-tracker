@@ -37,12 +37,32 @@ export default class CabinetWorkflowTile extends Tile {
     this.SWAP_MODAL = new ConfirmSwapModal({ api: this.api, model: this.modelInstance });
 
     this.FRAME.addEventListener('click', (e) => {
-      const btn = e.target.closest('.add-next');
-      if (!btn) return;
+      const nextBtn = e.target.closest('.add-next');
+      if (nextBtn && !nextBtn.disabled) {
+        const slotId = Number(nextBtn.dataset.slotId);
+        const row = (this.items ?? []).find(r => r.slotId === slotId);
+        // row.openTub is the slot's confirmed, linked tub (see
+        // CabinetWorkflowGridModel._fillSlotRow) — without it there's
+        // nothing for the swap modal to swap out yet. Confirm Cabinet must
+        // run first to adopt/open a tub for this slot; buildItemDom()
+        // disables the button for the same reason, this is the defensive
+        // backstop.
+        if (row && row.openTub) this.SWAP_MODAL.open(row);
+        return;
+      }
 
-      const slotId = Number(btn.dataset.slotId);
-      const row = (this.items ?? []).find(r => r.slotId === slotId);
-      if (row) this.SWAP_MODAL.open(row);
+      const addBtn = e.target.closest('.add-flavor');
+      if (addBtn && !addBtn.disabled) {
+        const slotId = Number(addBtn.dataset.slotId);
+        const row = (this.items ?? []).find(r => r.slotId === slotId);
+        // Narrow scope for now: only opens when this empty slot already has
+        // a scheduled flavor (immediate_flavor/next_flavor, e.g. left there
+        // by a prior "leave slot empty"). Free-form flavor choice for a
+        // slot with no schedule at all is a later fallback, not built yet
+        // — buildItemDom() disables the button in that case for the same
+        // reason.
+        if (row && (row.immediateFlavorId || row.nextFlavorId)) this.SWAP_MODAL.open(row);
+      }
     });
 
     // GUI is blocked (pointer-events off, not just visually flagged) until
@@ -218,10 +238,18 @@ export default class CabinetWorkflowTile extends Tile {
     }
     
     if (row.empty) {
+      // Narrow scope for now: only opens the swap modal (reused) when this
+      // slot already has a scheduled flavor (immediate_flavor/next_flavor)
+      // — e.g. left there by a prior "leave slot empty". A free-form
+      // flavor picker for a slot with no schedule at all is a later
+      // fallback, not built yet.
+      const hasSchedule = !!(row.immediateFlavorId || row.nextFlavorId);
       LI.append(el('button', {
         text: 'Add Flavor',
         classes: ['add-flavor'],
-        attrs: { type: 'button' },
+        attrs: hasSchedule
+          ? { type: 'button' }
+          : { type: 'button', disabled: true, title: 'No flavor scheduled for this slot yet.' },
         data: { slotId: row.slotId },
       }));
       return LI;
@@ -242,10 +270,17 @@ export default class CabinetWorkflowTile extends Tile {
     // "No tub available" in that case; row.canAddNext is no longer used to
     // gate this button (superseded change-tub.md decision — was omitted
     // entirely before).
+    //
+    // Disabled when row.openTub is null: there's no confirmed tub linked to
+    // this slot yet to swap out or empty, so nothing here has a valid
+    // target until Confirm Cabinet resolves it (adopts/opens one, or flags
+    // the slot impossible/discrepancy).
     LI.append(el('button', {
       text: 'add next',
       classes: ['add-next'],
-      attrs: { type: 'button' },
+      attrs: row.openTub
+        ? { type: 'button' }
+        : { type: 'button', disabled: true, title: 'Run Confirm Cabinet first to link a tub to this slot.' },
       data: { slotId: row.slotId },
     }));
 

@@ -88,10 +88,24 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     row.slotId   = slot.id;
     row.location = slot.location;
     row.reload   = Boolean(slot.reload);
+    row.cabinetId    = Number(slot.cabinet ?? 0) || 0;
+    row.cabinetTitle = this.labelFromMap(row.cabinetId, this._cabinetsById) ?? `Cabinet ${row.cabinetId}`;
+
+    // Pre-planned alternates for this slot (see change-tub.md's confirm
+    // modal decisions) — read regardless of whether the slot currently has
+    // a flavor, so an empty slot's "Add Flavor" can default to whatever's
+    // scheduled next (see ConfirmSwapModal._defaultFlavorId).
+    row.immediateFlavorId    = Number(slot.immediate_flavor ?? 0) || 0;
+    row.immediateFlavorTitle = row.immediateFlavorId ? (this._flavorsById.get(row.immediateFlavorId)?._title ?? '') : '';
+    row.nextFlavorId         = Number(slot.next_flavor ?? 0) || 0;
+    row.nextFlavorTitle      = row.nextFlavorId ? (this._flavorsById.get(row.nextFlavorId)?._title ?? '') : '';
 
     const flavorId = Number(slot.current_flavor ?? 0) || 0;
     if (!flavorId) {
-      row.empty = true;
+      row.empty       = true;
+      row.flavorId    = 0;
+      row.flavorTitle = '';
+      row.openTub     = null;
       return;
     }
 
@@ -100,16 +114,6 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     row.flavorTitle  = flavor?._title ?? '';
     row.flavorPhoto  = flavor?.photo ?? '';
     row.allergens    = Array.isArray(flavor?.allergens) ? flavor.allergens : [];
-    row.cabinetId    = Number(slot.cabinet ?? 0) || 0;
-    row.cabinetTitle = this.labelFromMap(row.cabinetId, this._cabinetsById) ?? `Cabinet ${row.cabinetId}`;
-
-    // Pre-planned alternates for this slot (see change-tub.md's confirm
-    // modal decisions) — always the same two fields regardless of which
-    // flavor is currently selected in the modal.
-    row.immediateFlavorId    = Number(slot.immediate_flavor ?? 0) || 0;
-    row.immediateFlavorTitle = row.immediateFlavorId ? (this._flavorsById.get(row.immediateFlavorId)?._title ?? '') : '';
-    row.nextFlavorId         = Number(slot.next_flavor ?? 0) || 0;
-    row.nextFlavorTitle      = row.nextFlavorId ? (this._flavorsById.get(row.nextFlavorId)?._title ?? '') : '';
 
     row.tubCountLocal = this.remainingSummary(flavorId, slot.location);
     row.tubCountTotal = this.remainingSummary(flavorId, null);
