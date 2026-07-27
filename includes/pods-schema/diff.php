@@ -105,6 +105,23 @@ function scoop_schema_live_pod_names(): array {
 }
 
 /**
+ * Comparable string form of a pod/field attribute value. Some attrs (e.g. a
+ * relationship field's 'options', or 'pick_custom' split into lines) come
+ * back as arrays on one or both sides — a plain (string) cast on those
+ * throws PHP's "Array to string conversion" warning AND is wrong besides:
+ * every array collapses to the literal string "Array", so two DIFFERENT
+ * arrays would compare equal (a missed diff) while an array vs. a scalar
+ * would compare not-equal for the wrong reason. wp_json_encode gives each
+ * distinct value its own distinct string instead. Mirrors
+ * scoop_schema_display_val() in ui.php, which renders these same values —
+ * kept separate since this one's for comparison, not display.
+ */
+function scoop_schema_comparable_val($val): string {
+  if (is_array($val)) return wp_json_encode($val);
+  return (string) $val;
+}
+
+/**
  * Compares $schema (from scoop_schema_definition()) against this
  * environment's live Pods config. Only keys present in $schema are ever
  * compared — see the authoring note in _schema.php.
@@ -157,7 +174,7 @@ function scoop_schema_diff(array $schema): array {
     foreach ($pod_schema as $key => $expected) {
       if ($key === 'fields') continue;
       $actual = $live[$key] ?? null;
-      if ((string) $actual !== (string) $expected) {
+      if (scoop_schema_comparable_val($actual) !== scoop_schema_comparable_val($expected)) {
         $entry['changed_pod_attrs'][$key] = ['expected' => $expected, 'actual' => $actual];
       }
     }
@@ -180,7 +197,7 @@ function scoop_schema_diff(array $schema): array {
       $changed = [];
       foreach ($expected_field as $key => $expected_val) {
         $actual_val = $actual_field[$key] ?? null;
-        if ((string) $actual_val !== (string) $expected_val) {
+        if (scoop_schema_comparable_val($actual_val) !== scoop_schema_comparable_val($expected_val)) {
           $changed[$key] = ['expected' => $expected_val, 'actual' => $actual_val];
         }
       }
