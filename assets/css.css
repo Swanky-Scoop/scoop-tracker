@@ -57,6 +57,11 @@
      correctable. */
   --color-state-emptied-row-bg: darkgrey;
 
+  /* Opened tub row (targets .state-Opened — same rowClassFields mechanism
+     as .state-Emptied above). No !important: an Opened row being actively
+     edited should still show the dirty-yellow on top, unlike Emptied. */
+  --color-state-opened-row-bg: #DFF3D8;
+
   /* Border Colors */
   --color-border-main: rgba(0, 50, 0, 1);
   --color-border-light: rgba(50, 100, 50, 0.33);
@@ -1633,6 +1638,10 @@ table.zGRID tr .badges .badge.warning {
    row-level color). */
 .state-Emptied {
   background-color: var(--color-state-emptied-row-bg) !important;
+}
+
+.state-Opened {
+  background-color: var(--color-state-opened-row-bg);
 }
 
 /* ── Unsaved edits ("dirty" state) ────────────────────────────────────────
