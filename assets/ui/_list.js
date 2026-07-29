@@ -289,6 +289,11 @@ export default class List extends El{
         if (itemGroups[i + 1] && r === itemGroups[i + 1].startIndex) i++;
 
         const ITEM = this.buildItemDom(row, fields);
+        // Recorded so _patchRowClasses (see _onDomainUpdated's additive-refresh
+        // path) knows exactly which dynamic classes to remove before applying
+        // fresh ones, without having to guess which of ITEM's classes came
+        // from _rowClasses vs. the subclass's own static ones.
+        ITEM.dataset.rowClasses = this._rowClasses(row).join(' ');
 
         fields.forEach(col => {
           const data = row?.[col.key] ?? "";
@@ -320,6 +325,137 @@ export default class List extends El{
         itemGroups: this.itemGroups
       });
     }
+  }
+
+  // ─── Additive-refresh (patch, never remove) ───────────────────────────────
+  // Counterpart to _rebuildBodies/_buildItemGroups/_buildItems used ONLY by
+  // _onDomainUpdated, for a domain refresh THIS grid didn't cause (someone
+  // else's save/autosave/cabinet-workflow action landing elsewhere on the
+  // page). _rebuildBodies tears down and rebuilds every group + row from
+  // scratch every time anything changes anywhere — fine for this grid's own
+  // submit/sort/filter, but jarring when it's triggered by unrelated
+  // activity: rows this person is looking at can reorder, regroup, or
+  // disappear out from under them. These three methods instead patch
+  // classnames/badges onto whatever's already rendered and append genuinely
+  // new rows/groups, but never remove one that's already on screen.
+
+  _findRowDom(rowId) {
+    if (!this.FRAME) return null;
+    return this.FRAME.querySelector(`[data-row-id="${CSS.escape(String(rowId))}"]:not(.group)`);
+  }
+
+  _patchRowClasses(ROW, row) {
+    if (!ROW) return;
+    const classes = this._rowClasses(row);
+    const prev = (ROW.dataset.rowClasses ?? '').split(' ').filter(Boolean);
+    if (prev.length) ROW.classList.remove(...prev);
+    if (classes.length) ROW.classList.add(...classes);
+    ROW.dataset.rowClasses = classes.join(' ');
+  }
+
+  // Ensures a DOM container exists for every group in the fresh state —
+  // creates any that are genuinely new, leaves every existing one (and its
+  // contents) untouched. Matched by groupId (the one thing stable across a
+  // refresh even though nothing else about a group's DOM is guaranteed to
+  // be — see the constructor comment on _groupOpenOverrides).
+  _patchItemGroups(rowGroups) {
+    if (!rowGroups.length) {
+      if (!this.itemGroupDom.length) {
+        const CONTAINER = this.buildGroupDom({ collapsible: false, label: null }, this.fields, true);
+        this.FRAME.append(CONTAINER);
+        this.itemGroupDom.push(CONTAINER);
+      }
+      return;
+    }
+
+    const known = new Set(this.itemGroupDom.map(el => el.dataset.groupId ?? '__ungrouped__'));
+    const onlyOneGroup = rowGroups.length === 1;
+
+    for (const g of rowGroups) {
+      const key = g.groupId != null ? String(g.groupId) : '__ungrouped__';
+      if (known.has(key)) continue;
+
+      const override = g.groupId != null ? this._groupOpenOverrides.get(String(g.groupId)) : undefined;
+      const opened = onlyOneGroup ? true : (override !== undefined ? override : !g.collapsed);
+      const CONTAINER = this.buildGroupDom(g, this.fields, opened);
+      this.FRAME.append(CONTAINER);
+      this.itemGroupDom.push(CONTAINER);
+      known.add(key);
+    }
+  }
+
+  // Mirrors _buildItems' own group-boundary walk (same itemGroups[i+1]
+  // .startIndex logic) so a brand new row lands in the same container a full
+  // rebuild would have put it in — the only difference is an existing row is
+  // patched in place instead of replaced.
+  _patchItems() {
+    try {
+      const items = this.items ?? [];
+      const fields = this.fields ?? [];
+      const itemGroups = this.itemGroups ?? [];
+
+      let i = 0;
+
+      items.forEach((row, r) => {
+        if (itemGroups[i + 1] && r === itemGroups[i + 1].startIndex) i++;
+
+        const rowId = row?.id?.rowId ?? row?.id ?? 0;
+        const EXISTING = this._findRowDom(rowId);
+
+        if (EXISTING) {
+          this._patchRowClasses(EXISTING, row);
+          fields.forEach(col => {
+            const data = row?.[col.key] ?? "";
+            const CELL = EXISTING.querySelector(`.${CSS.escape(String(col.key))}`);
+            if (CELL) this._patchFieldDecorations(CELL, col, data);
+          });
+          return;
+        }
+
+        // Genuinely new row — nothing to patch, build it the same way a full
+        // rebuild would have.
+        const ITEM = this.buildItemDom(row, fields);
+        ITEM.dataset.rowClasses = this._rowClasses(row).join(' ');
+
+        fields.forEach(col => {
+          const data = row?.[col.key] ?? "";
+          ITEM.append(this.buildFieldDom(col, data, row));
+        });
+
+        const container = this.itemGroupDom[i];
+        if (!container) {
+          console.error("List _patchItems: missing group container", { list: this.name, i, r });
+          return;
+        }
+
+        (container._itemsHost ?? container).append(ITEM);
+      });
+    } catch (e) {
+      console.error("List _patchItems exception", this.name, e, {
+        itemsLen: this.items?.length,
+        itemGroups: this.itemGroups
+      });
+    }
+  }
+
+  _patchBodies(state) {
+    this.itemGroups = state?.rowGroups ?? [];
+    this.items = state?.rows ?? [];
+
+    this._patchItemGroups(this.itemGroups);
+    this._patchItems();
+  }
+
+  // Additive-refresh counterpart to refresh() — see _patchBodies above and
+  // _onDomainUpdated for when this is used instead of the destructive path.
+  async _patchRefresh(state) {
+    if (!this._isInit) throw new Error("List._patchRefresh() called before init()");
+    this.state = state;
+    this._buildFilters(state);
+    this._patchBodies(state);
+    this._captureBaseline();
+    this._applyAutosaveUI();
+    this._reportFresh();
   }
 
   _buildFilters(state = this.state) {
@@ -382,9 +518,15 @@ export default class List extends El{
     // col.type is the hand-authored-model convention; col.dataType is what
     // server-driven metadata columns carry (see grid.js's header comment on
     // this long-standing split). Prefer whichever is actually present.
-    const stateClasses = [col.key, col.type ?? col.dataType ?? 'ok_colType', d.alertCase ?? 'ok_alertCase']
+    const alertCase = (typeof d.alertCase === 'string' && d.alertCase.trim()) ? d.alertCase : 'ok_alertCase';
+    const stateClasses = [col.key, col.type ?? col.dataType ?? 'ok_colType', alertCase]
       .filter(c => typeof c === 'string' && c.trim().length > 0);
     if (stateClasses.length) EL.classList.add(...stateClasses);
+    // Recorded so _patchFieldDecorations (the additive-refresh repaint used
+    // by _onDomainUpdated) knows exactly which class to remove before adding
+    // the fresh one, without having to guess which of EL's classes is the
+    // alertCase.
+    EL.dataset.alertCase = alertCase;
     if (col.hidden) EL.classList.add('hidden');
 
     if (col.write && d.write !== false) {
@@ -415,6 +557,31 @@ export default class List extends El{
     if (data.badges && data.badges[0]) EL.append(this._getBadgeDom(data.badges));
 
     return EL;
+  }
+
+  // Additive-refresh counterpart to _renderFieldValue, used by _patchItems
+  // (see _onDomainUpdated) — updates ONLY the data-driven decorations
+  // (alertCase class, badges) on an already-rendered field wrapper.
+  // Deliberately does NOT touch the writeable FindIt/TextIt control or
+  // read-only text/link _renderFieldValue would otherwise rebuild, so a
+  // domain refresh caused by something else on the page can never clobber
+  // an in-progress edit or yank focus out from under whoever's typing here.
+  // No-ops safely if EL doesn't carry a matching wrapper (e.g. a field type
+  // that isn't built through _renderFieldValue in the first place).
+  _patchFieldDecorations(EL, col, data) {
+    if (!EL) return;
+    const d = (data && typeof data === "object") ? data : { display: String(data ?? "") };
+    const alertCase = (typeof d.alertCase === 'string' && d.alertCase.trim()) ? d.alertCase : 'ok_alertCase';
+
+    if (EL.dataset.alertCase !== alertCase) {
+      if (EL.dataset.alertCase) EL.classList.remove(EL.dataset.alertCase);
+      EL.classList.add(alertCase);
+      EL.dataset.alertCase = alertCase;
+    }
+
+    const oldBadges = EL.querySelector(':scope > .badges');
+    if (oldBadges) oldBadges.remove();
+    if (d.badges && d.badges[0]) EL.append(this._getBadgeDom(d.badges));
   }
 
   // Group container class from group.groupType ('cabinet', 'flavor', ...) —
@@ -616,10 +783,48 @@ export default class List extends El{
         if (groupId != null) {
           this._groupOpenOverrides.set(groupId, CONTAINER.classList.contains('opened'));
         }
+
+        // A collapsed group can go stale — _patchItems (see _onDomainUpdated)
+        // deliberately never removes a row, so a group that's been closed
+        // through several background refreshes may still be showing rows
+        // that no longer exist in the current data. Opening it is the cheap,
+        // natural moment to catch it up: reconcile against this.items, which
+        // is already as fresh as the last completed refresh (no fetch here,
+        // see _reconcileGroupFreshness).
+        if (CONTAINER?.classList.contains('opened')) this._reconcileGroupFreshness(CONTAINER);
     }
 
     this.FORM.dispatchEvent(new Event("ts:list:close-overlays"));
 
+  }
+
+  // Drops any row rendered in this group's DOM that's no longer part of
+  // this.items' slice for that group — the removal step _patchItems skips
+  // for the sake of grids that ARE being looked at (see its own comment).
+  // Uses this.items/this.itemGroups directly: already the freshest data this
+  // grid has (kept current by modelInstance.setDomain() on every domain
+  // refresh, patch or full rebuild alike), so this never fetches — it's a
+  // pure DOM/array diff against what's already in memory.
+  _reconcileGroupFreshness(CONTAINER) {
+    if (!CONTAINER) return;
+
+    const groupId = CONTAINER.dataset.groupId;
+    const groups = this.itemGroups ?? [];
+    const idx = groups.findIndex(g => String(g.groupId ?? '') === String(groupId ?? ''));
+    const start = idx >= 0 ? groups[idx].startIndex : 0;
+    const end = idx >= 0 && groups[idx + 1] ? groups[idx + 1].startIndex : (this.items ?? []).length;
+
+    const currentIds = new Set(
+      (this.items ?? []).slice(start, end).map(row => String(row?.id?.rowId ?? row?.id ?? 0))
+    );
+
+    // :not(.group) excludes Grid's own group-header <tr> — it carries
+    // data-row-id too (set to the groupId, see buildGroupDom), which would
+    // otherwise match and get wrongly swept up as a "stale row".
+    const host = CONTAINER._itemsHost ?? CONTAINER;
+    host.querySelectorAll(':scope > [data-row-id]:not(.group)').forEach(ROW => {
+      if (!currentIds.has(ROW.dataset.rowId)) ROW.remove();
+    });
   }
 
   _captureFocusAddress(e) {
@@ -1289,15 +1494,30 @@ export default class List extends El{
           // Refresh with updated model
           if (this._isInit) {
             // Whatever's still pending here is about to be genuinely
-            // resolved by this rebuild — snapshot it before refresh()
-            // rebuilds the DOM out from under it (fresh elements carry no
-            // dirty/awaiting classes at all), then flash the fade on the
-            // new elements that correspond to it. See awaitingRefreshSet's
+            // resolved by this rebuild — snapshot it before the repaint below
+            // rebuilds/patches the DOM out from under it (fresh elements
+            // carry no dirty/awaiting classes at all), then flash the fade on
+            // the elements that correspond to it. See awaitingRefreshSet's
             // constructor comment and _flashResolvedMarks.
             const resolvedKeys = [...this.awaitingRefreshSet];
             this.awaitingRefreshSet.clear();
 
-            await this.refresh(this.modelInstance);
+            // A grid with its own server-side filter (currently just
+            // DateActivity's date range — see getServerFilterParams) needs
+            // this refresh to actually drop rows that fall outside the
+            // filter, so it keeps the old destructive rebuild. Every other
+            // grid gets the additive patch instead: this event fires for
+            // domain refreshes this grid didn't cause (another grid's save,
+            // an autosave elsewhere, a cabinet-workflow action), and a full
+            // teardown/rebuild there can reorder, regroup, or drop rows out
+            // from under someone who's just looking at this grid, not
+            // editing it. See _patchRefresh/_patchBodies above.
+            const hasServerFilter = typeof this.modelInstance?.getServerFilterParams === 'function';
+            if (hasServerFilter) {
+              await this.refresh(this.modelInstance);
+            } else {
+              await this._patchRefresh(this.modelInstance);
+            }
             this._flashResolvedMarks(resolvedKeys);
 
             if (this._postSubmitFocus) {
