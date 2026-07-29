@@ -57,9 +57,23 @@ This does **not** issue a fetch. `this.items`/`this.itemGroups` are already kept
 
 Accepted edge case: a row that moved to a *different* group between refreshes disappears correctly from its old (now-open) group, but won't appear in a still-collapsed new group until that one is also opened — acceptable since a closed group isn't visible to the user anyway.
 
+## 4. `.focus()` audit — settled on "never move focus for a delayed repaint"
+
+There were 4 `.focus()` call sites in the client. Each was audited against "is this caused by the user's own current action, synchronously":
+
+1. `text-it.js`'s clear-button handler — refocuses the input it just cleared. Same click, same element, no delay. **Kept** — this is the only one left.
+2. `_focusAfterSubmit()` — after *this grid's own* manual Save, focus moved to the top filter input (grouped lists) or the exact field just saved (ungrouped lists, via `_restoreFocusAddress()`). Reasonable-sounding at first (it's a direct consequence of the user's own submit) — but see below.
+3. *(same mechanism, ungrouped-list branch)*
+4. `_restoreFocusAddress()` called from the bare `else` of `_onDomainUpdated` — ran on *every* refresh a grid processed that it didn't itself cause (another grid's save, an autosave elsewhere, a cabinet-workflow action), pulling focus to a `_lastFocusedEl` address that, once stamped by any past submit, stuck around and got reused on every later unrelated refresh. No scenario found where this was desired.
+
+**Case #4 was removed first.** Then, reconsidering #2/#3: a manual-Save grid has the same underlying problem, just less obvious — every submit's focus restoration happens in `_onDomainUpdated`/the submit handler's `.then()`, both of which only run once `refreshPageDomain`'s network round-trip resolves. That's not instantaneous, and there's nothing stopping the user from clicking or typing somewhere else in the meantime. A focus jump landing at that later, unpredictable moment is a surprise interruption regardless of whether the grid autosaves or not — the delay, not the autosave, is what makes it a surprise.
+
+**Final state:** `_focusAfterSubmit()`, `_restoreFocusAddress()`, `_firstEditableInput()`, and `_captureFocusAddress()` were all removed outright (all four were part of the same now-unused mechanism). `_onDomainUpdated` and the submit handler's fallback still reset the `_postSubmitFocus` flag (it's also read by the unrelated `repaintOnRefresh===false` gate — see that code's comment), but neither calls `.focus()` anymore. No code path driven by a `refreshPageDomain` round-trip — autosave or manual save, this grid's own or someone else's — moves focus, ever. The only remaining `.focus()` in the client is TextIt's clear button, a same-click, zero-delay affordance.
+
 ## Not yet touched
 
-Two other repaint-aggressiveness sources identified during this pass are still open:
+One other repaint-aggressiveness source identified during this pass is still open:
 
-- **Autosave background refresh** ([_list.js `_scheduleBackgroundDomainRefresh`](assets/ui/_list.js)) — every autosaved field edit still triggers a full page-wide bundle *refetch* 800ms later (now a gentler repaint, thanks to the change above, but still a network round-trip for every grid on the page for one cell's edit).
-- **Server-side filter change** ([scoop-api.js `refreshGridFilters`](assets/data/scoop-api.js)) — still clears the *entire* in-memory bundle cache (`this._bundleCache.clear()`), not just the affected grid's slice.
+- **Autosave background refresh** ([_list.js `_scheduleBackgroundDomainRefresh`](assets/ui/_list.js)) — every autosaved field edit still triggers a full page-wide bundle *refetch* 800ms later (now a gentler repaint, thanks to §2/§4 above, but still a network round-trip for every grid on the page for one cell's edit).
+
+`_bundleCache` (client-side bundle caching) was investigated separately — see the stashed work (`git stash list`) — it turned out to be dead code (never populated, since every caller of `refreshPageDomain` passes `force:true`) and is being removed/reconsidered independently of the repaint-aggressiveness effort, since it has no DOM or focus impact either way.

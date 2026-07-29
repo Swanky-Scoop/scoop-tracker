@@ -80,7 +80,12 @@ export default class List extends El{
     this.filter = null;
     this._isInit = false;
     this._docListenerBound = false;
-    this._lastFocusedEl = this.target;
+    // Set right before a manual (non-autosave) submit's own refresh. Despite
+    // the name, no longer used for focus (see PARTIAL-REFRESH.md's .focus()
+    // audit) — only consumed by the repaintOnRefresh===false gate in
+    // _onDomainUpdated, so a create-widget's blank row still resets after
+    // ITS OWN successful create while still ignoring refreshes caused by
+    // something else on the page.
     this._postSubmitFocus = false;
 
     // Autosave mode (opt-in per model via `autosave = true`): every field change
@@ -827,74 +832,6 @@ export default class List extends El{
     });
   }
 
-  _captureFocusAddress(e) {
-    const el = document.activeElement;
-    if (!el || !this.FORM.contains(el)) return null;
-
-    // If focus is inside a field editor, find the hidden input that already has the key
-    const h = (e.target instanceof HTMLInputElement && e.target.type === "hidden")
-      ? e.target : e.target.closest('input[type="hidden"][name]');
-    if (!h) return null;
-
-    const parsed = this.formCodec.parseBracketName(h.name);
-    if (!parsed || parsed.length < 4) return null;
-    if (parsed[0] !== this.name || parsed[1] !== 'cells') return null;
-
-    this._lastFocusedEl = { rowId: Number(parsed[2]), colKey: parsed[3] };
-
-    return this._lastFocusedEl;
-  }
-
-  // Where focus lands after a successful submit.
-  //
-  // - Grouped lists: the rebuild can collapse/reorder the group that held the
-  //   edited field, so returning there is jarring. Send focus to the top text
-  //   filter (so the user can keep filtering); if there's no text filter, the
-  //   first top-most editable input.
-  // - Ungrouped lists: keep the original behavior — return to the field the
-  //   user was editing.
-  _focusAfterSubmit() {
-    if (!this.itemGroups || this.itemGroups.length === 0) {
-      this._restoreFocusAddress();
-      return;
-    }
-
-    requestAnimationFrame(() => {
-      const filterInput = this.FORM.querySelector('input.gridFilterInput');
-      if (filterInput) { filterInput.focus(); return; }
-
-      const first = this._firstEditableInput();
-      if (first) first.focus();
-    });
-  }
-
-  // First visible, editable input control in document order (skips hidden-
-  // field inputs and items inside collapsed groups). Falls back to the first match.
-  _firstEditableInput() {
-    const sel = 'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), [contenteditable="true"]';
-    const candidates = [...(this.FRAME?.querySelectorAll(sel) ?? [])];
-    return candidates.find(el => el.offsetParent !== null) ?? candidates[0] ?? null;
-  }
-
-  _restoreFocusAddress() {
-    const addr = this._lastFocusedEl;
-    if (!addr) return;
-
-    const { rowId, colKey } = addr;
-
-    const h = this.FORM.querySelector(
-      `input[type="hidden"][name="${this.name}[cells][${rowId}][${colKey}]"]`
-    );
-    if (!h) return;
-
-    // Prefer focusing the visible input in the same field (FindIt/TextIt)
-    const field = h.closest('td, [data-field]') ?? h.parentElement;
-    const focusable =
-      field?.querySelector('input:not([type="hidden"]), textarea, [contenteditable="true"], button');
-
-    requestAnimationFrame(() => (focusable ?? h).focus());
-  }
-
   // Sort trigger is any element carrying [data-sort-key] — a <th> in a table
   // view, a button/chip in a card view — so both drive the same sort logic
   // via one delegated click handler.
@@ -1380,7 +1317,6 @@ export default class List extends El{
 
     this.FORM.addEventListener("submit", async (e) => {
       e.preventDefault();
-      this._captureFocusAddress(e);
 
       if(e.submitter && e.submitter.classList.contains('oc')) return false;
 
@@ -1434,13 +1370,13 @@ export default class List extends El{
           // its state with the server right away.
           this.api.refreshPageDomain({ force: true, toast:TOAST, info:{name:this.name, response:r} })
             .then(() => {
-              // Usually handled by the ts:domain:updated listener after it
-              // rebuilds the DOM; this is a fallback if that listener didn't
-              // run/consume it.
-              if (this._postSubmitFocus) {
-                this._postSubmitFocus = false;
-                this._focusAfterSubmit();
-              }
+              // Usually consumed by the ts:domain:updated listener already;
+              // this is a fallback reset if that listener didn't run (e.g.
+              // it was never bound, or threw before reaching the flag) —
+              // without it, this grid's NEXT unrelated refresh would
+              // wrongly read _postSubmitFocus as still true and bypass the
+              // repaintOnRefresh===false gate above.
+              this._postSubmitFocus = false;
             })
             .catch(err => console.error("Post-save domain refresh failed:", err));
         }
@@ -1520,12 +1456,16 @@ export default class List extends El{
             }
             this._flashResolvedMarks(resolvedKeys);
 
-            if (this._postSubmitFocus) {
-              this._postSubmitFocus = false;
-              this._focusAfterSubmit();
-            } else {
-              this._restoreFocusAddress();
-            }
+            // Focus is never moved here — for any grid, autosave or not.
+            // This handler only runs once refreshPageDomain's network
+            // round-trip resolves, by which point the user has very likely
+            // already moved on (typed into another field, clicked elsewhere
+            // on the page); jumping focus at this later, unpredictable
+            // moment is a surprise interruption, never a helpful
+            // "restoration" — see the .focus() audit in PARTIAL-REFRESH.md.
+            // Still reset the flag so it doesn't leak into this grid's next,
+            // unrelated refresh (see the repaintOnRefresh===false gate above).
+            this._postSubmitFocus = false;
           }
         } finally {
           this._reloading = false;
