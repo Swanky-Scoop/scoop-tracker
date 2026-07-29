@@ -560,7 +560,6 @@ export default class ScoopAPI {
 
   async refreshGridFilters(grid = null) {
     this._bundleFilterParams = this._bundleFilterParamsForGrids();
-    this._bundleCache.clear();
     document.body.classList.add('TS_GRID-UPDATING');
     return this.refreshPageDomain({ force: true, info: { name: grid?.name ?? 'filters' } });
   }
