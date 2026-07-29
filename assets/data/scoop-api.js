@@ -406,7 +406,7 @@ export default class ScoopAPI {
   // there's no build/CDN cache to expire it. Poll the server's app.js mtime
   // (SCOOP.version at load time is the baseline) and reload once it changes,
   // but only when nothing on the page is mid-edit; otherwise recheck next tick.
-  watchForStaleVersion(baseline, { intervalMs = 5 * 60 * 1000 } = {}) {
+  watchForStaleVersion(baseline, { intervalMs = 20 * 60 * 1000 } = {}) {
     if (!baseline) return;
 
     setInterval(async () => {
@@ -422,7 +422,18 @@ export default class ScoopAPI {
       if (!current || current === baseline) return;
       if (this.hasUnsavedEdits()) return; // try again next tick
 
-      location.reload();
+      // A plain location.reload() re-requests this exact URL — if the HTML
+      // itself is served from cache (browser disk cache, an intermediate
+      // cache, a caching plugin) rather than hitting the server, the
+      // reloaded page can still carry the OLD app.js <script> tag (enqueue.php
+      // already versions that tag's URL via filemtime, so a genuine
+      // server-rendered page always points at the current file — this only
+      // guards against not reaching the server at all). Appending a
+      // cache-busting param makes this a URL the cache has never seen, so
+      // reload is forced to go all the way to the server.
+      const url = new URL(location.href);
+      url.searchParams.set('_ts', String(Date.now()));
+      location.href = url.toString();
     }, intervalMs);
   }
 
