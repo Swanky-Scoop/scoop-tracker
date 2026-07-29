@@ -62,6 +62,14 @@ export default class List extends El{
     // the model's own collapsed default (see _buildItemGroups).
     this._groupOpenOverrides = new Map();
 
+    // Groups whose row-patching was skipped because the user's focus was
+    // inside them at patch time (see _patchItems/_groupHasFocus) — keyed by
+    // groupId, same convention as _groupOpenOverrides. Flushed (patched for
+    // real, including dropping any now-stale rows) the moment focus leaves
+    // that group — see the FORM's focusout listener in _bindEvents and
+    // _showHide's own flush on toggle.
+    this._pendingGroupIds = new Set();
+
     this.sortField = null;
     this.sortDirection = 'asc';
 
@@ -389,51 +397,122 @@ export default class List extends El{
     }
   }
 
-  // Mirrors _buildItems' own group-boundary walk (same itemGroups[i+1]
-  // .startIndex logic) so a brand new row lands in the same container a full
-  // rebuild would have put it in — the only difference is an existing row is
-  // patched in place instead of replaced.
-  _patchItems() {
-    try {
-      const items = this.items ?? [];
-      const fields = this.fields ?? [];
-      const itemGroups = this.itemGroups ?? [];
+  // True if the browser's current focus is somewhere inside this group's
+  // container — the signal that gates deferring a group's patch (see
+  // _patchItems) rather than applying it immediately.
+  _groupHasFocus(CONTAINER) {
+    const active = document.activeElement;
+    return !!(CONTAINER && active && active !== document.body && CONTAINER.contains(active));
+  }
 
-      let i = 0;
+  // The fresh row set (and their ids) that belong to one group container,
+  // resolved from this.items/this.itemGroups — i.e. the freshest data this
+  // grid has, independent of whether it's been patched into THIS group's
+  // DOM yet. Works for the synthetic ungrouped container too: an absent/
+  // unmatched groupId falls back to start=0, end=items.length.
+  _groupRowSlice(CONTAINER) {
+    const groupId = CONTAINER?.dataset.groupId;
+    const groups = this.itemGroups ?? [];
+    const idx = groups.findIndex(g => String(g.groupId ?? '') === String(groupId ?? ''));
+    const start = idx >= 0 ? groups[idx].startIndex : 0;
+    const end = idx >= 0 && groups[idx + 1] ? groups[idx + 1].startIndex : (this.items ?? []).length;
 
-      items.forEach((row, r) => {
-        if (itemGroups[i + 1] && r === itemGroups[i + 1].startIndex) i++;
+    const rows = (this.items ?? []).slice(start, end);
+    const currentIds = new Set(rows.map(row => String(row?.id?.rowId ?? row?.id ?? 0)));
+    return { rows, currentIds };
+  }
 
-        const rowId = row?.id?.rowId ?? row?.id ?? 0;
-        const EXISTING = this._findRowDom(rowId);
+  // Patches one group's rows against this.items: classnames/badges updated
+  // in place on existing rows (never touching the writeable control — see
+  // _patchFieldDecorations), genuinely new rows built and appended.
+  // removeStale additionally drops any rendered row no longer in the fresh
+  // slice — that's only safe at a moment nobody could be mid-edit in this
+  // group (it just reopened after being collapsed, or focus just left it —
+  // see _reconcileGroupFreshness/_flushGroup), so it defaults off: the
+  // normal per-refresh pass (_patchItems) must never remove a row someone
+  // might currently be looking at.
+  _patchGroupRows(CONTAINER, { removeStale = false } = {}) {
+    if (!CONTAINER) return;
+    const fields = this.fields ?? [];
+    const { rows, currentIds } = this._groupRowSlice(CONTAINER);
+    const host = CONTAINER._itemsHost ?? CONTAINER;
 
-        if (EXISTING) {
-          this._patchRowClasses(EXISTING, row);
-          fields.forEach(col => {
-            const data = row?.[col.key] ?? "";
-            const CELL = EXISTING.querySelector(`.${CSS.escape(String(col.key))}`);
-            if (CELL) this._patchFieldDecorations(CELL, col, data);
-          });
-          return;
-        }
+    if (removeStale) {
+      // :not(.group) excludes Grid's own group-header <tr> — it carries
+      // data-row-id too (set to the groupId, see buildGroupDom), which
+      // would otherwise match and get wrongly swept up as a "stale row".
+      host.querySelectorAll(':scope > [data-row-id]:not(.group)').forEach(ROW => {
+        if (!currentIds.has(ROW.dataset.rowId)) ROW.remove();
+      });
+    }
 
-        // Genuinely new row — nothing to patch, build it the same way a full
-        // rebuild would have.
-        const ITEM = this.buildItemDom(row, fields);
-        ITEM.dataset.rowClasses = this._rowClasses(row).join(' ');
+    rows.forEach(row => {
+      const rowId = row?.id?.rowId ?? row?.id ?? 0;
+      const EXISTING = this._findRowDom(rowId);
 
+      if (EXISTING) {
+        this._patchRowClasses(EXISTING, row);
         fields.forEach(col => {
           const data = row?.[col.key] ?? "";
-          ITEM.append(this.buildFieldDom(col, data, row));
+          const CELL = EXISTING.querySelector(`.${CSS.escape(String(col.key))}`);
+          if (CELL) this._patchFieldDecorations(CELL, col, data);
         });
+        return;
+      }
 
-        const container = this.itemGroupDom[i];
-        if (!container) {
-          console.error("List _patchItems: missing group container", { list: this.name, i, r });
+      // Genuinely new row — nothing to patch, build it the same way a full
+      // rebuild would have.
+      const ITEM = this.buildItemDom(row, fields);
+      ITEM.dataset.rowClasses = this._rowClasses(row).join(' ');
+
+      fields.forEach(col => {
+        const data = row?.[col.key] ?? "";
+        ITEM.append(this.buildFieldDom(col, data, row));
+      });
+
+      host.append(ITEM);
+    });
+  }
+
+  // Re-runs the active FindInGrid filter (if this grid has one and its
+  // query is non-empty) against whatever's now rendered. Needed after any
+  // patch/reconcile: FindInGrid ( find-in-grid.js) only re-evaluates on its
+  // own input event, so it has no way to know the DOM changed underneath it
+  // — without this, a group patched or newly created after the user already
+  // typed a filter query would show up unfiltered instead of respecting it.
+  _reapplyActiveFilter() {
+    const query = this._filter?.inp?.value;
+    if (this._filter && query) this._filter.apply(query);
+  }
+
+  // One group container, fully caught up: drops stale rows and re-patches
+  // the rest, then reapplies whatever filter is active. The one entry point
+  // for every "this group is now safe to fully sync" moment — see
+  // _showHide (group toggled open or closed) and the focusout listener in
+  // _bindEvents (focus left a group that had deferred work pending).
+  _flushGroup(CONTAINER) {
+    if (!CONTAINER) return;
+    const groupId = CONTAINER.dataset.groupId ?? '__ungrouped__';
+    this._pendingGroupIds.delete(groupId);
+    this._patchGroupRows(CONTAINER, { removeStale: true });
+    this._reapplyActiveFilter();
+  }
+
+  // One entry per group container (or the single synthetic container for an
+  // ungrouped list) — a group with the user's focus currently inside it is
+  // deferred entirely rather than patched now (see _groupHasFocus): the
+  // fresh data is already sitting in this.items regardless, only the DOM
+  // catch-up for THAT group waits until it's safe (_flushGroup, once focus
+  // moves on). Every other group patches immediately, same as before.
+  _patchItems() {
+    try {
+      this.itemGroupDom.forEach(CONTAINER => {
+        if (this._groupHasFocus(CONTAINER)) {
+          this._pendingGroupIds.add(CONTAINER.dataset.groupId ?? '__ungrouped__');
           return;
         }
 
-        (container._itemsHost ?? container).append(ITEM);
+        this._patchGroupRows(CONTAINER);
       });
     } catch (e) {
       console.error("List _patchItems exception", this.name, e, {
@@ -449,6 +528,7 @@ export default class List extends El{
 
     this._patchItemGroups(this.itemGroups);
     this._patchItems();
+    this._reapplyActiveFilter();
   }
 
   // Additive-refresh counterpart to refresh() — see _patchBodies above and
