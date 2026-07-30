@@ -547,6 +547,7 @@ html body {
     min-width: 0;
     font-size: 0.6rem;
     font-weight: bold;
+    display: none;
   }
 }
 
