@@ -98,6 +98,16 @@ export default class FindInGrid {
     }
   }
 
+  // Empties the query and re-applies it (i.e. shows everything again) —
+  // setting .value alone doesn't fire 'input', so the visible filtered state
+  // would otherwise be left stale/mismatched with the now-empty box. Used
+  // when focus is programmatically moved here (e.g. after a save) rather
+  // than by the user actually clearing it themselves.
+  clear() {
+    this.inp.value = "";
+    this.apply("");
+  }
+
   setGroupOpen(groupRow, open) {
     const tb = groupRow?.parentElement;
     if (!tb || !tb.matches?.("tbody.collapsible")) return;

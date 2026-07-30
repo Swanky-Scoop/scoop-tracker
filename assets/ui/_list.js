@@ -1429,6 +1429,12 @@ export default class List extends El{
         // here means there is no gap for that race to happen in at all, and
         // it happens whether or not the POST that follows ultimately
         // succeeds — see PARTIAL-REFRESH.md.
+        //
+        // Also clears whatever query was already typed (e.g. leftover from
+        // finding the row just saved) so the grid is unfiltered and ready
+        // for the next search, rather than landing focused but still
+        // narrowed to whatever was there before.
+        if (this._filter) this._filter.clear();
         if (this._filter?.inp) this._filter.inp.focus();
 
         const r = await this.api.postJson(changes, this.name);

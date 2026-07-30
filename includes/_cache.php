@@ -13,8 +13,37 @@
 
 define( 'SCOOP_CACHE_TTL', 300 ); // 5 minutes — safety net if invalidation misses
 
+// Longer safety-net TTL for the per-entity cache below (performance.md #13)
+// — real invalidation is precise (bumped only by that entity's own save),
+// so this is purely a backstop against a missed invalidation path, not the
+// thing correctness relies on. 1 day, not indefinite, so any such miss
+// self-corrects instead of persisting.
+define( 'SCOOP_ENTITY_CACHE_TTL', DAY_IN_SECONDS );
+
 function scoop_cache_version(): int {
   return (int) get_option( 'scoop_cache_version', 1 );
+}
+
+// Entities whose bundle-relevant data changes rarely (flavor/use/location
+// are edited maybe a handful of times a year — see performance.md #13) but
+// whose transient cache was, until now, wholesale-invalidated by the same
+// global scoop_cache_version a routine tub save bumps constantly. These get
+// their own, narrower version — see scoop_entity_cache_version/_bust below
+// and their use in scoop_fetch_entities() (includes/bundle-fetch.php) —
+// bumped only by their own post type's save, so they can stay warm across
+// the tub saves that dominate a normal session, independent of
+// bundle.php's own whole-bundle cache (which still exists unchanged; this
+// only matters when THAT one misses).
+function scoop_slow_changing_entity_types(): array {
+  return [ 'flavor', 'use', 'location' ];
+}
+
+function scoop_entity_cache_version( string $entity_key ): int {
+  return (int) get_option( "scoop_ecv_{$entity_key}", 1 );
+}
+
+function scoop_entity_cache_bust( string $entity_key ): void {
+  update_option( "scoop_ecv_{$entity_key}", scoop_entity_cache_version( $entity_key ) + 1, false );
 }
 
 function scoop_cache_bust(?int $post_id = null, array $ctx = []): void {
@@ -27,6 +56,10 @@ function scoop_cache_bust(?int $post_id = null, array $ctx = []): void {
 
     $post_type = get_post_type( $post_id );
     if ( $post_type === 'inventory_change' ) return;
+
+    if ( $post_type && in_array( $post_type, scoop_slow_changing_entity_types(), true ) ) {
+      scoop_entity_cache_bust( $post_type );
+    }
   }
 
   // autoload=false: this option changes frequently, no need to load on every page

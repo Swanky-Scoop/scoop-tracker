@@ -318,6 +318,26 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
 
   if ( $fields_only ) return $spec['fields'] ?? [];
 
+  // Per-entity cache for slow-changing entities (performance.md #13) —
+  // layered on top of bundle.php's whole-bundle transient, and only
+  // matters when that outer cache misses (e.g. an unrelated tub save
+  // bumped the global version): flavor/use/location can still be served
+  // warm from here instead of hitting the DB + $pod->field() again.
+  // 'flavor's key includes whether InstockFlavor-only fields are included
+  // (see #12 above) since that changes the actual row shape — otherwise a
+  // cache entry built for one request could wrongly serve the other.
+  $entity_cache_key = null;
+  if ( in_array( $key, scoop_slow_changing_entity_types(), true ) ) {
+    $includes_instock = $key === 'flavor' && in_array( 'InstockFlavor', $ctx['requesting_types'] ?? [], true );
+    $entity_cache_key = 'scoop_ec_' . md5( $key . '|' . scoop_entity_cache_version( $key ) . '|' . ( $includes_instock ? '1' : '0' ) );
+
+    $entity_cached = get_transient( $entity_cache_key );
+    if ( $entity_cached !== false && is_array( $entity_cached ) ) {
+      scoop_debug_log( "scoop_fetch_entities('{$key}'): entity-cache HIT" );
+      return $entity_cached;
+    }
+  }
+
   $pod_name    = $spec['pod'];
   $spec_fields = $spec['fields']      ?? [];
   $post_fields = $spec['post_fields'] ?? [];
@@ -522,7 +542,12 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
           ? scoop_text_out( get_the_author_meta( 'display_name', $editor_id ) )
           : '';
       } else{
-        $row[ $field ] = scoop_cast( $pod->field( $field ), $type );
+        // post_modified/post_date (and any other non-author/editor
+        // post_field) are plain wp_posts columns already sitting in
+        // $pod->row for any post-type pod — not a Pods relationship at
+        // all, nothing for $pod->field() to resolve. Same direct-row-read
+        // pattern as the row_fields loop above. See performance.md #11/#13.
+        $row[ $field ] = scoop_cast( $pod->row[ $field ] ?? null, $type );
       }
     }
     $t_post_fields_ms += ( microtime( true ) - $t0 ) * 1000;
@@ -563,6 +588,10 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     $key, $row_count, $t_find_ms, $t_needs_field_ms, $t_post_fields_ms, $t_enrich_ms, $t_total_ms,
     $row_count ? $t_total_ms / $row_count : 0.0
   ) );
+
+  if ( $entity_cache_key !== null ) {
+    set_transient( $entity_cache_key, $out, SCOOP_ENTITY_CACHE_TTL );
+  }
 
   return $out;
 }
