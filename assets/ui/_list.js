@@ -428,9 +428,9 @@ export default class List extends El{
   // removeStale additionally drops any rendered row no longer in the fresh
   // slice — that's only safe at a moment nobody could be mid-edit in this
   // group (it just reopened after being collapsed, or focus just left it —
-  // see _reconcileGroupFreshness/_flushGroup), so it defaults off: the
-  // normal per-refresh pass (_patchItems) must never remove a row someone
-  // might currently be looking at.
+  // see _flushGroup), so it defaults off: the normal per-refresh pass
+  // (_patchItems) must never remove a row someone might currently be
+  // looking at.
   _patchGroupRows(CONTAINER, { removeStale = false } = {}) {
     if (!CONTAINER) return;
     const fields = this.fields ?? [];
@@ -476,7 +476,7 @@ export default class List extends El{
 
   // Re-runs the active FindInGrid filter (if this grid has one and its
   // query is non-empty) against whatever's now rendered. Needed after any
-  // patch/reconcile: FindInGrid ( find-in-grid.js) only re-evaluates on its
+  // patch/reconcile: FindInGrid (find-in-grid.js) only re-evaluates on its
   // own input event, so it has no way to know the DOM changed underneath it
   // — without this, a group patched or newly created after the user already
   // typed a filter query would show up unfiltered instead of respecting it.
@@ -869,47 +869,23 @@ export default class List extends El{
           this._groupOpenOverrides.set(groupId, CONTAINER.classList.contains('opened'));
         }
 
-        // A collapsed group can go stale — _patchItems (see _onDomainUpdated)
-        // deliberately never removes a row, so a group that's been closed
-        // through several background refreshes may still be showing rows
-        // that no longer exist in the current data. Opening it is the cheap,
-        // natural moment to catch it up: reconcile against this.items, which
-        // is already as fresh as the last completed refresh (no fetch here,
-        // see _reconcileGroupFreshness).
-        if (CONTAINER?.classList.contains('opened')) this._reconcileGroupFreshness(CONTAINER);
+        // Toggling open OR closed is a safe moment to fully catch this group
+        // up (_flushGroup — drops any stale rows and re-patches the rest):
+        // opening surfaces staleness accumulated while collapsed (nothing
+        // inside a closed group is focusable, see css.css's `& button, &
+        // input { display: none }` under .closed, so it can only go stale,
+        // never be mid-edit); closing means whatever focus this group held
+        // (if any — see _groupHasFocus/_pendingGroupIds) just left it.
+        // Flushing here directly (rather than relying on the general
+        // focusout listener in _bindEvents) is what covers "focus moved to
+        // this very group's own toggle button" — from the outgoing field's
+        // perspective that's still inside the same container, so focusout's
+        // relatedTarget check alone wouldn't catch it.
+        if (CONTAINER) this._flushGroup(CONTAINER);
     }
 
     this.FORM.dispatchEvent(new Event("ts:list:close-overlays"));
 
-  }
-
-  // Drops any row rendered in this group's DOM that's no longer part of
-  // this.items' slice for that group — the removal step _patchItems skips
-  // for the sake of grids that ARE being looked at (see its own comment).
-  // Uses this.items/this.itemGroups directly: already the freshest data this
-  // grid has (kept current by modelInstance.setDomain() on every domain
-  // refresh, patch or full rebuild alike), so this never fetches — it's a
-  // pure DOM/array diff against what's already in memory.
-  _reconcileGroupFreshness(CONTAINER) {
-    if (!CONTAINER) return;
-
-    const groupId = CONTAINER.dataset.groupId;
-    const groups = this.itemGroups ?? [];
-    const idx = groups.findIndex(g => String(g.groupId ?? '') === String(groupId ?? ''));
-    const start = idx >= 0 ? groups[idx].startIndex : 0;
-    const end = idx >= 0 && groups[idx + 1] ? groups[idx + 1].startIndex : (this.items ?? []).length;
-
-    const currentIds = new Set(
-      (this.items ?? []).slice(start, end).map(row => String(row?.id?.rowId ?? row?.id ?? 0))
-    );
-
-    // :not(.group) excludes Grid's own group-header <tr> — it carries
-    // data-row-id too (set to the groupId, see buildGroupDom), which would
-    // otherwise match and get wrongly swept up as a "stale row".
-    const host = CONTAINER._itemsHost ?? CONTAINER;
-    host.querySelectorAll(':scope > [data-row-id]:not(.group)').forEach(ROW => {
-      if (!currentIds.has(ROW.dataset.rowId)) ROW.remove();
-    });
   }
 
   // Sort trigger is any element carrying [data-sort-key] — a <th> in a table
@@ -1317,6 +1293,33 @@ export default class List extends El{
     this.FORM.addEventListener('ts:findit-change', this._handleCellChange.bind(this));
     this.FORM.addEventListener('ts:textit-change', this._handleCellChange.bind(this));
 
+    // Catches up a group deferred by _patchItems (see _groupHasFocus) the
+    // moment focus genuinely leaves it — the general case; toggling that
+    // same group's own .oc button is handled directly in _showHide instead
+    // (see its comment for why relatedTarget alone can't distinguish that).
+    // focusout bubbles (blur doesn't), so one listener on FORM covers every
+    // field in every group.
+    this.FORM.addEventListener('focusout', (e) => {
+      if (!this._pendingGroupIds.size) return;
+
+      const leavingGroup = e.target.closest('[data-group-container]');
+      if (!leavingGroup) return;
+
+      const groupId = leavingGroup.dataset.groupId ?? '__ungrouped__';
+      if (!this._pendingGroupIds.has(groupId)) return;
+
+      // relatedTarget is the element about to receive focus — null means
+      // focus is leaving the document entirely (e.g. the user alt-tabbed
+      // away), which counts as "no longer within the group" same as moving
+      // to any other on-page element. Only skip when focus is moving
+      // somewhere still inside this same group (e.g. tabbing between two
+      // fields in the same row) — that's still "within" it, per the rule.
+      const incoming = e.relatedTarget;
+      if (incoming && leavingGroup.contains(incoming)) return;
+
+      this._flushGroup(leavingGroup);
+    });
+
     this.FORM.addEventListener('change', async (e) => {
       const select = e.target.closest('select[data-filter-key]');
       if (!select || !this.FORM.contains(select)) return;
@@ -1415,6 +1418,18 @@ export default class List extends El{
           console.log("No changes to submit.", changes);
           return;
         }
+
+        // Move focus to the find-in-grid filter right now — synchronously,
+        // tied to the user's own action (Ctrl+Enter or clicking Save), with
+        // no `await` between here and the call. Deliberately NOT tied to the
+        // POST's response (below) or the refresh that follows it — both are
+        // async and can resolve at an unpredictable moment after the user
+        // has already started typing into the filter; moving focus at that
+        // point would yank the cursor out from under active typing. Doing it
+        // here means there is no gap for that race to happen in at all, and
+        // it happens whether or not the POST that follows ultimately
+        // succeeds — see PARTIAL-REFRESH.md.
+        if (this._filter?.inp) this._filter.inp.focus();
 
         const r = await this.api.postJson(changes, this.name);
 
