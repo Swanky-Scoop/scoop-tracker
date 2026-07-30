@@ -324,6 +324,22 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
 
   [ $row_fields, $needs_field ] = scoop_classify_fetch_fields( $spec_fields );
 
+  // flavor.tubs/current_slots are multi-value ('ids') relationship fields.
+  // Only InstockFlavorGridModel (assets/models/instock-flavor-grid-model.js)
+  // actually reads them; every other grid type that needs 'flavor'
+  // (FlavorTub, Cabinet, Batch, ...) builds its own flavor grouping/badges/
+  // dropdown options from the tub entity's own 'flavor' field and flavor's
+  // basic identity fields instead — confirmed by tracing
+  // _base-grid-model.js/_flavor.js/flavor-tub-grid-model.js, none of which
+  // reference these two fields. See performance.md #12 — measured ~35% cut
+  // to 'flavor's own needs_field cost (~656ms of ~1928ms on 226 rows
+  // locally), not a majority share; the remaining cost is menu_board/photo/
+  // allergens/web_id, still worth a further look (see #13's cache-scope
+  // idea, which would help those too since they're just as static).
+  if ( $key === 'flavor' && ! in_array( 'InstockFlavor', $ctx['requesting_types'] ?? [], true ) ) {
+    unset( $needs_field['tubs'], $needs_field['current_slots'] );
+  }
+
   $loc_id = ! empty( $ctx['location'] ) ? (int) $ctx['location'] : 0;
 
   // NOT IN trash/auto-draft matches the original get_posts( 'post_status'=>'any' )
@@ -433,10 +449,23 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     'where'   => implode( ' AND ', $where_clauses ),
   ];
 
+  // Timing diagnostic for the "why does a cold-cache bundle fetch take
+  // 10-15s" investigation — same lap-timing-via-microtime pattern used for
+  // the batch-creation investigation in hooks/batch-tub.php. Entirely
+  // gated behind scoop_debug_log()'s SCOOP_DEBUG_LOG constant, zero cost
+  // otherwise. Suspect: $pod->field() is called once per needs_field/
+  // post_field PER ROW (relationship resolution) — this isolates that from
+  // the find() query itself so the hypothesis can be confirmed with real
+  // numbers before touching the fetch logic.
+  $t_request_start  = microtime( true );
+  $t_needs_field_ms = 0.0;
+  $t_post_fields_ms = 0.0;
+
   $pod = pods( $pod_name );
   if ( ! $pod ) return [];
 
   $pod->find( $find_params );
+  $t_find_ms = ( microtime( true ) - $t_request_start ) * 1000;
 
   $out = [];
 
@@ -462,16 +491,19 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     }
 
     // Relationship + unknown-typed fields — resolved by Pods
+    $t0 = microtime( true );
     foreach ( $needs_field as $field => $desc ) {
-      
+
       //error_log( "==> Processing field '{$field}' of type '{$desc}' for {$key} ID {$id}" );
       $row[ $field ] = scoop_cast( $pod->field( $field ), $desc );
     }
+    $t_needs_field_ms += ( microtime( true ) - $t0 ) * 1000;
 
     // Post fields from wp_posts columns already in $pod->row.
     // post_modified and post_date are omitted when zero, same as spec datetime fields.
+    $t0 = microtime( true );
     foreach ( $post_fields as $field => $type ) {
-      scoop_debug_log( "Processing post field '{$field}' of type '{$type}' for {$key} ".($pod->row[$field] ?? 'null') );
+      //scoop_debug_log( "Processing post field '{$field}' of type '{$type}' for {$key} ".($pod->row[$field] ?? 'null') );
       if ( $field === 'author_name' ) {
         // get_the_author_meta() caches per unique author — cheap for a small staff
         $row['author_name'] = scoop_text_out(
@@ -493,6 +525,7 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
         $row[ $field ] = scoop_cast( $pod->field( $field ), $type );
       }
     }
+    $t_post_fields_ms += ( microtime( true ) - $t0 ) * 1000;
 
     // Custom per-entity filter (e.g. tub state/DateActivity logic)
     if ( ! empty( $spec['filter'] ) && is_callable( $spec['filter'] ) ) {
@@ -507,9 +540,14 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     $out[] = $row;
   }
 
+  $row_count = count( $out );
+
   // Slots derive location from their parent cabinet — enriched in a single bulk query
+  $t_enrich_ms = 0.0;
   if ( $key === 'slot' && ! empty( $out ) ) {
+    $t0  = microtime( true );
     $out = scoop_enrich_slots_with_location( $out );
+    $t_enrich_ms = ( microtime( true ) - $t0 ) * 1000;
 
     if ( $loc_id > 0 ) {
       $out = array_values( array_filter( $out, function ( $slot ) use ( $loc_id ) {
@@ -517,6 +555,14 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
       } ) );
     }
   }
+
+  $t_total_ms = ( microtime( true ) - $t_request_start ) * 1000;
+
+  scoop_debug_log( sprintf(
+    "scoop_fetch_entities('%s'): %d rows | find=%.1fms | needs_field=%.1fms | post_fields=%.1fms | slot_enrich=%.1fms | TOTAL=%.1fms (%.2fms/row)",
+    $key, $row_count, $t_find_ms, $t_needs_field_ms, $t_post_fields_ms, $t_enrich_ms, $t_total_ms,
+    $row_count ? $t_total_ms / $row_count : 0.0
+  ) );
 
   return $out;
 }

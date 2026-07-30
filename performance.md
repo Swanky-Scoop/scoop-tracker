@@ -15,6 +15,52 @@ Each finding has:
 
 ## High severity
 
+*(#11-13 below were diagnosed 2026-07-30, after #1-10 already existed — numbered to avoid disturbing existing cross-references in "Recommended order", not chronological within this section. They're the most acutely felt findings in this doc: the direct cause of a 10-15s wait after every single manual FlavorTub save.)*
+
+### 11. Bundle fetch N+1 via `$pod->field()` dominates cold-cache request time
+
+**Status (2026-07-30):** *Diagnosed with real numbers, not yet fixed.* Permanent timing instrumentation added to `scoop_fetch_entities()`/`scoop_bundle_get()` (gated behind `SCOOP_DEBUG_LOG`, zero cost when off) — reusable to measure any fix attempt.
+
+**Location:** [scoop_fetch_entities](includes/bundle-fetch.php#L311)
+
+**What:** Every relationship/int/unknown-typed field, for every row, in every entity a bundle needs, is resolved via `$pod->field($field)` — a real Pods relationship-resolution call, not a plain array read. `bundle-fetch.php`'s own `row_fields` bucket already avoids this for scalar columns (reads `$pod->row` directly); its `needs_field` bucket (every int/relationship/unknown-typed field) does not. Same bug class as #3 below, in the bundle path instead of analytics.
+
+**Why it's slow:** Confirmed via a live probe against real local data (bootstrapped WP via PHP CLI against the Local/Flywheel `swank-tracker` mirror, calling `scoop_bundle_get()` directly with `force_bust=1` to simulate a real post-save cold fetch — 333 tub rows, 226 flavor rows):
+
+```
+tub:    333 rows | find=86.6ms  | needs_field=2266.2ms | post_fields=507.9ms | TOTAL=3219.0ms
+flavor: 226 rows | find=15.9ms  | needs_field=1927.6ms |                     | TOTAL=2199.8ms
+use:      6 rows | find=7.9ms   | needs_field=21.6ms   |                     | TOTAL=79.1ms
+slot:    32 rows | find=9.3ms   | needs_field=229.4ms  | slot_enrich=9.1ms   | TOTAL=280.9ms
+                                                                    GRAND TOTAL=5961.9ms
+```
+
+The SQL `find()` itself is trivial everywhere (86.6ms for 333 rows). ~83% of total time is per-row `$pod->field()` resolution. Matches the local machine's ~6s; the real 10-15s on TEST/OPS is plausibly the same pattern compounded by real network latency per DB round-trip (many more, smaller round-trips vs. localhost's near-zero latency).
+
+**Fix:** See #12 and #13 below first — both target the *avoidable* cost without touching how Pods resolves anything. A `$pod->field()` → `get_post_meta()` bypass (bulk-priming the meta cache once per entity fetch) is a further possible fix for `tub`'s own remaining cost — verified as data-compatible: all six of `tub`'s relationship fields are Pods `pick`/`pick_object:post_type`/`single`, which Pods auto-mirrors into `wp_postmeta` (plain `meta_key` = field name) alongside the canonical `wp_podsrel` row, confirmed identical across 5 real tub rows via direct Pods API + DB probe. Deliberately shelved for now — circumventing the Pods API has caused pain on this project before, so pursue only if #12/#13 don't get far enough, and only with a rigorous equivalence-verification pass first (compare `get_post_meta()` output against `$pod->field()` output across real data before switching any code path over).
+
+### 12. `flavor.tubs`/`current_slots` resolved but unused by the grid causing the slow save
+
+**Status (2026-07-30):** *Implemented and verified locally, not yet on TEST/OPS.* Confirmed correct both ways with the local probe: `FlavorTub` requests now skip the two fields (flavor `needs_field` 1927.6ms → 1271.5ms, a genuine but *partial* cut — see the corrected "Why it's slow" below); `InstockFlavor` requests still resolve them fully (flavor `needs_field` measured at 2149.6ms, consistent with baseline). Two other grid types share `flavor` with `InstockFlavor` in their bundle spec (`Cabinet`, `CabinetWorkflow` — see `scoop_bundle_specs()`) and were traced the same way as `FlavorTub`/`Batch` — confirmed they don't read `tubs`/`current_slots` either, so this only ever resolves fully when `InstockFlavor` itself is genuinely on the page.
+
+**Location:** [flavor entity spec](includes/_specs.php#L230), [scoop_fetch_entities](includes/bundle-fetch.php#L311)
+
+**What:** `flavor`'s `tubs`/`current_slots` fields (`data_type: 'ids'`, multi-value relationships — "which tubs/slots currently belong to this flavor") are unconditionally resolved for every bundle request that needs `flavor`. Only `InstockFlavorGridModel` ([assets/models/instock-flavor-grid-model.js:97](assets/models/instock-flavor-grid-model.js#L97)) reads them. `FlavorTubGridModel` — the grid type behind the 10-15s save-wait — builds its own flavor grouping straight from `domain.tub`'s own `flavor` field and never touches `flavor.tubs`/`flavor.current_slots` at all (confirmed by tracing `_base-grid-model.js`/`_flavor.js`/`flavor-tub-grid-model.js`/`batch-grid-model.js` — none reference either field; the Cabinet/Batch flavor dropdowns source from `flavorMeta.optionsAll`, built from title alone).
+
+**Why it's slow — corrected after measuring:** originally assumed `tubs`/`current_slots` were the *dominant* cost. Measured after implementing: they account for ~656ms of flavor's ~1928ms `needs_field` time (226 rows) — a real ~35% cut, not a majority. The remaining ~1272ms is `menu_board`/`photo`/`allergens`/`web_id` — still worth addressing, and a good candidate for #13's cache-scope idea below, since those are exactly the genuinely-static fields that fix targets.
+
+**Fix (implemented):** Skip resolving `tubs`/`current_slots` unless `InstockFlavor` is actually among the request's `requesting_types` — the same conditional-on-`requesting_types` pattern `bundle-fetch.php` already uses for `tub`'s DateActivity-only date filtering (see `$has_date_activity` there). No Pods-API risk — just not asking for fields nothing in the response consumes. No cross-contamination risk with the existing whole-bundle transient cache either: it's already keyed by the full `types` param, so a `FlavorTub`-only request and an `InstockFlavor`-only request were already landing in separate cache entries before this change.
+
+### 13. Global cache-version bump busts flavor's near-static data on every unrelated save
+
+**Status (2026-07-30):** *Diagnosed, not yet fixed. Extends #4's already-recommended fix.*
+
+**Location:** [scoop_cache_bust()](includes/_cache.php#L20)
+
+**What:** `flavor`'s own editable properties (title, photo, menu_board, allergens, web_id) change roughly 3x/year per the user — but the whole bundle cache is invalidated by one global `scoop_cache_version`, bumped on every Pods save. A plain `tub` state change (which happens constantly) busts `flavor`'s cache too, even though nothing about `flavor` changed.
+
+**Fix:** Once #12 lands (so `flavor`'s per-request shape no longer includes tub-derived fields), the remaining `flavor` fields are safe to cache far more durably than `SCOOP_CACHE_TTL`'s 5-minute safety net — invalidated only by an actual `flavor` save, not the global version. This is a more targeted version of #4's already-recommended whitelist fix: rather than (or in addition to) whitelisting *which post types* bump the cache at all, give slow-changing entity types (`flavor`, `use`, `location`) their own invalidation scope, separate from fast-changing ones (`tub`, `inventory_change`).
+
 ### 1. Analytics endpoint has no transient cache
 
 **Status (2026-05-26):** *Addressed.* `scoop_analytics_cache_key()` lives in [includes/_cache.php](includes/_cache.php) and is keyed by `version | days | location | grid_type`. [includes/analytics.php](includes/analytics.php) reads the transient at the top of `scoop_analytics_handler()` and writes on both success paths (empty-flavors and main). Cache hits re-stamp `trace_id` so each response still has a unique debug ID; `_cache: 'hit'|'miss'` distinguishes the path. Invalidation rides on the same version-bump as the bundle cache.
@@ -176,7 +222,13 @@ The 12 Dad Bod tubs from batch 8368 (IDs 8369-8380) have been backfilled via `UP
 
 ## Recommended order
 
-Tackle in this sequence — each step makes the next easier to measure:
+**Update 2026-07-30:** #11-13 are now the top priority — they're the direct, measured cause of the 10-15s wait after every manual FlavorTub save, the most acutely-felt latency in the whole app. Sequence:
+
+1. **#12** — *Done, verified locally.* Stop resolving `flavor.tubs`/`current_slots` unless `InstockFlavor` is requesting them. Zero Pods-API risk. Measured impact was more modest than first estimated: ~656ms off flavor's ~1928ms `needs_field` cost (~11% off the whole `FlavorTub` bundle's ~6s total), not the majority share originally assumed — see #12's corrected "Why it's slow."
+2. **#13** — Still the bigger remaining lever for `flavor`: give it (and other slow-changing entities) their own cache-invalidation scope, separate from `tub`, so its *whole* fetch — including the `menu_board`/`photo`/`allergens`/`web_id` fields #12 didn't touch — can be served warm on nearly every `FlavorTub`-triggered request instead of just the two fields #12 removed. Also zero Pods-API risk. Not yet sized with real numbers; do that before estimating further.
+3. Re-measure with the timing instrumentation from #11 before deciding whether `tub`'s own remaining cost needs the (riskier, Pods-API-adjacent) `$pod->field()` bypass treatment described there.
+
+Tackle in this sequence for the rest — each step makes the next easier to measure:
 
 1. **#4** — Whitelist the cache-bust post types. Lowest-risk change, immediately raises hit rate.
 2. **#1** — Add the analytics transient cache. Single biggest latency win.

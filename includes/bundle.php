@@ -9,6 +9,14 @@ function scoop_parse_types_param($raw): array {
 }
 
 function scoop_bundle_get( \WP_REST_Request $req ) {
+  // Timing diagnostic — see the matching comment in bundle-fetch.php's
+  // scoop_fetch_entities(). This wraps the WHOLE request so a cache hit's
+  // near-zero time and a cold miss's real cost are both visible, and so the
+  // sum of each entity's own TOTAL (logged separately) can be compared
+  // against this request's total to reveal any cost living outside the
+  // per-entity fetch loop (cache write, JSON encoding, REST dispatch, etc).
+  $t_request_start = microtime( true );
+
   // ── Cache read ────────────────────────────────────────────────────────────
   // force_bust (client: assets/ui/page-status.js's #bust URL hash, see
   // ScoopAPI._hashForcesBust) skips the read only — the write below still
@@ -21,6 +29,11 @@ function scoop_bundle_get( \WP_REST_Request $req ) {
   if ( $cached !== false ) {
     // Stamp it so you can confirm cache hits in Query Monitor / network tab
     $cached['_cache'] = 'hit';
+    scoop_debug_log( sprintf(
+      'scoop_bundle_get: CACHE HIT types=%s in %.1fms',
+      (string) $req->get_param( 'types' ),
+      ( microtime( true ) - $t_request_start ) * 1000
+    ) );
     return new \WP_REST_Response( $cached, 200 );
   }
 
@@ -77,6 +90,12 @@ function scoop_bundle_get( \WP_REST_Request $req ) {
 
   // ── Cache write ───────────────────────────────────────────────────────────
   set_transient( $cache_key, $body, SCOOP_CACHE_TTL );
+
+  scoop_debug_log( sprintf(
+    'scoop_bundle_get: CACHE MISS types=%s needs=%s TOTAL=%.1fms',
+    implode( ',', $types ), implode( ',', $needTypes ),
+    ( microtime( true ) - $t_request_start ) * 1000
+  ) );
 
   $body['_cache'] = 'miss';
   return new \WP_REST_Response( $body, 200 );

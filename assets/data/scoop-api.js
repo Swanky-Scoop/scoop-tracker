@@ -54,9 +54,8 @@ export default class ScoopAPI {
     this._domainInflight = null;
     this._lastBundleCacheStatus = null; // 'hit'|'miss' from the last bundle fetch's transient cache
 
-    // Request control + caching
+    // Request control
     this.controller = new AbortController();
-    this._bundleCache = new Map(); // key:string -> bundleJson
 
     // #bust in the URL hash (e.g. https://.../page/#bust) forces every fetch
     // this mount makes to skip the server's transient cache read (still
@@ -293,26 +292,16 @@ export default class ScoopAPI {
 
   }
 
-  // Returns full bundle JSON: { ok, types, needs, data }
-  _bundleCacheKey(types = this._pageTypes) {
-    const params = new URLSearchParams();
-    Object.entries(this._bundleFilterParams ?? {})
-      .sort(([a], [b]) => a.localeCompare(b))
-      .forEach(([key, value]) => {
-        if (value != null && value !== '') params.set(key, String(value));
-      });
-
-    return `${this._typesKey(types)}|${params.toString()}`;
-  }
-
-  async getBundleForTypes(types = this._pageTypes, { cache = true } = {}) {
+  // Returns full bundle JSON: { ok, types, needs, data }. No client-side
+  // caching here — every caller (see refreshPageDomain) always fetches with
+  // force:true, so a cache keyed on types+filters was write-only dead
+  // weight; the server's own transient cache (keyed by cache_version +
+  // params, see includes/_cache.php) is the layer that actually absorbs
+  // repeat-request cost — see CLAUDE.md's note not to "fix" this pattern
+  // client-side.
+  async getBundleForTypes(types = this._pageTypes) {
     const key = this._typesKey(types);
     if (!key) throw new Error("getBundleForTypes: no types");
-
-    const cacheKey = this._bundleCacheKey(types);
-    if (cache && this._bundleCache.has(cacheKey)) {
-        return this._bundleCache.get(cacheKey);
-    }
 
     const url = this._bundleUrlForTypes(types);
     const bundle = await this.getJson(url);
@@ -334,7 +323,6 @@ export default class ScoopAPI {
       _date_filters: bundle?.date_filters ?? data._date_filters ?? {},
     };
 
-    if (cache) this._bundleCache.set(cacheKey, bundle);
     return bundle;
   }
 
@@ -368,8 +356,7 @@ export default class ScoopAPI {
     PageStatus.beginLoadTiming(`${window.location.pathname}::${this.typesKey}`, this._defaultBustMsForPage());
 
     this._domainInflight = (async () => {
-      // bypass in-memory bundle cache on force
-      const bundle = await this.getBundleForTypes(this._pageTypes, { cache: !force });
+      const bundle = await this.getBundleForTypes(this._pageTypes);
       this._domain = bundle?.data ?? {};
       this._lastBundleCacheStatus = bundle?._cache ?? null;
       this._domainInflight = null;

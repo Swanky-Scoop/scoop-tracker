@@ -41,7 +41,7 @@ Edits flow back via `ScoopAPI.postJson(payload, type)` which wraps the cells in 
 
 | File | Role |
 |---|---|
-| `scoop-api.js` | The central client. Owns: route map, nonce, bundle URL composition, in-memory bundle cache, host discovery, `mountAllGrids()`, `getModelsBom()` (model registry by grid type), `refreshPageDomain()`, `postJson()`. **Touched whenever a new grid type is added.** |
+| `scoop-api.js` | The central client. Owns: route map, nonce, bundle URL composition, host discovery, `mountAllGrids()`, `getModelsBom()` (model registry by grid type), `refreshPageDomain()`, `postJson()`. **Touched whenever a new grid type is added.** |
 | `form-codec.js` | Encodes/decodes grid edits between the DOM (`<input name="Cabinet[cells][12][current_flavor]">` hidden inputs) and the JSON envelope sent to POST. Parses bracket-named inputs, normalizes scalars, builds the `{ cells: { rowId: { colKey: value } } }` payload. |
 | `domain-codec.js` | Decodes the raw bundle response into a canonical client-side domain. Coerces relationship fields into scalar IDs, computes `_title` strings from WP-shaped titles, normalizes embedded `tub` records inside `flavor`. Centralizes all "WP shape quirks". |
 | `indexer.js` | Tiny utility: `byId(list)` → `Map<id, item>` and `groupBy(list, keyFn)` → `Map<key, item[]>`. Used by grid models to assemble lookup tables from bundle arrays. |
