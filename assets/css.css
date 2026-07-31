@@ -549,6 +549,10 @@ html body {
     font-weight: bold;
     display: none;
   }
+
+  &.Batch > .gridToggle {
+    display: block;
+  }
 }
 
 html > body.TS_GRID-UPDATING .scoop-grid {
