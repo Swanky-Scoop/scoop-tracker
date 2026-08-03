@@ -28,8 +28,20 @@ function scoop_register_analytics_route(): void {
   register_rest_route( 'scoop/v1', '/analytics', [
     'methods'             => 'GET',
     'callback'            => 'scoop_analytics_handler',
-    'permission_callback' => 'scoop_require_authenticated_user_read_only',
+    'permission_callback' => 'scoop_analytics_permission',
   ] );
+}
+
+/**
+ * Analytics is read-only for any authenticated user by default, but still
+ * routed through scoop_user_can_route() so a role's policy (see
+ * includes/_policy.php) can deny it — e.g. ice_cream_maker's Analytics
+ * deny-list entry.
+ */
+function scoop_analytics_permission( \WP_REST_Request $req ): bool {
+  if ( ! scoop_require_authenticated_user_read_only( $req ) ) return false;
+
+  return scoop_user_can_route( wp_get_current_user(), 'Analytics', 'GET' );
 }
 
 add_action( 'rest_api_init', 'scoop_register_analytics_route' );
