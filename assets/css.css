@@ -1496,6 +1496,10 @@ form table {
     background-color: var(--color-green-base);
   }
 
+  & th.sortable {
+    cursor: pointer;
+  }
+
   /* Second header row — one <th colspan> per location, spanning its bucket
      columns below (see item-pivot-grid.js's _buildLocationHeaderRow). */
   & tr.location-header th {

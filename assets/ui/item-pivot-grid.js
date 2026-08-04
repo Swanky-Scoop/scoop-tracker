@@ -95,7 +95,16 @@ export default class ItemPivotGrid extends Grid {
 
   buildMetaFieldDom(field) {
     if (field.key === '_row_label') {
-      return this.el('th', { classes: ['row-label-header'] });
+      // '_row_label' is a bare string (the flavor name — see
+      // PivotGridModel.buildRows' fillRow), so List's own _getSortValue
+      // already sorts it correctly (localeCompare) with no further changes
+      // needed — only bucket columns' bare-array cells needed a fix, see
+      // _list.js's _getSortValue.
+      return this.el('th', {
+        text: 'Flavor',
+        classes: ['row-label-header', 'sortable'],
+        data: { sortKey: '_row_label' },
+      });
     }
 
     const TH = super.buildMetaFieldDom(field);

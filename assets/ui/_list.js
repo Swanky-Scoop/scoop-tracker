@@ -1094,6 +1094,12 @@ export default class List extends El{
     // Handle different field data structures
     if (cellData == null) return null;
 
+    // A bare array (not the usual {id,display,...} cell-data object every
+    // other grid's fillRowFromColumns produces) — currently unique to
+    // PivotGridModel, whose cells are "every item in this bucket" (see
+    // _pivot-grid-model.js's fillRow). Sort by how many, not by identity.
+    if (Array.isArray(cellData)) return cellData.length;
+
     if (typeof cellData === 'object') {
       // For numeric fields, prefer the raw numeric .value over the
       // formatted display string so the comparator takes the numeric
