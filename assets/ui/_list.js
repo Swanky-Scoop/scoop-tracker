@@ -261,7 +261,11 @@ export default class List extends El{
   // was indistinguishable from "loaded, zero results" until this node exists
   // to tell them apart (both selectors stop on :has(.empty-state)).
   buildEmptyDom(fields) {
-    return this.el('div', { classes: ['empty-state'], text: 'No matching items' });
+    return this.el('div', { classes: ['empty-state'], text: this._emptyStateText() });
+  }
+
+  _emptyStateText() {
+    return `No matching items for ${this.modelInstance?.displayTitle ?? this.name ?? 'this list'}`;
   }
 
   // ─── Shared build pipeline — calls the hooks above, owns nothing visual ───
@@ -1366,6 +1370,10 @@ export default class List extends El{
     return !fields || fields.has(colKey);
   }
 
+  // Also the single place that reconciles SUBMIT/the find-in-grid text
+  // filter against the current render — called right after every
+  // _rebuildBodies/_patchBodies (init/refresh/_patchRefresh), so this.items
+  // and this.fields both already reflect what's on screen.
   _applyAutosaveUI() {
     const on = this._autosaveEnabled();
     const partial = on && !!this.state?.autosaveFields;
@@ -1373,7 +1381,21 @@ export default class List extends El{
     // Partial autosave models still need the Save button for their
     // manual-only fields (e.g. FlavorTub's 'state').
     this.FORM.classList.toggle('autosave-partial', partial);
-    if (this.SUBMIT) this.SUBMIT.hidden = on && !partial;
+
+    // hasWriteableFields reflects the current user's actual permissions —
+    // col.write is the server-computed spec ∩ policy intersection (see
+    // scoop_client_metadata() in includes/enqueue.php) — not just whether
+    // the column is writeable in the abstract. A list with items but no
+    // writeable columns for this user, or a list with zero items regardless
+    // of writeability, never needs a Save button.
+    const hasWriteableFields = (this.fields ?? []).some(f => f?.write);
+    const hasItems = (this.items ?? []).length > 0;
+
+    if (this.SUBMIT) this.SUBMIT.hidden = (on && !partial) || !hasWriteableFields || !hasItems;
+
+    // The find-in-grid text filter only ever narrows an existing list —
+    // nothing to narrow with zero items, so hide it along with SUBMIT.
+    if (this._filter?.inp) this._filter.inp.hidden = !hasItems;
   }
 
   _scheduleAutosave() {

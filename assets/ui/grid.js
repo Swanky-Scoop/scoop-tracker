@@ -82,7 +82,7 @@ export default class Grid extends List {
     const TR = this.el('tr', { classes: ['empty-row'] });
     const TD = this.el('td', {
       classes: ['empty-state'],
-      text: 'No matching items',
+      text: this._emptyStateText(),
       attrs: { colspan: fields?.length || 1 },
     });
     TR.append(TD);
