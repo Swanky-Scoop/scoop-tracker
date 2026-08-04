@@ -727,6 +727,17 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   border-radius: 0.25rem;
   cursor: pointer;
 
+  /* Icon/title are decorative — pointer-events: none makes a click anywhere
+     over them resolve straight to the <button> itself (this.TOGGLE's own
+     click listener, see _list.js), instead of the browser treating the
+     <img>/<span> as its own hit target (an <img> in particular is otherwise
+     happy to eat the click for itself, e.g. for drag-start). Without this,
+     only the padding/bevel around the icon+label actually toggled. */
+  & .dockIcon,
+  & .dockTitle {
+    pointer-events: none;
+  }
+
   & .dockIcon {
     font-size: 1.25rem;
     line-height: 1;
