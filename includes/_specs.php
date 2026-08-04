@@ -10,6 +10,8 @@ function scoop_bundle_specs(): array {
     'Closeout'     => ['needs' => ['flavor','use']],
     'DateActivity' => ['needs' => ['tub','inventory_change','flavor','use','location','slot','cabinet']],
     'InstockFlavor'=> ['needs' => ['flavor','tub','slot','cabinet']],
+    // Read-only "where are the tubs" pivot — see assets/models/item-pivot-grid-model.js.
+    'ItemPivot'    => ['needs' => ['tub','flavor','slot','cabinet','location']],
     // 'allergen' is a small fixed reference table (unlike 'batch' — see the
     // comment on that one elsewhere in change-tub.md) — cheap to fetch
     // whole, needed for the allergen icon URLs shown on each slot's flavor.

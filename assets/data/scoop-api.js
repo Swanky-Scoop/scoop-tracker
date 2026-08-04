@@ -16,6 +16,8 @@ import FlavorsGridModel      from "../models/flavors-grid-model.js";
 import InstockFlavorGridModel from "../models/instock-flavor-grid-model.js";
 import CabinetWorkflowGridModel from "../models/cabinet-workflow-grid-model.js";
 import CabinetWorkflowTile      from "../ui/cabinet-workflow-tile.js";
+import ItemPivotGridModel       from "../models/item-pivot-grid-model.js";
+import ItemPivotGrid            from "../ui/item-pivot-grid.js";
 
 // Some grid types run visibly heavier cold-cache queries than the rest of
 // the bundle (see bundle-fetch.php's date-filter/inventory_change handling
@@ -113,6 +115,7 @@ export default class ScoopAPI {
       "Flavors"      : FlavorsGridModel,
       "InstockFlavor": InstockFlavorGridModel,
       "CabinetWorkflow": CabinetWorkflowGridModel,
+      "ItemPivot"      : ItemPivotGridModel,
     };
   }
 
@@ -124,6 +127,7 @@ export default class ScoopAPI {
   getViewOverrides() {
     return {
       "CabinetWorkflow": CabinetWorkflowTile,
+      "ItemPivot"      : ItemPivotGrid,
     };
   }
 

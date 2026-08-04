@@ -162,9 +162,27 @@ export default class List extends El{
     }
   }
 
+  // Every other grid's columns come from server metaData and never change
+  // for the life of the page — setFields() is a one-time init() call and
+  // refresh()/_patchRefresh() never revisit it. A model whose columns are
+  // genuinely data-derived (currently: PivotGridModel — a flavor-name
+  // search narrows this.columns per rebuild) needs the header row/field
+  // list to be re-synced too, or it renders whatever columns happened to be
+  // present on first load forever after. No-op (via the key-list compare)
+  // for every static-column grid, so this is safe to call unconditionally.
+  _syncFieldsIfChanged(state) {
+    const columns = state?.columns;
+    if (!columns) return;
+
+    const oldKeys = (this.fields ?? []).map(f => f.key).join('|');
+    const newKeys = columns.map(f => f.key).join('|');
+    if (oldKeys !== newKeys) this.setFields(columns, true);
+  }
+
   async refresh(state) {
     if (!this._isInit) throw new Error("List.refresh() called before init()");
     this.state = state;
+    this._syncFieldsIfChanged(state);
     this._buildFilters(state);
     this._rebuildBodies(state);
     this._captureBaseline();
@@ -536,6 +554,7 @@ export default class List extends El{
   async _patchRefresh(state) {
     if (!this._isInit) throw new Error("List._patchRefresh() called before init()");
     this.state = state;
+    this._syncFieldsIfChanged(state);
     this._buildFilters(state);
     this._patchBodies(state);
     this._captureBaseline();
@@ -543,8 +562,21 @@ export default class List extends El{
     this._reportFresh();
   }
 
+  // Rebuilds every filter control from scratch (defs are cheap/static, only
+  // the selected/typed value changes) — but a text filter's own 'input'
+  // handler debounces into a rebuild while the user may still be typing
+  // (see _bindEvents), so whichever filter control currently has focus is
+  // deliberately re-focused (cursor position included) after the rebuild —
+  // without this, every debounced keystroke would yank focus out of the box
+  // the user is actively typing in.
   _buildFilters(state = this.state) {
     if (!this.FILTERS) return;
+
+    const prevActive = document.activeElement;
+    const refocusId = (prevActive instanceof HTMLElement && this.FILTERS.contains(prevActive))
+      ? prevActive.id
+      : null;
+    const refocusCursor = (refocusId && 'selectionStart' in prevActive) ? prevActive.selectionStart : null;
 
     this.FILTERS.replaceChildren();
 
@@ -557,23 +589,65 @@ export default class List extends El{
     this.FILTERS.hidden = false;
     this.FILTERS.classList.remove('empty');
 
-    defs.forEach(def => {
-      if (def?.type !== 'select') return;
+    // Defs sharing a `group` key render inside one wrapper (in first-seen
+    // order, interleaved with any ungrouped defs at that same point) instead
+    // of each getting its own top-level slot in FILTERS — see
+    // item-pivot-grid-model.js's show_* checkboxes for the first user.
+    const groupContainers = new Map();
 
-      const key = String(def.key ?? '');
+    defs.forEach(def => {
+      const key = String(def?.key ?? '');
       if (!key) return;
 
       const id = `${this.name}-${key}-filter`;
       const label = this.el('label', { attrs: { for: id }, classes: ['gridFilter'] });
       const labelText = this.el('span', { text: def.label ?? key.replace(/_/g, ' ') });
-      const select = this.el('select', {
-        attrs: { id },
-        data: { filterKey: key, filterMode: def.mode ?? 'client' },
-      });
+
+      let target = this.FILTERS;
+      if (def.group) {
+        target = groupContainers.get(def.group);
+        if (!target) {
+          target = this.el('fieldset', { classes: ['gridFilterGroup'], data: { filterGroup: def.group } });
+          if (def.groupLabel) target.append(this.el('legend', { text: def.groupLabel }));
+          this.FILTERS.append(target);
+          groupContainers.set(def.group, target);
+        }
+      }
 
       const selected = typeof state?.getFilterValue === 'function'
         ? state.getFilterValue(key)
         : def.default;
+
+      if (def.type === 'text') {
+        const input = this.el('input', {
+          attrs: { id, type: 'text', placeholder: def.placeholder ?? '', value: selected ?? '' },
+          data: { filterKey: key, filterMode: def.mode ?? 'client' },
+        });
+        label.append(labelText, input);
+        target.append(label);
+        return;
+      }
+
+      if (def.type === 'checkbox') {
+        const checked = selected === true || selected === 'true';
+        const input = this.el('input', {
+          attrs: { id, type: 'checkbox' },
+          props: { checked },
+          data: { filterKey: key, filterMode: def.mode ?? 'client' },
+        });
+        // Checkbox first, then its label — the reverse order of select/text
+        // (label first, control after), matches the usual checkbox layout.
+        label.append(input, labelText);
+        target.append(label);
+        return;
+      }
+
+      if (def.type !== 'select') return;
+
+      const select = this.el('select', {
+        attrs: { id },
+        data: { filterKey: key, filterMode: def.mode ?? 'client' },
+      });
 
       (def.options ?? []).forEach(option => {
         const opt = this.el('option', {
@@ -585,8 +659,43 @@ export default class List extends El{
       });
 
       label.append(labelText, select);
-      this.FILTERS.append(label);
+      target.append(label);
     });
+
+    if (refocusId) {
+      const next = this.FILTERS.querySelector(`#${CSS.escape(refocusId)}`);
+      if (next) {
+        next.focus();
+        if (refocusCursor != null && 'setSelectionRange' in next) next.setSelectionRange(refocusCursor, refocusCursor);
+      }
+    }
+  }
+
+  // Shared by both filter controls (select 'change', text 'input' debounced
+  // — see _bindEvents): pushes the control's current value into the model
+  // and re-renders. 'server' mode defers to refreshGridFilters (a real
+  // refetch); everything else just rebuilds this grid's own rows client-side.
+  async _applyFilterChange(el) {
+    const key = el.dataset.filterKey;
+    const mode = el.dataset.filterMode;
+    const value = el.type === 'checkbox' ? el.checked : el.value;
+
+    if (typeof this.modelInstance?.setFilterValue === 'function') {
+      this.modelInstance.setFilterValue(key, value);
+    }
+
+    if (mode === 'server' && typeof this.api?.refreshGridFilters === 'function') {
+      el.disabled = true;
+      try {
+        await this.api.refreshGridFilters(this);
+      } finally {
+        el.disabled = false;
+      }
+    } else if (this.modelInstance) {
+      // BaseGridModel's own rebuild method — model-side naming, not part of this refactor.
+      this.modelInstance._buildRows();
+      await this.refresh(this.modelInstance);
+    }
   }
 
   // Fills an already-created wrapper node (built by the subclass's
@@ -1321,28 +1430,20 @@ export default class List extends El{
     });
 
     this.FORM.addEventListener('change', async (e) => {
-      const select = e.target.closest('select[data-filter-key]');
-      if (!select || !this.FORM.contains(select)) return;
+      const control = e.target.closest('select[data-filter-key], input[type="checkbox"][data-filter-key]');
+      if (!control || !this.FORM.contains(control)) return;
+      await this._applyFilterChange(control);
+    });
 
-      const key = select.dataset.filterKey;
-      const mode = select.dataset.filterMode;
+    // Text filters apply live as the user types, debounced the same as
+    // autosave (see _scheduleAutosave) so a rebuild doesn't fire on every
+    // keystroke — 'change' (blur) alone would be too slow to feel live.
+    this.FORM.addEventListener('input', (e) => {
+      const input = e.target.closest('input[type="text"][data-filter-key]');
+      if (!input || !this.FORM.contains(input)) return;
 
-      if (typeof this.modelInstance?.setFilterValue === 'function') {
-        this.modelInstance.setFilterValue(key, select.value);
-      }
-
-      if (mode === 'server' && typeof this.api?.refreshGridFilters === 'function') {
-        select.disabled = true;
-        try {
-          await this.api.refreshGridFilters(this);
-        } finally {
-          select.disabled = false;
-        }
-      } else if (this.modelInstance) {
-        // BaseGridModel's own rebuild method — model-side naming, not part of this refactor.
-        this.modelInstance._buildRows();
-        await this.refresh(this.modelInstance);
-      }
+      clearTimeout(this._filterInputTimer);
+      this._filterInputTimer = setTimeout(() => this._applyFilterChange(input), 250);
     });
 
     this.FORM.addEventListener("keydown", (e) => {

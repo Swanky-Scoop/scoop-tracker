@@ -728,12 +728,30 @@ form.zGRID-form {
   color: var(--color-text-base);
 }
 
-.gridFilter select {
+.gridFilter select,
+.gridFilter input[type="text"] {
   min-height: 1.9rem;
   padding: 0.25rem 0.5rem;
   border: 1px solid var(--color-border-light);
   background: white;
   color: var(--color-text-base);
+}
+
+.gridFilterGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--color-border-light);
+  border-radius: 0.25rem;
+
+  & legend {
+    padding: 0 0.25rem;
+    font-size: 0.7rem;
+    color: var(--color-text-base);
+  }
 }
 
 /* ============================================
@@ -981,7 +999,14 @@ table.zGRID .collapsible.closed {
     }
   }
 
-  & .row td {
+  /* .row th: ItemPivot's row-label cell (item-pivot-grid.js renders it as a
+     <th>, not a <td>, for its sticky/header semantics — see css.css's
+     ItemPivot section) — without this, collapsing a group hid every td's
+     content but left that leading label fully visible. Its text is a bare
+     text node (no wrapper element), so it's collapsed directly here rather
+     than via the '& > *' trick below, which only td's square buttons need. */
+  & .row td,
+  & .row th {
     padding: 0 0.5rem;
     overflow: hidden;
     line-height: 0;
@@ -1452,8 +1477,131 @@ form table {
 
 .scoop-grid[data-grid-type="Analytics"] button.save,
 .scoop-grid[data-grid-type="Flavors"] button.save,
-.scoop-grid[data-grid-type="CabinetWorkflow"] button.save {
+.scoop-grid[data-grid-type="CabinetWorkflow"] button.save,
+.scoop-grid[data-grid-type="ItemPivot"] button.save {
   display: none;
+}
+
+/* ============================================
+   ITEM PIVOT - "where are the tubs" matrix
+   ============================================ */
+
+.scoop-grid[data-grid-type="ItemPivot"] {
+  & form.zGRID-form {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  & th.row-label-header {
+    background-color: var(--color-green-base);
+  }
+
+  /* Second header row — one <th colspan> per location, spanning its bucket
+     columns below (see item-pivot-grid.js's _buildLocationHeaderRow). */
+  & tr.location-header th {
+    background-color: var(--color-green-darkest);
+    border-color: var(--color-green-darkest);
+  }
+
+  & tr.location-header th.location-group {
+    text-align: center;
+    cursor: pointer;
+
+    & .location-label {
+      margin-left: 0.25rem;
+    }
+
+    & .oc {
+      height: 0.85rem;
+      width: 0.85rem;
+      border-radius: 50%;
+      border: none;
+      background: none;
+      padding: 0;
+      display: inline-block;
+      vertical-align: middle;
+
+      &:before {
+        content: '⏷';
+      }
+    }
+
+    &.collapsed .oc:before {
+      content: '⏵';
+    }
+  }
+
+  /* A collapsed location's whole bucket set, folded into one column — see
+     ItemPivotGridModel.getColumnDefs / item-pivot-grid.js's
+     collapsedPlaceholder branch. */
+  & td.collapsed-placeholder {
+    text-align: center;
+    vertical-align: middle;
+
+    & .collapsed-count {
+      display: inline-block;
+      min-width: 1.25rem;
+      padding: 0.125rem 0.25rem;
+      border-radius: 0.75rem;
+      background-color: var(--color-border-light);
+      font-size: 0.7rem;
+    }
+  }
+
+  & th.row-label {
+    text-align: left;
+    white-space: normal;
+    max-width: 8rem;
+    position: sticky;
+    left: 0;
+    z-index: 4;
+  }
+
+  /* Row-group header (flavor rows are grouped Dairy / Non-Dairy — see
+     item-pivot-grid-model.js's getRowDefs) — matched by the group label
+     Grid.buildGroupDom already stamps onto the header <tr>, not a hardcoded
+     class, so this doesn't need updating if the label text ever changes. */
+  & tr.group[data-group-label="Non-Dairy"] .groupCell {
+    background-color: var(--color-green-light);
+  }
+
+  & td.pivot-cell {
+    padding: 0.25rem;
+    min-width: 3rem;
+    vertical-align: top;
+
+    display: table-cell;
+    & > .tub-square + .tub-square {
+      margin-left: 0.125rem;
+    }
+  }
+
+  & .tub-square {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    margin: 0.0625rem;
+    padding: 0;
+    border: 1px solid var(--color-border-main);
+    border-radius: 0.125rem;
+    cursor: pointer;
+
+    &.state-Hardening    { background-color: #9fd3ff; }
+    &.state-Freezing     { background-color: #4a90d9; }
+    &.state-Tempering    { background-color: #f5c542; }
+    &.state-Opened       { background-color: var(--color-green-base); }
+    &.state-OpenedNoSlot { background-color: lightgrey; }
+    /* Same color as every other grid's emptied-row indicator — see
+       --color-state-emptied-row-bg's own comment (css.css, :root). */
+    &.state-Emptied      { background-color: var(--color-state-emptied-row-bg); }
+    &.state-Lost         { background-color: darkred; }
+
+    &:hover,
+    &:focus-visible {
+      transform: scale(1.25);
+      box-shadow: 0 0 0 2px var(--color-green-darkest);
+    }
+  }
 }
 
 /* ============================================
