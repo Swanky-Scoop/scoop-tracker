@@ -855,6 +855,48 @@ export default class List extends El{
     if (!this.target.contains(this.TOGGLE)) this.target.append(this.TOGGLE);
   }
 
+  // Shared TOGGLE button for Grid/Tile's buildCoreDom(). Icon is either a
+  // unicode glyph or an image path (see displayTitle/icon on BaseGridModel,
+  // fed from scoop_client_metadata()'s 'displayTitle'/'icon') — told apart
+  // by shape, not a separate flag: a path has a '/' or a recognizable image
+  // extension, anything else renders as text.
+  _buildToggleButton() {
+    const icon  = this.modelInstance?.icon ?? (this.name ? String(this.name).charAt(0) : '?');
+    const title = this.modelInstance?.displayTitle ?? this.name ?? '';
+
+    const BTN = this.el('button', {
+      classes: ['gridToggle'],
+      attrs: { type: 'button', title },
+    });
+
+    const isImagePath = /\//.test(icon) || /\.(png|jpe?g|gif|svg|webp)$/i.test(icon);
+    const ICON = isImagePath
+      ? this.el('img', { classes: ['dockIcon'], attrs: { src: icon, alt: '' } })
+      : this.el('span', { classes: ['dockIcon'], text: icon });
+    const LABEL = this.el('span', { classes: ['dockTitle'], text: title });
+
+    BTN.append(ICON, LABEL);
+    return BTN;
+  }
+
+  // Opt-in docking: if this control's host sits inside an .in-dock ancestor
+  // (see [scoop_dock] in includes/shortcode.php), move TOGGLE out of the
+  // host and into the dock's shared .toolbar row. Called post-mount (see
+  // app.js) rather than from the constructor so every docked control's
+  // button lands in the toolbar in the same pass, in shortcode order.
+  // No-op for controls that aren't inside a dock — they keep TOGGLE exactly
+  // where _attachCoreDom() put it.
+  dockToggle() {
+    const dock = this.target.closest('.in-dock');
+    if (!dock) return;
+
+    const toolbar = dock.querySelector(':scope > .toolbar');
+    if (!toolbar || toolbar.contains(this.TOGGLE)) return;
+
+    toolbar.append(this.TOGGLE);
+    this.target.classList.add('docked');
+  }
+
   _buildAllPayload() {
     const changes = { cells: {} };
 
@@ -1497,13 +1539,16 @@ export default class List extends El{
 
     }, true);
 
-    this.target.addEventListener("click", (e)=>{
-      if(e.target.closest(".gridToggle")){
-        this.target.classList.toggle("toggled");
-        e.stopPropagation();
-        return false;
-      }
+    // Bound to TOGGLE directly, not delegated through this.target — dockToggle()
+    // can relocate TOGGLE outside this.target's subtree (into the shared
+    // .in-dock .toolbar), where a this.target-scoped listener would never see
+    // its clicks bubble through.
+    this.TOGGLE.addEventListener("click", (e) => {
+      this.target.classList.toggle("toggled");
+      e.stopPropagation();
+    }, true);
 
+    this.target.addEventListener("click", (e)=>{
       const link = e.target.closest("[data-detail-entity]");
       if (link) {
         e.preventDefault();

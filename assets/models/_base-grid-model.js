@@ -34,6 +34,14 @@ export default class BaseGridModel {
       this.metaData = options?.metaData ?? null;
       this.location = options?.location ?? 935;
 
+      // Dock icon-strip identity (see DOCKING.md). Constructor option wins,
+      // then server-fed metaData (scoop_client_metadata() in enqueue.php),
+      // then a bare fallback off the type's own logical name — so every
+      // model has a usable displayTitle/icon even for types that don't go
+      // through scoop_routes_config() (Analytics, Popular, Flavors, ...).
+      this.displayTitle = options?.displayTitle ?? this.metaData?.displayTitle ?? name;
+      this.icon = options?.icon ?? this.metaData?.icon ?? (name ? String(name).charAt(0) : '?');
+
       this.showList = [];
       this.columns = [];
       this.rows = [];

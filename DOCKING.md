@@ -1,6 +1,14 @@
 # GUI Docking Architecture (design notes, MVP scope)
 
-Status: design/documentation pass only. No code changed by this doc.
+Status: baseline implemented. `[scoop_dock]` shortcode
+([shortcode.php](includes/shortcode.php)), `displayTitle`/`icon` plumbing
+(PHP: [enqueue.php](includes/enqueue.php); JS:
+[_base-grid-model.js](assets/models/_base-grid-model.js)), and the
+toolbar-reparenting toggle
+([_list.js](assets/ui/_list.js): `_buildToggleButton()`/`dockToggle()`,
+wired from [app.js](assets/app.js)) are live. Values are currently the
+per-type defaults only (logical name / first letter) — no per-type override
+has been authored yet.
 
 ## Goal
 
@@ -93,22 +101,32 @@ so there's no flash of the default (collapsed) state, and kept in sync via
 `history.replaceState` as the user opens/closes things (not `pushState` —
 toggling dock panels shouldn't spam browser back-button history).
 
-## Icon representation
+## Icon representation — IMPLEMENTED
 
-Move off the `.Batch` `::before`/`::after` pseudo-content pattern (
+Moved off the `.Batch` `::before`/`::after` pseudo-content pattern (
 [css.css:218-232](assets/css.css#L218-L232)) — not enough CSS control over
 the icon (sizing, positioning, swapping) through pseudo-content alone.
 
-Proposed: two explicit properties per type, shipped like other per-type
-client config (parallel to how `scoop_client_metadata()` already ships
-per-field column config to the JS):
+Two explicit properties per type, shipped like other per-type client config
+(parallel to how `scoop_client_metadata()` already ships per-field column
+config to the JS): `displayTitle` and `icon`, added to each route's entry in
+`scoop_client_metadata()` ([enqueue.php](includes/enqueue.php)) — default is
+the route's own logical name / its first letter (`mb_substr($route_key, 0,
+1)`); no per-type override authored yet, though `$cfg['display_title']` /
+`$cfg['icon']` in `scoop_routes_config()` will be read first once one is.
 
-- `icon` — emoji or short glyph
-- `title` — label text
+`BaseGridModel`'s constructor
+([_base-grid-model.js](assets/models/_base-grid-model.js)) exposes these as
+`this.displayTitle`/`this.icon`, falling back to the model's own `name` for
+types that don't go through `scoop_routes_config()` at all (Analytics,
+Popular, Flavors, ...).
 
-Rendered as real DOM nodes (e.g. `<i class="dockIcon">` + `<span
-class="dockTitle">`) inside the toggle button, not CSS content. Gives full
-styling control and keeps the icon/title swappable without a CSS deploy.
+`List._buildToggleButton()` ([_list.js](assets/ui/_list.js)) renders them as
+real DOM nodes — `<span class="dockIcon">` (or `<img class="dockIcon">` when
+`icon` looks like a path: contains `/` or ends in a known image extension)
+plus `<span class="dockTitle">` — inside the `.gridToggle` button, not CSS
+content. Full styling control, and the icon/title are swappable per-type
+later without a CSS deploy.
 
 ## Registration / mounting model — RESOLVED: ancestor class, not pub/sub
 

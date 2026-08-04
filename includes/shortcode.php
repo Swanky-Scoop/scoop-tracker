@@ -109,3 +109,30 @@ add_shortcode('scoop_grid', function ($atts) {
 add_shortcode('scoop_tile', function ($atts) {
     return scoop_render_grid_host(is_array($atts) ? $atts : [], 'tile');
 });
+
+/**
+ * Shortcode: [scoop_dock] ... nested [scoop_grid]/[scoop_tile] ... [/scoop_dock]
+ *
+ * Enclosing wrapper, not a data host itself. Emits an .in-dock container with
+ * two children: an empty .toolbar (each control's .gridToggle button gets
+ * moved in here once it mounts — see List.dockToggle() in assets/ui/_list.js)
+ * and a .canvas holding the nested shortcodes' own rendered output, unchanged.
+ * Controls inside .canvas don't know they're docked; the docking hook is
+ * purely "does this control's host have an .in-dock ancestor".
+ */
+add_shortcode('scoop_dock', function ($atts, $content = null) {
+    if (!is_user_logged_in()) {
+        return '<p>You must be logged in to view this.</p>';
+    }
+
+    $inner = do_shortcode((string)$content);
+
+    ob_start();
+    ?>
+    <div class="in-dock">
+      <div class="toolbar"></div>
+      <div class="canvas"><?php echo $inner; ?></div>
+    </div>
+    <?php
+    return ob_get_clean();
+});

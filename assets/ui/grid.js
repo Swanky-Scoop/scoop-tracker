@@ -17,7 +17,7 @@ export default class Grid extends List {
     const el = this.el;
 
     this.FORM    = el('form',   { classes: ['zGRID-form'] });
-    this.TOGGLE  = el('button', { text: 'x', classes: ['gridToggle'] });
+    this.TOGGLE  = this._buildToggleButton();
     this.FILTERS = el('div',    { classes: ['gridFilters', 'empty'] });
     this.SUBMIT  = el('button', { classes: ['save'], text: 'save', attrs: { type: 'submit' } });
     this.TABLE   = el('table',  { classes: ['zGRID'] });

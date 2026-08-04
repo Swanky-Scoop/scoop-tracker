@@ -134,9 +134,18 @@ function scoop_client_metadata(): array {
       $entities_out[$entity_key] = $columns;
     }
 
+    // Dock icon strip identity for this control. No per-type override exists
+    // yet — baseline defaults to the route's own logical name and its first
+    // letter (see 'displayTitle'/'icon' in $cfg to override later, once a
+    // real per-type icon set is designed — see DOCKING.md). 'icon' may be
+    // either a unicode glyph or an image path; the client
+    // (List._buildToggleButton in assets/ui/_list.js) tells them apart by
+    // shape at render time, no separate flag needed here.
     $out[$route_key] = [
-      'primary'  => $primary,
-      'entities' => $entities_out,
+      'primary'      => $primary,
+      'entities'     => $entities_out,
+      'displayTitle' => $cfg['display_title'] ?? $route_key,
+      'icon'         => $cfg['icon'] ?? mb_substr($route_key, 0, 1),
     ];
   }
 
@@ -203,7 +212,11 @@ add_action('wp_enqueue_scripts', function () {
     global $post;
     if (!$post) return;
     
-    if (!has_shortcode($post->post_content, 'scoop_grid') && !has_shortcode($post->post_content, 'scoop_tile')) return;
+    if (
+      !has_shortcode($post->post_content, 'scoop_grid') &&
+      !has_shortcode($post->post_content, 'scoop_tile') &&
+      !has_shortcode($post->post_content, 'scoop_dock')
+    ) return;
 
     scoop_enqueue_assets();
 });

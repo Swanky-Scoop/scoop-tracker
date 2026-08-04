@@ -678,6 +678,71 @@ html > body.TS_GRID-UPDATING .scoop-grid {
 }
 
 /* ============================================
+   DOCKING — [scoop_dock] baseline (see DOCKING.md)
+   ============================================ */
+
+.in-dock {
+  position: relative;
+}
+
+.in-dock > .toolbar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+
+.in-dock > .toolbar > .gridToggle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  width: 3rem;
+  padding: 0.25rem;
+  background: var(--color-bg-cell);
+  border: 1px solid var(--color-border-main);
+  border-radius: 0.25rem;
+  cursor: pointer;
+
+  & .dockIcon {
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+
+  & img.dockIcon {
+    width: 1.5rem;
+    height: 1.5rem;
+    object-fit: contain;
+  }
+
+  & .dockTitle {
+    font-size: 0.55rem;
+    color: var(--color-text-base);
+    text-align: center;
+    line-height: 1.1;
+  }
+}
+
+.in-dock > .canvas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+/* Baseline show/hide only — a docked control's form is hidden until its
+   toolbar button is clicked (.toggled lands on the .scoop-grid host itself,
+   see List's TOGGLE click handler in assets/ui/_list.js). No slide/fade
+   animation yet; that's follow-up work, not this baseline pass. */
+.in-dock .scoop-grid > form {
+  display: none;
+}
+
+.in-dock .scoop-grid.toggled > form {
+  display: inline-flex;
+}
+
+/* ============================================
    FORM
    ============================================ */
 
