@@ -252,6 +252,18 @@ export default class List extends El{
     throw new Error(`${this.constructor.name}.buildFieldDom() must be overridden — create your own wrapper node, call this._renderFieldValue(wrapper, col, data) to fill it, then return the wrapper. row is the full item, for cases like an <img alt> that need more than the one field's value.`);
   }
 
+  // Not one of the five required hooks above — this one has a working
+  // default, since "no matching items" needs no table structure outside of
+  // Grid. Appended into the ungrouped container in place of items when a
+  // fully-resolved domain has zero rows (see _buildItems below), so it also
+  // doubles as the fix for the loading shimmer: css.css's shimmer/skeleton
+  // rules key off "no <tr>/<li> present yet" to mean "still loading", which
+  // was indistinguishable from "loaded, zero results" until this node exists
+  // to tell them apart (both selectors stop on :has(.empty-state)).
+  buildEmptyDom(fields) {
+    return this.el('div', { classes: ['empty-state'], text: 'No matching items' });
+  }
+
   // ─── Shared build pipeline — calls the hooks above, owns nothing visual ───
 
   _build(){
@@ -312,6 +324,13 @@ export default class List extends El{
         const CONTAINER = this.buildGroupDom({ collapsible: false, label: null }, fields, true);
         this.FRAME.append(CONTAINER);
         this.itemGroupDom = [CONTAINER];
+
+        // Domain has resolved and there's genuinely nothing to show — render
+        // that explicitly instead of leaving the container empty, which
+        // css.css would otherwise read as "still loading" forever.
+        if (!items.length) {
+          (CONTAINER._itemsHost ?? CONTAINER).append(this.buildEmptyDom(fields));
+        }
       }
 
       let i = 0;

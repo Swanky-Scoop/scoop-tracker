@@ -75,6 +75,20 @@ export default class Grid extends List {
     });
   }
 
+  // Overrides List's plain-div default: a table needs a real <tr>/<td>, with
+  // the message cell spanning every column so it doesn't look like a
+  // one-column row in an N-column table.
+  buildEmptyDom(fields) {
+    const TR = this.el('tr', { classes: ['empty-row'] });
+    const TD = this.el('td', {
+      classes: ['empty-state'],
+      text: 'No matching items',
+      attrs: { colspan: fields?.length || 1 },
+    });
+    TR.append(TD);
+    return TR;
+  }
+
   buildFieldDom(col, data) {
     const CELL = this.el('td', { classes: ['cell'] });
 

@@ -565,18 +565,23 @@ html > body.TS_GRID-UPDATING .scoop-grid {
    .scoop-grid is unsized and just grows to contain this. Scoped to the same
    "no rows yet" condition as the shimmer below, so a populated grid with
    only a few real rows isn't forced to this height too. */
-.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])) > form.zGRID-form,
-.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])) > form.zTILE-form {
+.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zGRID-form,
+.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zTILE-form {
   min-height: 13.5rem;
 }
 
 /* Shimmering skeleton placeholder — shown while a grid has no rows yet
    (before the bundle fetch resolves and List/Grid appends the first
-   <tbody> row or, for the card view, the first <li>). No extra DOM: gated
-   purely on the DOM shape that already exists — table.zGRID holds only its
-   <thead>, and .zTILE's group <ul> stays empty, until real data lands — so
-   the shimmer disappears the instant the first row/card is appended. */
-.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id]))::after {
+   <tbody> row or, for the card view, the first <li>). Mostly gated on DOM
+   shape (table.zGRID holds only its <thead>, .zTILE's group <ul> stays
+   empty, until real data lands) — but a resolved-and-genuinely-empty grid
+   has the same empty shape, so List.buildEmptyDom() appends a real
+   .empty-state node ("No matching items") to tell the two apart. Grid's
+   .empty-state sits inside a real <tr>, which already satisfies
+   :has(tbody tr) on its own; Tile's (List's plain-div default, no
+   [data-row-id]) needs the explicit :not(:has(.empty-state)) below to stop
+   the shimmer. */
+.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state))::after {
   content: '';
   position: absolute;
   top: 0;
@@ -604,9 +609,18 @@ html > body.TS_GRID-UPDATING .scoop-grid {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .scoop-grid:not(.Batch):not(:has(tbody tr))::after {
+  .scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(.empty-state))::after {
     animation: none;
   }
+}
+
+/* "No matching items" placeholder — see List.buildEmptyDom()/Grid's
+   override in assets/ui/_list.js / assets/ui/grid.js. */
+.empty-state {
+  padding: 1rem;
+  text-align: center;
+  color: var(--color-text-base);
+  font-style: italic;
 }
 
 /* Special Grid Types: Batch */
