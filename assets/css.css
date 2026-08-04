@@ -688,6 +688,14 @@ html > body.TS_GRID-UPDATING .scoop-grid {
       content: 'Add batch';
       text-align: left;
     }
+
+    /* Hides the "Add batch" hint once the flavor text field actually has a
+       value typed/selected into it — .has-value is toggled by FindIt itself
+       (see _syncHasValue() in assets/ui/find-it.js), not derivable from CSS
+       alone since a plain text input's value isn't a selector target. */
+    &:has(.findIt.has-value):before {
+      font-size: 0;
+    }
   }
 }
 

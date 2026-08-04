@@ -63,11 +63,19 @@ export default class FindIt extends El {
     this.BASE.append(this.HDN, this.INP);
 
     // Insert (idempotent)
-    if (!this.target.contains(this.BASE)) this.target.append(this.BASE);   
-    
-    
+    if (!this.target.contains(this.BASE)) this.target.append(this.BASE);
+
+    this._syncHasValue();
   }
-  
+
+  // Toggles a 'has-value' class on BASE whenever the visible text input is
+  // non-empty — a plain CSS state hook, e.g. for a placeholder-style :before
+  // on an ancestor cell (see .scoop-grid.Batch td.flavor's "Add batch" hint
+  // in css.css) that CSS alone can't key off a text input's live value.
+  _syncHasValue() {
+    this.BASE.classList.toggle('has-value', !!this.INP?.value);
+  }
+
   _bindEvents() {
     if (this._eventsBound) return;
     this._eventsBound = true;
@@ -77,6 +85,7 @@ export default class FindIt extends El {
 
     this.INP.addEventListener("input", () => {
       if (this.suppressInput) return;
+      this._syncHasValue();
       if (!this.isOpen) this.open();
       this._applyFilter(this.INP.value);
     });
@@ -180,6 +189,7 @@ export default class FindIt extends El {
     this.display = "";
     if (this.HDN) this.HDN.value = "";
     if (this.INP) this.INP.value = "";
+    this._syncHasValue();
     if (!alreadyEmpty) this.HDN?.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
   }
 
@@ -192,6 +202,7 @@ export default class FindIt extends El {
       if (refresh) {
           if (this.HDN) this.HDN.value = this.value;
           if (this.INP) this.INP.value = this.display;
+          this._syncHasValue();
       }
       this.close();
   }
@@ -207,6 +218,7 @@ export default class FindIt extends El {
     this.HDN.value      = this.value;
     this.INP.value      = this.display;
     this.INP.dataset.field = this.fieldName;
+    this._syncHasValue();
   }
   
   // semi public actions...
@@ -235,6 +247,7 @@ export default class FindIt extends El {
     this.INP.value = "";
     this.value = "0";
     this.display = "";
+    this._syncHasValue();
     this._applyFilter("", { noPaint: !this.isOpen });
     if (!alreadyEmpty) this.HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
   }
@@ -254,6 +267,7 @@ export default class FindIt extends El {
 
     this.HDN.value = this.value;
     this.INP.value = this.display;
+    this._syncHasValue();
 
     this.onSelect?.(op);
     if (!unchanged) this.HDN.dispatchEvent(new Event('ts:findit-change', { bubbles: true }));
