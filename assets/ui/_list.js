@@ -1011,10 +1011,20 @@ export default class List extends El{
       this.sortDirection = this.sortDirection === "asc" ? "desc" : "asc";
     } else {
       this.sortField = colKey;
-      this.sortDirection = "asc";
+      this.sortDirection = this._defaultSortDirection(colKey);
     }
 
     this._applySortAndRender();
+  }
+
+  // First-click direction for a newly-selected sort column. Bare-array cells
+  // (currently unique to PivotGridModel — see _getSortValue) sort by count,
+  // where "most first" reads better than "fewest first" — every other
+  // column (a plain scalar/string, the only kind every other grid has) keeps
+  // the previous always-ascending default.
+  _defaultSortDirection(colKey) {
+    const sample = (this.items ?? []).find(row => Array.isArray(row?.[colKey]))?.[colKey];
+    return Array.isArray(sample) ? "desc" : "asc";
   }
 
   _applySortAndRender(){
