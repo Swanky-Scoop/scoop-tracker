@@ -557,6 +557,18 @@ export default class ScoopAPI {
 
 
   // --- MOUNTING ---
+  //
+  // Two phases, deliberately split:
+  //   Phase 1 (sync, one pass over this._hosts in document order) builds
+  //     every control's model+view — which also builds and docks its
+  //     .gridToggle (see List.dockToggle()) — before any network request
+  //     starts. This is what makes dock toolbar buttons (and the controls
+  //     themselves, already in shortcode order via plain DOM order) appear
+  //     immediately and in shortcode order, regardless of which type's data
+  //     happens to resolve first (see DOCKING.md).
+  //   Phase 2 (async) loads data into what Phase 1 already built: analytics-
+  //     pattern types self-fetch one at a time (unchanged pacing from
+  //     before), bundle types share the one refreshPageDomain() fetch.
   async mountAllGrids({ root = document, formCodec = FormCodec } = {}) {
     if (!this.getTypesFromGridHosts(root)) return [];
 
@@ -572,165 +584,128 @@ export default class ScoopAPI {
       });
     });
 
-    // Separate analytics grids from bundle-based grids
-    const analyticsHosts = [];
-    const bundleHosts    = [];
     const analyticsTypes = new Set(["Analytics", "Popular", "Flavors"]);
+    const modelsBom = this.getModelsBom();
 
-    for (const dom of this._hosts) {
-      if (analyticsTypes.has(dom.dataset.gridType)) {
-        analyticsHosts.push(dom);
-      } else {
-        bundleHosts.push(dom);
-      }
-    }
+    // getTypesFromGridHosts() stuffed every grid type into this.gridTypes,
+    // including the analytics ones. The bundle endpoint 400s on unknown
+    // types like "Popular", so re-scope to only the bundle hosts before
+    // refreshPageDomain() (phase 2) builds the request URL.
+    const bundleTypeHosts = this._hosts.filter(dom => !analyticsTypes.has(dom.dataset.gridType));
+    this.gridTypes = new Set(bundleTypeHosts.map(dom => dom.dataset.gridType).filter(Boolean));
+    this._setPageTypes();
 
     const allGrids = [];
+    const analyticsEntries = []; // { dom, type, model, grid } — for phase 2
+    const bundleGrids = [];
 
-    // ── Analytics grids: self-fetching, bypass the bundle ──
-    for (const dom of analyticsHosts) {
+    for (const dom of this._hosts) {
       const type     = dom.dataset.gridType;
       const location = Number(dom.dataset.location || 0);
-      const days     = Number(dom.dataset.days || 30);
-      if (type === "Popular") {
-        const model = new PopularGridModel("Popular", null, {
-          location,
-          days,
-          nonce: this.nonce,
-          forceCacheBust: this._forceCacheBust,
-        });
 
-        PageStatus.setState(dom.id, 'fetching');
-        PageStatus.beginLoadTiming(`${window.location.pathname}::Popular`);
-        await model.fetch();
-        PageStatus.completeLoadTiming(model.lastCacheStatus);
+      if (analyticsTypes.has(type)) {
+        const days = Number(dom.dataset.days || 30);
+        let model, grid;
 
-        // PopularPlot isn't a List subclass (see popular-plot.js) so it has
-        // no _reportFresh() hook of its own — mark it directly.
-        const plot = new PopularPlot(dom, "Popular", {
-          api: this,
-          modelInstance: model,
-        });
-        plot.init(model);
-        PageStatus.setState(dom.id, 'fresh');
-        allGrids.push(plot);
-        continue;
-      }
+        if (type === "Popular") {
+          model = new PopularGridModel("Popular", null, {
+            location, days, nonce: this.nonce, forceCacheBust: this._forceCacheBust,
+          });
+          // PopularPlot isn't a List subclass (see popular-plot.js) — no
+          // TOGGLE/dockToggle() of its own; its constructor does no DOM work
+          // until init()/render(), so building it now (ahead of fetch) is safe.
+          grid = new PopularPlot(dom, "Popular", { api: this, modelInstance: model });
+        } else if (type === "Flavors") {
+          model = new FlavorsGridModel("Flavors", null, {
+            location, days, nonce: this.nonce, forceCacheBust: this._forceCacheBust,
+          });
+          grid = new Grid(dom, "Flavors", {
+            api: this, modelInstance: model, formCodec, columns: model.columns, pageStatusId: dom.id,
+          });
+        } else {
+          model = new AnalyticsGridModel("Analytics", null, {
+            location, days, nonce: this.nonce, forceCacheBust: this._forceCacheBust,
+          });
+          grid = new Grid(dom, "Analytics", {
+            api: this, modelInstance: model, formCodec, columns: model.columns, pageStatusId: dom.id,
+          });
+        }
 
-      if (type === "Flavors") {
-        const model = new FlavorsGridModel("Flavors", null, {
-          location,
-          days,
-          nonce: this.nonce,
-          forceCacheBust: this._forceCacheBust,
-        });
-
-        PageStatus.setState(dom.id, 'fetching');
-        PageStatus.beginLoadTiming(`${window.location.pathname}::Flavors`);
-        await model.fetch();
-        PageStatus.completeLoadTiming(model.lastCacheStatus);
-
-        const grid = new Grid(dom, "Flavors", {
-          api: this,
-          modelInstance: model,
-          formCodec,
-          columns: model.columns,
-          pageStatusId: dom.id,
-        });
-        grid.init(model);
+        grid.dockToggle?.();
+        analyticsEntries.push({ dom, type, model, grid });
         allGrids.push(grid);
         continue;
       }
 
-      const model    = new AnalyticsGridModel("Analytics", null, {
-        location,
-        days,
-        nonce: this.nonce,
-        forceCacheBust: this._forceCacheBust,
+      const ModelClass = modelsBom[type];
+
+      // An unknown type (usually a shortcode typo like type="popular" vs
+      // "Popular") would otherwise throw "ModelClass is not a constructor"
+      // and kill every grid on the page. Skip it with a console warning so
+      // the rest of the page still renders.
+      if (typeof ModelClass !== 'function') {
+        console.warn(`ScoopAPI.mountAllGrids: no model for grid type "${type}", skipping host`, dom);
+        continue;
+      }
+
+      const dateFilters = this._dateFiltersFromDataset(dom);
+      const filterValues = this._filterValuesFromDataset(dom, dateFilters);
+
+      const modelInstance = new ModelClass(type, null, {
+          location,
+          metaData: SCOOP.metaData?.[type],
+          dateFilters,
+          filterValues,
+          modifiedRange: dom.dataset.modifiedRange || filterValues.activity || 'last_48_hours',
+          // Row grouping/filtering from the shortcode (data-group/data-filter,
+          // see includes/shortcode.php) — currently read by InstockFlavorGridModel.
+          group: dom.dataset.group || null,
+          filters: dom.dataset.filter || '',
       });
 
-      PageStatus.setState(dom.id, 'fetching');
-      PageStatus.beginLoadTiming(`${window.location.pathname}::Analytics`);
-      await model.fetch();
-      PageStatus.completeLoadTiming(model.lastCacheStatus);
+      // data-view="tile" (see includes/shortcode.php's [scoop_tile ...])
+      // picks the card renderer instead of the table one — same model,
+      // same bundle domain, just a different List subclass (see tile.js).
+      // getViewOverrides() takes priority for types with their own Tile
+      // subclass (see cabinet-workflow-tile.js).
+      const ViewClass = this.getViewOverrides()[type]
+        ?? (dom.dataset.view === 'tile' ? Tile : Grid);
 
-      const grid = new Grid(dom, "Analytics", {
-        api: this,
-        modelInstance: model,
-        formCodec,
-        columns: model.columns,
-        pageStatusId: dom.id,
+      const grid = new ViewClass(dom, type, {
+          api: this,
+          modelInstance,
+          formCodec,
+          columns: modelInstance.columns,
+          pageStatusId: dom.id,
       });
-      grid.init(model);
+
+      grid.dockToggle?.();
+      bundleGrids.push(grid);
       allGrids.push(grid);
     }
 
-    // ── Bundle-based grids: existing behavior ──
-    if (bundleHosts.length) {
-      // getTypesFromGridHosts() stuffed every grid type into this.gridTypes,
-      // including the analytics ones. The bundle endpoint 400s on unknown
-      // types like "Popular", so re-scope to only the bundle hosts before
-      // refreshPageDomain() builds the request URL.
-      this.gridTypes = new Set(bundleHosts.map(dom => dom.dataset.gridType).filter(Boolean));
-      this._setPageTypes();
+    // ── Phase 2: analytics grids self-fetch, one at a time (unchanged pacing) ──
+    for (const { dom, type, model, grid } of analyticsEntries) {
+      PageStatus.setState(dom.id, 'fetching');
+      PageStatus.beginLoadTiming(`${window.location.pathname}::${type}`);
+      await model.fetch();
+      PageStatus.completeLoadTiming(model.lastCacheStatus);
 
-      const modelsBom = this.getModelsBom();
-      const bundleGrids = bundleHosts.map(dom => {
-        const name = dom.dataset.gridType;
-        const ModelClass = modelsBom[name];
+      grid.init(model);
 
-        // An unknown type (usually a shortcode typo like type="popular" vs
-        // "Popular") would otherwise throw "ModelClass is not a constructor"
-        // and kill every grid on the page. Skip it with a console warning so
-        // the rest of the page still renders.
-        if (typeof ModelClass !== 'function') {
-          console.warn(`ScoopAPI.mountAllGrids: no model for grid type "${name}", skipping host`, dom);
-          return null;
-        }
+      // PopularPlot isn't a List subclass, so grid.init() above doesn't run
+      // List's own _reportFresh() — mark it directly (Grid-based Analytics/
+      // Flavors already get this for free from init()).
+      if (type === "Popular") PageStatus.setState(dom.id, 'fresh');
+    }
 
-        const location = Number(dom.dataset.location || 0);
-        const dateFilters = this._dateFiltersFromDataset(dom);
-        const filterValues = this._filterValuesFromDataset(dom, dateFilters);
-
-        const modelInstance = new ModelClass(name, null, {
-            location,
-            metaData: SCOOP.metaData?.[name],
-            dateFilters,
-            filterValues,
-            modifiedRange: dom.dataset.modifiedRange || filterValues.activity || 'last_48_hours',
-            // Row grouping/filtering from the shortcode (data-group/data-filter,
-            // see includes/shortcode.php) — currently read by InstockFlavorGridModel.
-            group: dom.dataset.group || null,
-            filters: dom.dataset.filter || '',
-        });
-
-        // data-view="tile" (see includes/shortcode.php's [scoop_tile ...])
-        // picks the card renderer instead of the table one — same model,
-        // same bundle domain, just a different List subclass (see tile.js).
-        // getViewOverrides() takes priority for types with their own Tile
-        // subclass (see cabinet-workflow-tile.js).
-        const ViewClass = this.getViewOverrides()[name]
-          ?? (dom.dataset.view === 'tile' ? Tile : Grid);
-
-        return new ViewClass(dom, name, {
-            api: this,
-            modelInstance,
-            formCodec,
-            columns: modelInstance.columns,
-            pageStatusId: dom.id,
-        });
-      }).filter(Boolean);
-
+    // ── Phase 2: bundle-based grids share one fetch ──
+    if (bundleGrids.length) {
       this._bundleGrids = bundleGrids;
       this._bundleFilterParams = this._bundleFilterParamsForGrids(bundleGrids);
       await this.refreshPageDomain({ force: true });
 
-      // Set domain on each bundle grid
-      bundleGrids.forEach(g => {
-          g.setDomain(this._domain);
-      });
-
-      allGrids.push(...bundleGrids);
+      bundleGrids.forEach(g => g.setDomain(this._domain));
     }
 
     return allGrids;
