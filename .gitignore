@@ -18,3 +18,8 @@ response.json
 fast_response.json
 post_response.json
 dump.txt
+
+# Local dev-time npm tooling (e.g. icon-font-generator) — never deployed,
+# see deploy.yml's rsync excludes. package.json/package-lock.json stay
+# tracked as documentation of what's used; only the installed tree is ignored.
+node_modules/

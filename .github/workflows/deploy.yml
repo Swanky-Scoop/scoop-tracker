@@ -59,6 +59,10 @@ jobs:
             --exclude='.claude' \
             --exclude='triage' \
             --exclude='data-exports' \
+            --exclude='node_modules' \
+            --exclude='package.json' \
+            --exclude='package-lock.json' \
+            --exclude='assets/icon-font/svg' \
             --exclude='*.md' \
             --exclude='_domain.json' \
             --exclude='response.json' \
@@ -106,6 +110,10 @@ jobs:
             --exclude='.claude' \
             --exclude='triage' \
             --exclude='data-exports' \
+            --exclude='node_modules' \
+            --exclude='package.json' \
+            --exclude='package-lock.json' \
+            --exclude='assets/icon-font/svg' \
             --exclude='*.md' \
             --exclude='_domain.json' \
             --exclude='response.json' \
@@ -152,6 +160,10 @@ jobs:
             --exclude='.claude' \
             --exclude='triage' \
             --exclude='data-exports' \
+            --exclude='node_modules' \
+            --exclude='package.json' \
+            --exclude='package-lock.json' \
+            --exclude='assets/icon-font/svg' \
             --exclude='*.md' \
             --exclude='_domain.json' \
             --exclude='response.json' \

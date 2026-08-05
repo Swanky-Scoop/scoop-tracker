@@ -122,11 +122,48 @@ types that don't go through `scoop_routes_config()` at all (Analytics,
 Popular, Flavors, ...).
 
 `List._buildToggleButton()` ([_list.js](assets/ui/_list.js)) renders them as
-real DOM nodes — `<span class="dockIcon">` (or `<img class="dockIcon">` when
-`icon` looks like a path: contains `/` or ends in a known image extension)
-plus `<span class="dockTitle">` — inside the `.gridToggle` button, not CSS
-content. Full styling control, and the icon/title are swappable per-type
-later without a CSS deploy.
+real DOM nodes plus a `<span class="dockTitle">` — inside the `.gridToggle`
+button, not CSS content. Full styling control, and the icon/title are
+swappable per-type later without a CSS deploy. `icon` is told apart by
+shape/marker, checked in this order:
+
+1. Starts with `<svg` → injected as real inline SVG markup (`innerHTML`),
+   e.g. pasted straight from the Streamline VS Code extension's clipboard
+   copy. Checked first since raw SVG markup usually contains `/` itself,
+   which would otherwise match the image-path check below.
+2. Starts with `if:` (`List.ICON_FONT_MARKER`) → icon-font glyph: `if:battery`
+   renders `<i class="dockIcon si-battery">`, empty, glyph supplied by the
+   generated icon-font CSS (see below). `si-` (`List.ICON_FONT_CSS_PREFIX`)
+   is the only place the actual CSS prefix is spelled out — the per-type
+   config only ever carries the marker, never the raw class name.
+3. Contains `/` or ends in a known image extension → `<img class="dockIcon"
+   src="...">`.
+4. Anything else → literal text/unicode glyph in a `<span>` (the `mb_substr`
+   first-letter default from PHP lands here).
+
+### Icon font pipeline (dev-time only, via `icon-font-generator`)
+
+No build step at deploy time — this runs locally, once per icon added, and
+only its *output* is committed:
+
+1. Find an icon via the Streamline VS Code extension, save the SVG into
+   `assets/icon-font/svg/<name>.svg`.
+2. Run:
+   ```
+   npx icon-font-generator assets/icon-font/svg/*.svg -o assets/icon-font/dist -n scoop-icons -p si -j
+   ```
+3. Commit the generated `assets/icon-font/dist/` output. `scoop_enqueue_assets()`
+   ([enqueue.php](includes/enqueue.php)) enqueues `scoop-icons.css` from there
+   automatically, but only `if (file_exists(...))` — harmless before the
+   first icon is ever generated.
+4. Point a type at it: `'icon' => 'if:battery'` in that type's entry in
+   `scoop_routes_config()` ([_config.php](includes/_config.php)).
+
+`assets/icon-font/svg/` (source) is excluded from the deploy rsync
+([deploy.yml](.github/workflows/deploy.yml)) — only `dist/` (the actual
+runtime CSS/font files) ships. `node_modules`/`package.json`/
+`package-lock.json` are excluded too — `icon-font-generator` is a `npx`-run
+dev tool, never installed on the live server.
 
 ## Registration / mounting model — RESOLVED: ancestor class, not pub/sub
 

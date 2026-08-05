@@ -749,6 +749,17 @@ html > body.TS_GRID-UPDATING .scoop-grid {
     object-fit: contain;
   }
 
+  /* Inline SVG markup (pasted via the Streamline VS Code extension, see
+     _buildToggleButton() in assets/ui/_list.js) is injected as a real <svg>
+     child of .dockIcon, carrying whatever width/height/viewBox the source
+     file had — constrain it to match the unicode-glyph/icon-font sizing
+     above instead of rendering at its native size. */
+  & .dockIcon svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    display: block;
+  }
+
   & .dockTitle {
     font-size: 0.55rem;
     color: var(--color-text-base);

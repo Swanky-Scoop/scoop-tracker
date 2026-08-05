@@ -166,6 +166,25 @@ function scoop_enqueue_assets() {
     filemtime($base_path . 'assets/css.css')
     );
 
+    // Dock icon font (optional) — generated locally, never installed at
+    // deploy time: find an icon via the Streamline VS Code extension, save
+    // the SVG into assets/icon-font/svg/<name>.svg, then run
+    //   npx icon-font-generator assets/icon-font/svg/*.svg -o assets/icon-font/dist -n scoop-icons -p si -j
+    // and commit the generated assets/icon-font/dist/ output (assets/icon-font/svg/
+    // itself is excluded from deploy — source only, see deploy.yml). Reference
+    // an icon by setting a type's 'icon' in scoop_routes_config() (_config.php)
+    // to "if:<name>" — see _buildToggleButton() in assets/ui/_list.js for how
+    // that maps to the "si-<name>" class this generates.
+    $icon_font_css = $base_path . 'assets/icon-font/dist/scoop-icons.css';
+    if (file_exists($icon_font_css)) {
+      wp_enqueue_style(
+        'scoop-icon-font',
+        $base_url . 'assets/icon-font/dist/scoop-icons.css',
+        [],
+        filemtime($icon_font_css)
+      );
+    }
+
     // JS
     wp_enqueue_script(
     'scoop-grid',
