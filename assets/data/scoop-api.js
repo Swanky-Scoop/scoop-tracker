@@ -556,6 +556,39 @@ export default class ScoopAPI {
   }
 
 
+  // Batch's `history` shortcode attribute (see includes/shortcode.php) embeds
+  // a read-only BatchHistory listing right inside the Batch widget instead of
+  // requiring a separate [scoop_grid type="BatchHistory"] shortcode. It gets
+  // no host div and no dock toggle of its own — mounted against a throwaway
+  // detached element, so dockToggle() (called by the caller, same as every
+  // other grid) no-ops since that element is never inside an .in-dock
+  // ancestor — then its <form> is moved to sit immediately after Batch's own
+  // <form>, so it opens/closes together with Batch's own toggle instead of
+  // needing one of its own. Safe to co-locate in Batch's host div because
+  // List's delegated click listener is scoped to `this.FORM`, not
+  // `this.target` — see the comment in _list.js's _bindEvents.
+  _mountEmbeddedBatchHistory(batchDom, batchGrid, formCodec) {
+    const location = Number(batchDom.dataset.location || 0);
+    const modelInstance = new BatchHistoryGridModel("BatchHistory", null, {
+      location,
+      metaData: SCOOP.metaData?.BatchHistory,
+    });
+
+    const grid = new Grid(document.createElement('div'), "BatchHistory", {
+      api: this,
+      modelInstance,
+      formCodec,
+      columns: modelInstance.columns,
+      pageStatusId: `${batchDom.id}::history`,
+    });
+
+    grid.dockToggle?.();
+    grid.FORM.classList.add('batch-history-embedded');
+    batchGrid.FORM.after(grid.FORM);
+
+    return grid;
+  }
+
   // --- MOUNTING ---
   //
   // Two phases, deliberately split:
@@ -582,6 +615,17 @@ export default class ScoopAPI {
         type: dom.dataset.gridType ?? '',
         location: dom.dataset.location ?? '',
       });
+
+      // Batch's `history` shortcode attribute embeds a BatchHistory grid
+      // with no host div of its own (see _mountEmbeddedBatchHistory) — give
+      // it its own PageStatus entry anyway so its load state is still visible.
+      if (dom.dataset.gridType === 'Batch' && dom.dataset.history) {
+        PageStatus.register(`${dom.id}::history`, {
+          label: `Batch History (${dom.dataset.location || 'no location'})`,
+          type: 'BatchHistory',
+          location: dom.dataset.location ?? '',
+        });
+      }
     });
 
     const analyticsTypes = new Set(["Analytics", "Popular", "Flavors"]);
@@ -593,6 +637,16 @@ export default class ScoopAPI {
     // refreshPageDomain() (phase 2) builds the request URL.
     const bundleTypeHosts = this._hosts.filter(dom => !analyticsTypes.has(dom.dataset.gridType));
     this.gridTypes = new Set(bundleTypeHosts.map(dom => dom.dataset.gridType).filter(Boolean));
+
+    // A Batch host with data-history="1" embeds BatchHistory's <form>
+    // directly inside the Batch widget instead of via its own host div (see
+    // _mountEmbeddedBatchHistory below), so its type wouldn't otherwise make
+    // it into the bundle request below — add it explicitly so the fetched
+    // domain includes what BatchHistoryGridModel needs (batch/flavor).
+    if (bundleTypeHosts.some(dom => dom.dataset.gridType === 'Batch' && dom.dataset.history)) {
+      this.gridTypes.add('BatchHistory');
+    }
+
     this._setPageTypes();
 
     const allGrids = [];
@@ -685,6 +739,12 @@ export default class ScoopAPI {
       grid.dockToggle?.();
       bundleGrids.push(grid);
       allGrids.push(grid);
+
+      if (type === 'Batch' && dom.dataset.history) {
+        const historyGrid = this._mountEmbeddedBatchHistory(dom, grid, formCodec);
+        bundleGrids.push(historyGrid);
+        allGrids.push(historyGrid);
+      }
     }
 
     // ── Phase 2: analytics grids self-fetch, one at a time (unchanged pacing) ──

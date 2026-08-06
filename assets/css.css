@@ -699,6 +699,30 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   }
 }
 
+/* BatchHistory embedded via Batch's `history` shortcode attribute (see
+   ScoopAPI._mountEmbeddedBatchHistory in assets/data/scoop-api.js) — this
+   <form> is a sibling of Batch's own <form> inside the same fixed-position
+   .scoop-grid.Batch box, so it inherits that box's shared open/close
+   animation (the & form / &.toggled form rules above) for free, but needs
+   none of Batch's single flavor+count row "mini popup" layout. */
+.scoop-grid.Batch form.batch-history-embedded {
+  display: block;
+  width: 16rem !important;
+  margin-top: 0.5rem;
+
+  & .zGRID th {
+    height: auto;
+  }
+
+  & td.flavor {
+    padding: inherit;
+
+    &:before {
+      content: none;
+    }
+  }
+}
+
 /* ============================================
    DOCKING — [scoop_dock] baseline (see DOCKING.md)
    ============================================ */
@@ -2115,3 +2139,13 @@ table.zGRID tr .badges .badge.warning {
   70%  { opacity: 1; }
   100% { opacity: 0; }
 }
+
+
+/* ============================================
+   KITCHEN 
+   ============================================ */
+
+   html body main .kitchen .Batch.scoop-grid{
+
+      background-color: var(--color-green-dark);
+   }

@@ -34,6 +34,12 @@ Single-row form: pick flavor, enter count, save. Creates the batch + N child tub
 [scoop_grid type="Batch"]
 ```
 
+Add `history="true"` to embed a read-only BatchHistory listing (a "receipt") directly below the batch form — no separate `[scoop_grid type="BatchHistory"]` needed. It shares Batch's own open/close toggle rather than getting one of its own, and keeps its own 24h/48h/7d/30d filter widget, defaulting to 48 hours the same as standalone BatchHistory.
+
+```
+[scoop_grid type="Batch" history="true"]
+```
+
 #### `Closeout` — record a closeout
 Single-row form to enter end-of-shift emptied-tub counts. Auto-matches against open tubs at the given location.
 

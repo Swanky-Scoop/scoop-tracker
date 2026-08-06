@@ -1653,7 +1653,17 @@ export default class List extends El{
       e.stopPropagation();
     }, true);
 
-    this.target.addEventListener("click", (e)=>{
+    // Bound to this.FORM, not this.target — every element these three
+    // handlers care about (sort headers, .oc group toggles, detail-links)
+    // already lives inside FORM (see _attachCoreDom), and binding here
+    // keeps this List's delegated handling scoped to its own FORM even if
+    // FORM ends up relocated outside this.target (see the embedded
+    // BatchHistory case: ScoopAPI._mountEmbeddedBatchHistory() moves a
+    // second List's FORM to sit inside Batch's own host div, right after
+    // Batch's own FORM — binding on this.target there would make both
+    // Lists' handlers fire for a single click, since the embedded FORM is
+    // a genuine descendant of Batch's target).
+    this.FORM.addEventListener("click", (e)=>{
       const link = e.target.closest("[data-detail-entity]");
       if (link) {
         e.preventDefault();

@@ -24,6 +24,11 @@ function scoop_render_grid_host($raw_atts, string $view) {
         // date-range-specific mechanism used by DateActivity/BatchHistory.
         'group'          => null,
         'filter'         => null,
+        // Batch-only: when truthy, the JS mounts a read-only BatchHistory
+        // listing right inside the Batch widget, its <form> placed
+        // immediately after Batch's own — see
+        // ScoopAPI._mountEmbeddedBatchHistory() in assets/data/scoop-api.js.
+        'history'        => null,
     ], $raw_atts, 'scoop_' . $view);
 
     if (!is_user_logged_in()) {
@@ -87,6 +92,9 @@ function scoop_render_grid_host($raw_atts, string $view) {
     <?php endif; ?>
     <?php if (!empty($atts['filter'])) : ?>
     data-filter="<?php echo esc_attr($atts['filter']); ?>"
+    <?php endif; ?>
+    <?php if (!empty($atts['history']) && !in_array(strtolower((string)$atts['history']), ['0', 'false', 'no', 'off'], true)) : ?>
+    data-history="1"
     <?php endif; ?>
     <?php if (!empty($date_filters)) : ?>
     data-date-filters="<?php echo esc_attr(implode(',', $date_filters)); ?>"
