@@ -973,6 +973,25 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   gap: 1rem;
 }
 
+/* Docked "aside" controls (anything left in .canvas, as opposed to
+   .action-target — see List.dockToggle()) start fully collapsed: scale(0)
+   hides the WHOLE host, not just its <form> (below) — which also covers
+   the loading shimmer (a ::after on .scoop-grid itself, see "GRID
+   CONTAINER" further up), otherwise visible on an untoggled panel while
+   its bundle data is still loading even though nothing about it is
+   actually on screen yet. Scales up together with the same .toggled class
+   the TOGGLE click handler already applies (see the form rule below). */
+.in-dock .canvas > .scoop-grid {
+  transform: scale(0);
+  transition: transform 0.2s ease-in;
+  pointer-events: none;
+}
+
+.in-dock .canvas > .scoop-grid.toggled {
+  transform: scale(1);
+  pointer-events: auto;
+}
+
 /* Open/close animation for a docked control's form — .toggled lands on the
    .scoop-grid host itself when its toolbar button is clicked (see List's
    TOGGLE click handler in assets/ui/_list.js). display:none can't be
