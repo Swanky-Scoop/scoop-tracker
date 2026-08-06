@@ -122,9 +122,15 @@ add_shortcode('scoop_tile', function ($atts) {
  * Shortcode: [scoop_dock] ... nested [scoop_grid]/[scoop_tile] ... [/scoop_dock]
  *
  * Enclosing wrapper, not a data host itself. Emits an .in-dock container with
- * two children: an empty .toolbar (each control's .gridToggle button gets
- * moved in here once it mounts — see List.dockToggle() in assets/ui/_list.js)
- * and a .canvas holding the nested shortcodes' own rendered output, unchanged.
+ * three children: an empty .action-target and an empty .toolbar (each
+ * control's .gridToggle button gets moved into .toolbar once it mounts, and
+ * any control whose model sets dockTarget:'action' — e.g. Batch — gets its
+ * whole host moved into .action-target instead — see List.dockToggle() in
+ * assets/ui/_list.js) and a .canvas holding the nested shortcodes' own
+ * rendered output, unchanged. .action-target is a peer of .toolbar, not a
+ * child of it — see the CSS docking section in assets/css.css for why (a
+ * `transform` on a .action-target that CONTAINS a docked Batch, which is
+ * itself position:fixed, would hijack Batch's viewport-relative positioning).
  * Controls inside .canvas don't know they're docked; the docking hook is
  * purely "does this control's host have an .in-dock ancestor".
  */
@@ -138,9 +144,9 @@ add_shortcode('scoop_dock', function ($atts, $content = null) {
     ob_start();
     ?>
     <div class="in-dock">
+      <div class="action-target"></div>
       <div class="toolbar">
         <a href="../wp-admin/edit.php?post_type=tub" class="gridToggle wp"><i class="ab-icon"></i><span class="dockTitle">WP Admin</span></a>
-        <div class="action-target"></div>
         <div class="PAGE-STATUS">
             <h3>Status</h3>
             <em></em>

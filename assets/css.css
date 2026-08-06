@@ -82,6 +82,23 @@
   --dimension-nav-btn: calc(var(--dimension-nav-width) - 1.25rem);
   --dimension-toaster-width: 20rem;
   /* width: calc(var(--dimension-nav-width) - 1.25rem); */
+
+  /* Batch + its embedded BatchHistory receipt (see .scoop-grid.Batch below)
+     — one shared target width so both tables line up. Batch's own table is
+     narrower than the target by its Save button's protruding width, so the
+     button's own outer edge lines up flush with BatchHistory's table too. */
+  --dimension-batch-grid-width: 30rem;
+  --dimension-batch-save-btn-width: 2rem;
+  --dimension-batch-save-btn-tuck: 0.125rem;
+  --dimension-batch-count-col-width: 4rem;
+
+  /* .in-dock's .toolbar and .action-target (see DOCKING section below) are
+     peer elements, both independently position:fixed and bottom-anchored —
+     clearance is how far above the toolbar .action-target (and anything
+     fixed-positioned that docks inside it, e.g. .scoop-grid.Batch) sits, an
+     estimate of the toolbar's own rendered height plus a gap. */
+  --dimension-dock-toolbar-bottom: 0.75rem;
+  --dimension-dock-toolbar-clearance: 6rem;
 }
 
 /* ============================================
@@ -623,13 +640,21 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   font-style: italic;
 }
 
-/* Special Grid Types: Batch */
+/* Special Grid Types: Batch, plus its optionally-embedded BatchHistory
+   receipt (`history="true"` — see ScoopAPI._mountEmbeddedBatchHistory).
+   Both tables share --dimension-batch-grid-width so they line up; Batch's
+   own table is narrower by its Save button's protruding width so the
+   button's own outer edge lines up flush too (see button.save below). */
 .scoop-grid.Batch {
   display: block;
   box-shadow: none;
   position: fixed;
   top: 1rem;
-  width: 12rem;
+  /* !important to actually beat the general .scoop-grid rule's own
+     `width: calc(100% - 2rem) !important` above — fit-content (rather than
+     a fixed rem value) keeps this host exactly as wide as its toggle
+     button/form(s), never wider. */
+  width: fit-content !important;
   z-index: 9;
   max-width: none !important;
   min-width: 0;
@@ -638,29 +663,56 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   & form {
     background: var(--color-bg-main);
     width: auto !important;
-    min-width: 0;
-    z-index: 6;
+    min-width: 18rem;
+    z-index: 1;
   }
 
-  & form {
+  /* Column sizing shared by both Batch's own table and the embedded
+     BatchHistory table below — both carry a .count/.flavor cell. */
+  & td.count,
+  & th.count {
+    width: var(--dimension-batch-count-col-width);
+    min-width: var(--dimension-batch-count-col-width);
+  }
+
+  & td.flavor,
+  & th.flavor {
+    width: 100%;
+  }
+
+  /* Batch's own single flavor+count row. position:absolute while closed
+     takes it out of flow entirely, so it contributes nothing to this root
+     element's own width:fit-content/auto-height sizing — transform/opacity
+     alone (below) only hide it visually, they don't stop a normal-flow box
+     from still being measured at full size. Switches back to position:
+     relative once .toggled so the root grows to actually fit it. */
+  & form:not(.batch-history-embedded) {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 2;
     display: inline-flex;
     align-items: flex-end;
     gap: 0;
     flex-direction: row;
     max-height: auto;
-    
+
     transition: transform 0.3s ease-in, opacity 0.3s ease-in;
-    transform: translateX(-100%)  scaleX(0) scaleY(67%);
+    transform: translateX(-100%) scaleX(0) scaleY(67%);
     opacity: 0;
+
+    & table {
+      width: calc(var(--dimension-batch-grid-width) - var(--dimension-batch-save-btn-width) + var(--dimension-batch-save-btn-tuck)) !important;
+    }
 
     & button.save {
       position: absolute;
       margin-top: 2px;
       left: 100%;
-      margin-left: -0.125rem;
+      margin-left: calc(var(--dimension-batch-save-btn-tuck) * -1);
       border-radius: 0.125rem;
       height: 2rem;
-      width: 2rem;
+      width: var(--dimension-batch-save-btn-width);
       font-size: 0;
       padding: 0;
       top: 2rem;
@@ -675,18 +727,18 @@ html > body.TS_GRID-UPDATING .scoop-grid {
       }
     }
   }
-  & table {
-  }
-  &.toggled form{
+
+  &.toggled form:not(.batch-history-embedded) {
+    position: relative;
     opacity: 1;
     transform: translateX(0) scaleX(1);
   }
+
   & tbody tr td.flavor {
     padding: 0.5rem 6rem;
 
     &:before {
       content: 'Add batch';
-      text-align: left;
     }
 
     /* Hides the "Add batch" hint once the flavor text field actually has a
@@ -697,28 +749,70 @@ html > body.TS_GRID-UPDATING .scoop-grid {
       font-size: 0;
     }
   }
-}
 
-/* BatchHistory embedded via Batch's `history` shortcode attribute (see
-   ScoopAPI._mountEmbeddedBatchHistory in assets/data/scoop-api.js) — this
-   <form> is a sibling of Batch's own <form> inside the same fixed-position
-   .scoop-grid.Batch box, so it inherits that box's shared open/close
-   animation (the & form / &.toggled form rules above) for free, but needs
-   none of Batch's single flavor+count row "mini popup" layout. */
-.scoop-grid.Batch form.batch-history-embedded {
-  display: block;
-  width: 16rem !important;
-  margin-top: 0.5rem;
+  /* Embedded BatchHistory receipt — visible only when Batch's own panel is
+     open (.toggled, from the main gridToggle button) AND its own
+     min/max state is open (.history-open, from button.history-min-max
+     below): closing Batch's whole popup always closes history with it,
+     while .history-open alone still lets it be minimized independently
+     whenever Batch itself is open. */
+  & form.batch-history-embedded {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+    width: var(--dimension-batch-grid-width) !important;
+    transform-origin: top;
+    transform: scaleY(0);
+    opacity: 0;
 
-  & .zGRID th {
-    height: auto;
+    & table.zGRID {
+      width: 100% !important;
+    }
+
+    & .zGRID th {
+      height: auto;
+    }
+
+    & td.flavor {
+      padding: 0.5rem 0.5rem;
+
+      &:before {
+        content: none;
+      }
+    }
   }
 
-  & td.flavor {
-    padding: inherit;
+  &.toggled.history-open form.batch-history-embedded {
+    position: relative;
+    transform: scaleY(1);
+    opacity: 1;
+  }
 
-    &:before {
-      content: none;
+  &:not(.history-open) form.batch-history-embedded {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+
+  /* Chevron direction follows the same ⏷/⏵-style convention as the
+     group-collapse .oc buttons above: down = collapsed, up = open. */
+  & button.history-min-max {
+    height: 0.67rem;
+    width: 2rem;
+    position: absolute;
+    left: 100%;
+    margin: 0 0 0 -0.125rem;
+    border: 1px solid black;
+    z-index: 5;
+    line-height: 0.33rem;
+    padding: 0;
+
+    &:after {
+      content: '⏶';
+    }
+
+    &:not(.active):after {
+      content: '⏷';
     }
   }
 }
@@ -731,12 +825,95 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   position: relative;
 }
 
+/* .toolbar and .action-target are peers (see [scoop_dock]'s markup in
+   includes/shortcode.php and List.dockToggle() in assets/ui/_list.js) —
+   deliberately NOT nested, so that neither one is an ancestor the other
+   needs a `transform` on for centering. Both position:fixed and centered
+   at the bottom of the screen; .action-target sits stacked directly above
+   the toolbar row via --dimension-dock-toolbar-clearance. */
 .in-dock > .toolbar {
+  position: fixed;
+  bottom: var(--dimension-dock-toolbar-bottom);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99;
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 0.5rem;
   padding: 0.5rem;
+}
+
+/* Given a fixed, explicit width — rather than fit-content/auto — for two
+   reasons: (1) a docked control's own host (e.g. .scoop-grid.Batch) starts
+   empty/collapsed and only gains real width once its content actually
+   renders, so any width computed FROM that content is unreliable right at
+   the moment centering needs to happen — position:fixed doesn't force a
+   re-layout the way normal flow would; (2) .scoop-grid.Batch is itself
+   position:fixed in its base rule, which — being taken out of normal flow
+   — never contributes to an ancestor's fit-content/auto sizing at all
+   regardless of timing. An explicit width sidesteps both problems, and
+   also means centering via transform is safe here (no position:fixed
+   descendant left whose containing block a transform could hijack — see
+   .in-dock .scoop-grid.Batch below, which drops the base rule's own
+   position:fixed once docked, becoming a normal in-flow child of this box
+   instead of a second independently-positioned element).
+
+   Off-screen (translateY 150%, i.e. one full height of itself below its
+   own resting position) by default; :has(.scoop-grid.toggled) — true the
+   moment any docked control inside opens, no JS wiring needed, it's the
+   same .toggled class List's own TOGGLE click handler already applies —
+   slides it up into view, still centered throughout via translateX. */
+.in-dock > .action-target {
+  position: fixed;
+  width: var(--dimension-batch-grid-width);
+  left: 50%;
+  bottom: calc(var(--dimension-dock-toolbar-bottom) + var(--dimension-dock-toolbar-clearance));
+  /* translateX(-50%) is the ONLY thing doing the centering (left:50% alone
+     just moves the box's LEFT EDGE to center) — it must stay byte-for-byte
+     identical between this rule and the :has() one below. transition
+     animates the whole `transform` value as one list; if the two states'
+     translateX ever differ (or one omits it), the box visibly slides
+     sideways during the animation as a side effect, even though only
+     translateY was meant to change. */
+  transform: translateX(-50%) translateY(150%);
+  transition: transform 0.3s ease-in;
+  z-index: 99;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.in-dock > .action-target:has(.scoop-grid.toggled) {
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Docked Batch gives up its base rule's own position:fixed/top/margin —
+   .action-target above now owns the fixed positioning/centering/clearance
+   for the whole panel, so Batch just needs to be a normal in-flow block
+   filling it (width:100%), not a second, independently-positioned fixed
+   element. position:relative (not static) so its own form's
+   position:absolute children (see .scoop-grid.Batch further up) still
+   resolve against Batch's own box rather than escaping further up. */
+.in-dock .scoop-grid.Batch {
+  position: relative;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+/* Batch's own standalone open/close animation (see .scoop-grid.Batch
+   further up) flies sideways — translateX(-100%) — which read fine when it
+   floated near the top-left nav rail, but reads wrong now that it's
+   docked and bottom-anchored above the toolbar: closing should drop DOWN
+   toward the toolbar it's docked to, not slide off sideways. Same
+   transform/transition timing, just translateY instead of translateX. */
+.in-dock .scoop-grid.Batch form:not(.batch-history-embedded) {
+  transform: translateY(100%) scale(0.67);
+}
+
+.in-dock .scoop-grid.Batch.toggled form:not(.batch-history-embedded) {
+  transform: translateY(0) scale(1);
 }
 
 .in-dock > .toolbar > .gridToggle {
@@ -808,13 +985,13 @@ html > body.TS_GRID-UPDATING .scoop-grid {
    from intercepting clicks/tab focus once it's invisible. */
 .in-dock .scoop-grid > form {
   transition: transform 0.2s ease-in, opacity 0.2s ease-in;
-  transform: scale(0.9);
+  transform: translateY(100%) scale(0.9);
   opacity: 0;
   pointer-events: none;
 }
 
 .in-dock .scoop-grid.toggled > form {
-  transform: scale(1);
+  transform: translateY(0) scale(1);
   opacity: 1;
   pointer-events: auto;
 }
@@ -856,7 +1033,7 @@ form.zGRID-form {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem;
+  padding: 0.25rem 0.5rem;
   border: 0.5px solid var(--color-border-main);
   border-bottom: 0;
   background: var(--overlay-white);
@@ -866,14 +1043,15 @@ form.zGRID-form {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.75rem;
+  font-size: 0.67rem;
   color: var(--color-text-base);
 }
 
 .gridFilter select,
 .gridFilter input[type="text"] {
-  min-height: 1.9rem;
-  padding: 0.25rem 0.5rem;
+  min-height: 1.9em;
+  padding: 0.25rem;
+  font-size: 0.67rem;
   border: 1px solid var(--color-border-light);
   background: white;
   color: var(--color-text-base);
@@ -994,6 +1172,7 @@ table.zGRID tr:focus-within{
 }
 table.zGRID td {
   border: 1px solid var(--color-border-green);
+  text-align: left;
 
   &:focus-within {
     z-index: 9;
@@ -1215,7 +1394,7 @@ table.zGRID tr {
   }
 
   & .number {
-    width: 3rem;
+    width: 4rem;
 
     & div.cell {
       padding: 0;
@@ -1284,6 +1463,7 @@ table.zGRID tr {
 
   & .cell.read-only {
     padding: 0.5rem 0.5rem;
+    white-space: nowrap;
   }
 
   & .textIt-box {
@@ -1382,6 +1562,9 @@ table.zGRID tr {
   position: sticky;
   z-index: 8;
   top: 2rem;
+  width: 100%;
+  border: 1px solid var(--color-green-dark);
+  font-size: 0.67rem;
 }
 
 
@@ -2018,15 +2201,24 @@ table.zGRID tr .badges .badge.warning {
     text-align: center;
     overflow: auto;
 
-    .scoop-grid.Batch{
-      bottom:4rem;
-      top:auto;
-      margin-left:0 !important;
+    /* Positioning (position/width/left/bottom/transform) is intentionally
+       NOT redeclared here — the general .in-dock > .action-target and
+       .in-dock .scoop-grid.Batch rules further up the file already fully
+       own that (fixed, explicit-width, transform-based slide via
+       :has(.scoop-grid.toggled)) and apply regardless of .entry-content
+       nesting. Redeclaring only SOME of those properties here (as this
+       block used to) left the general rule's `transform` still applying on
+       top of a different left/width scheme, which is what caused the
+       "shifts sideways when toggled closed" bug — two incomplete,
+       partially-overlapping rule sets fighting over the same element. */
+    .scoop-grid.Batch {
       min-height: 0;
+      text-align: left;
     }
     .scoop-grid.toggled {
       animation: flyup 0.5s ease-out;
     }
+
     & > .toolbar{
       background-color: rgba(0,0,0,.5 );
       position: fixed;
@@ -2035,19 +2227,10 @@ table.zGRID tr .badges .badge.warning {
       display:inline-flex;
       flex-direction: row;
       white-space: nowrap;
-      left: 50%;  
+      left: 50%;
       border-radius: 2rem;        /* Move left edge to screen center */
       transform: translateX(-50%);
       z-index: 99;
-
-      & > .action-target{
-        display: inline-flex;
-        flex-direction: column;
-        gap:.5rem;
-        position: absolute;
-        bottom: 100%;
-        margin-bottom: .5rem;
-      }
 
       & > .PAGE-STATUS {
           order: 99;
@@ -2059,7 +2242,7 @@ table.zGRID tr .badges .badge.warning {
 
           &.fresh {padding-right: 1rem;}
       }
-      
+
     }
     & .gridToggle{
       display: inline-grid;

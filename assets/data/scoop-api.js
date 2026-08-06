@@ -586,6 +586,42 @@ export default class ScoopAPI {
     grid.FORM.classList.add('batch-history-embedded');
     batchGrid.FORM.after(grid.FORM);
 
+    // Min/max toggle, placed right after Batch's own Save button — lets the
+    // history receipt be tucked away without closing Batch's whole popup.
+    // State lives as a class on the Batch host div (not on the embedded
+    // form itself) so plain CSS drives the show/hide, and the state is
+    // inspectable from outside this method without reaching into either
+    // grid instance.
+    const minMaxBtn = document.createElement('button');
+    minMaxBtn.type = 'button';
+    minMaxBtn.className = 'history-min-max';
+    minMaxBtn.title = 'Toggle batch history';
+    batchGrid.SUBMIT.after(minMaxBtn);
+
+    const setHistoryOpen = (isOpen) => {
+      batchDom.classList.toggle('history-open', isOpen);
+      minMaxBtn.classList.toggle('active', isOpen);
+    };
+
+    // Unconditional toggle — works the same whether the list is currently
+    // empty or populated, so an empty receipt can still be opened by hand.
+    minMaxBtn.addEventListener('click', () => {
+      setHistoryOpen(!batchDom.classList.contains('history-open'));
+    });
+
+    // Default open/closed once real data has actually loaded (grid.FORM's
+    // 'empty' class — see List._applyAutosaveUI — is only meaningful after
+    // this first init; ts:list:init fires once, right after that class is
+    // set, never again on later refreshes — see List.init()).
+    grid.FORM.addEventListener('ts:list:init', () => {
+      setHistoryOpen(!grid.FORM.classList.contains('empty'));
+    }, { once: true });
+
+    // A freshly-created batch is exactly the thing this receipt exists to
+    // show — reopen it even if the user had minimized it or it was
+    // defaulted closed for having nothing to show yet.
+    batchGrid.FORM.addEventListener('ts:list:saved', () => setHistoryOpen(true));
+
     return grid;
   }
 

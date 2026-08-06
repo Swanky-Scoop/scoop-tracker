@@ -954,9 +954,11 @@ export default class List extends El{
     // 'target' => 'action' (see _config.php / DOCKING.md) — this control's
     // whole host, not just its toggle button, lives in the dock's shared
     // .action-target instead of .canvas. Applies to any List (Grid or Tile
-    // alike), not just table grids.
+    // alike), not just table grids. .action-target is a peer of .toolbar
+    // (not nested inside it — see the CSS docking section for why), so it's
+    // looked up from `dock`, same as .toolbar above.
     if (this.modelInstance?.dockTarget === 'action') {
-      const actionTarget = toolbar.querySelector(':scope > .action-target');
+      const actionTarget = dock.querySelector(':scope > .action-target');
       if (actionTarget && !actionTarget.contains(this.target)) {
         actionTarget.append(this.target);
       }
@@ -1453,6 +1455,11 @@ export default class List extends El{
     const hasWriteableFields = (this.fields ?? []).some(f => f?.write);
     const hasItems = (this.items ?? []).length > 0;
 
+    // Lets CSS (or an embedding widget — see BatchHistory's embedded use in
+    // ScoopAPI._mountEmbeddedBatchHistory) style/react to "this list has
+    // nothing to show" without re-deriving it from this.items itself.
+    this.FORM.classList.toggle('empty', !hasItems);
+
     if (this.SUBMIT) this.SUBMIT.hidden = (on && !partial) || !hasWriteableFields || !hasItems;
 
     // The find-in-grid text filter only ever narrows an existing list —
@@ -1730,6 +1737,13 @@ export default class List extends El{
           document.body.classList.add('TS_GRID-UPDATING');
 
           this._commitPosted(changes);
+
+          // Generic "this List just saved successfully" signal — currently
+          // only consumed by ScoopAPI._mountEmbeddedBatchHistory to reopen
+          // the embedded history receipt after a new batch is created, but
+          // dispatched on FORM (same convention as ts:list:init/
+          // ts:list:close-overlays) so any other listener could react too.
+          this.FORM.dispatchEvent(new CustomEvent('ts:list:saved', { detail: { changes } }));
 
           const chng = this.modelInstance.describeFieldChanges(r.data, changes?.cells??[] );
           const TOAST = Toast.addMessage({
