@@ -130,7 +130,9 @@ add_shortcode('scoop_dock', function ($atts, $content = null) {
     ob_start();
     ?>
     <div class="in-dock">
-      <div class="toolbar"></div>
+      <div class="toolbar">
+        <div class="action-target"></div>
+      </div>
       <div class="canvas"><?php echo $inner; ?></div>
     </div>
     <?php

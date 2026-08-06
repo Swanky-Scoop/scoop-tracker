@@ -1,5 +1,15 @@
 {
+  "scripts": {
+    "build:icons": "node scripts/normalize-icon-svgs.js && icon-font-generator \"assets/icon-font/.normalized/*.svg\" -o assets/icon-font/dist -n swankyF -p si -j"
+  },
   "dependencies": {
     "headroom-ai": "^0.22.4"
+  },
+  "devDependencies": {
+    "icon-font-generator": "^2.1.11",
+    "svg-path-outline": "^1.0.1"
+  },
+  "allowScripts": {
+    "ttf2woff2@2.0.3": true
   }
 }

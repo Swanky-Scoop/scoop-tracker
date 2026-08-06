@@ -23,3 +23,7 @@ dump.txt
 # see deploy.yml's rsync excludes. package.json/package-lock.json stay
 # tracked as documentation of what's used; only the installed tree is ignored.
 node_modules/
+
+# Regenerated every `npm run build:icons` run (see scripts/normalize-icon-svgs.js)
+# — stroke-outlined copies of assets/icon-font/svg/, not source, never committed.
+assets/icon-font/.normalized/

@@ -1,0 +1,74 @@
+@font-face {
+    font-family: "swankyF";
+    src: url("./swankyF.eot?538a57ef51180ff3aaaa6f1a63539d48?#iefix") format("embedded-opentype"),
+url("./swankyF.woff2?538a57ef51180ff3aaaa6f1a63539d48") format("woff2"),
+url("./swankyF.woff?538a57ef51180ff3aaaa6f1a63539d48") format("woff"),
+url("./swankyF.ttf?538a57ef51180ff3aaaa6f1a63539d48") format("truetype"),
+url("./swankyF.svg?538a57ef51180ff3aaaa6f1a63539d48#swankyF") format("svg");
+}
+
+i[class^="si-"]:before, i[class*=" si-"]:before {
+    font-family: swankyF !important;
+    font-style: normal;
+    font-weight: normal !important;
+    font-variant: normal;
+    text-transform: none;
+    line-height: 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.si-+:before {
+    content: "\f101";
+}
+.si-b:before {
+    content: "\f102";
+}
+.si-c:before {
+    content: "\f103";
+}
+.si-Eyedropper-Sample--Streamline-Phosphor:before {
+    content: "\f104";
+}
+.si-f:before {
+    content: "\f105";
+}
+.si-h:before {
+    content: "\f106";
+}
+.si-l:before {
+    content: "\f107";
+}
+.si-List-Checks--Streamline-Phosphor:before {
+    content: "\f108";
+}
+.si-m:before {
+    content: "\f109";
+}
+.si-p:before {
+    content: "\f10a";
+}
+.si-Plus--Streamline-Font-Awesome:before {
+    content: "\f10b";
+}
+.si-Plus-Fill--Streamline-Mingcute-Fill:before {
+    content: "\f10c";
+}
+.si-plus:before {
+    content: "\f10d";
+}
+.si-s:before {
+    content: "\f10e";
+}
+.si-Shooting-Star--Streamline-Phosphor:before {
+    content: "\f10f";
+}
+.si-t:before {
+    content: "\f110";
+}
+.si-u:before {
+    content: "\f111";
+}
+.si-x:before {
+    content: "\f112";
+}

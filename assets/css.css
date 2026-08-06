@@ -740,7 +740,7 @@ html > body.TS_GRID-UPDATING .scoop-grid {
 
   & .dockIcon {
     font-size: 1.25rem;
-    line-height: 1;
+    line-height: 1.1rem;
   }
 
   & img.dockIcon {
@@ -761,8 +761,6 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   }
 
   & .dockTitle {
-    font-size: 0.55rem;
-    color: var(--color-text-base);
     text-align: center;
     line-height: 1.1;
   }
@@ -774,16 +772,27 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   gap: 1rem;
 }
 
-/* Baseline show/hide only — a docked control's form is hidden until its
-   toolbar button is clicked (.toggled lands on the .scoop-grid host itself,
-   see List's TOGGLE click handler in assets/ui/_list.js). No slide/fade
-   animation yet; that's follow-up work, not this baseline pass. */
+/* Open/close animation for a docked control's form — .toggled lands on the
+   .scoop-grid host itself when its toolbar button is clicked (see List's
+   TOGGLE click handler in assets/ui/_list.js). display:none can't be
+   transitioned (it's a hard jump either direction), so this stays rendered
+   at all times and animates opacity/transform instead — which is what makes
+   "close" automatically play as the reverse of "open": a CSS transition
+   always animates toward whatever the current target state is, so removing
+   .toggled naturally reverses the same transition, no separate close
+   animation needed. pointer-events is what actually keeps a collapsed form
+   from intercepting clicks/tab focus once it's invisible. */
 .in-dock .scoop-grid > form {
-  display: none;
+  transition: transform 0.2s ease-in, opacity 0.2s ease-in;
+  transform: scale(0.9);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .in-dock .scoop-grid.toggled > form {
-  display: inline-flex;
+  transform: scale(1);
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* ============================================
@@ -1961,4 +1970,128 @@ table.zGRID tr .badges .badge.warning {
 @keyframes scoopCellError {
   0%   { background: #f3b6b6; }
   100% { background: transparent; }
+}
+
+@keyframes flyup {
+  0%   { transform: translateY(100vh) scaleX(.25); opacity: 0; }
+  100% { transform: translateY(0) scaleX(1); opacity: 1; }
+}
+/*=============================================
+   TUBS - Docked view
+   ============================================ */
+
+   html body main .entry-content > .in-dock {
+    z-index: 3;
+    background-color: var(--color-green-dark);
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    max-width: 100vw;
+    max-height: 100vh;
+    display: grid;
+    text-align: center;
+    overflow: auto;
+
+    .scoop-grid.Batch{
+      bottom:4rem;
+      top:auto;
+      margin-left:0 !important;
+      min-height: 0;
+    }
+    .scoop-grid.toggled {
+      
+      animation: flyup 0.5s ease-out;
+    }
+    & > .toolbar{
+      background-color: rgba(0,0,0,.5 );
+      position: fixed;
+      padding:.5rem;
+      bottom:.75rem;
+      display:inline-flex;
+      flex-direction: row;
+      white-space: nowrap;
+      left: 50%;  
+      border-radius: 2rem;        /* Move left edge to screen center */
+      transform: translateX(-50%);
+      z-index: 99;
+
+      & > .action-target{
+        display: inline-flex;
+        flex-direction: column;
+        gap:.5rem;
+        position: absolute;
+        bottom: 100%;
+        margin-bottom: .5rem;
+      }
+      
+    }
+    & button.gridToggle{
+      display: inline-grid;
+      place-items: center;
+      color: rgba(255, 255, 255, 0.5);
+      font-weight: 100;
+      background-color: rgba(0,0,0,.75);
+      border-radius: 50%;
+      width:2.2rem;
+      height:2.2rem;
+      font-size:.6rem;
+      text-align: center;
+      border:1px solid rgba(255, 255, 255, 0.33);
+      zbox-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.33);
+
+
+      &.active{
+        background-color: var(--color-green-dark);
+        &:focus{
+          & .dockTitle{
+            opacity: 0;
+          }
+        }
+      }
+      &:hover,
+      &:focus{
+        color: rgba(255, 255, 255, 1);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+        /* Fades in, holds ~1s, fades back out on its own — an @keyframes
+           animation (not a plain transition) is what lets it auto-hide even
+           while still hovered, instead of only fading on mouse-out. */
+        & .dockTitle{
+          animation: dockTitlePeek 1.4s ease forwards;
+        }
+      }
+    }
+    & .dockTitle{
+      display: block;
+      opacity: 0;
+      position: absolute;
+      bottom:100%;
+      margin-bottom:1rem;
+      background-color: rgba(0,0,0,1);
+      color: rgba(255, 255, 255, .75);
+      z-index: 2;
+      padding: .5rem;
+      border-radius: .75rem;
+      font-size: .75rem;
+      
+      &:before{
+        display: inline-block;
+        content: '';
+        position: absolute;
+        top: 100%;
+        border: 0.5rem solid transparent;
+        border-top-color: rgba(0,0,0,1);
+        left:50%;
+        transform: translateX(-50%);
+      }
+    }
+
+   }
+
+@keyframes dockTitlePeek {
+  0%   { opacity: 0; }
+  15%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
 }

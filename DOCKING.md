@@ -148,12 +148,16 @@ only its *output* is committed:
 
 1. Find an icon via the Streamline VS Code extension, save the SVG into
    `assets/icon-font/svg/<name>.svg`.
-2. Run:
+2. Run (rerun with ALL wanted source SVGs each time — the generator rebuilds
+   the whole font from what's passed, it doesn't add one icon to the
+   existing output):
    ```
-   npx icon-font-generator assets/icon-font/svg/*.svg -o assets/icon-font/dist -n scoop-icons -p si -j
+   npx icon-font-generator assets/icon-font/svg/*.svg -o assets/icon-font/dist -n swankyF -p si -j
    ```
-3. Commit the generated `assets/icon-font/dist/` output. `scoop_enqueue_assets()`
-   ([enqueue.php](includes/enqueue.php)) enqueues `scoop-icons.css` from there
+3. Commit the generated `assets/icon-font/dist/` output (delete any stale
+   files left behind if the `-n` font name ever changes — the old ones don't
+   get cleaned up automatically). `scoop_enqueue_assets()`
+   ([enqueue.php](includes/enqueue.php)) enqueues `swankyF.css` from there
    automatically, but only `if (file_exists(...))` — harmless before the
    first icon is ever generated.
 4. Point a type at it: `'icon' => 'if:battery'` in that type's entry in

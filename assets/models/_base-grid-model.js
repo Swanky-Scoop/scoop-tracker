@@ -42,6 +42,12 @@ export default class BaseGridModel {
       this.displayTitle = options?.displayTitle ?? this.metaData?.displayTitle ?? name;
       this.icon = options?.icon ?? this.metaData?.icon ?? (name ? String(name).charAt(0) : '?');
 
+      // Named dockTarget, not target — this.target on List (assets/ui/_list.js)
+      // is the host DOM element; this is the unrelated string config value
+      // ('action', or null for normal .canvas placement) from 'target' in
+      // scoop_routes_config() (_config.php). See DOCKING.md.
+      this.dockTarget = options?.dockTarget ?? this.metaData?.target ?? null;
+
       this.showList = [];
       this.columns = [];
       this.rows = [];

@@ -41,6 +41,12 @@ export default class List extends El{
   constructor(target, name, config = {}) {
     super();
     this.target = target;
+    // Internal back-reference from the host DOM node to its owning List
+    // instance — lets a sibling control (see _closeActionSiblings) reach
+    // this one's own TOGGLE button after dockToggle() has moved that button
+    // somewhere else in the tree (the .toolbar), where plain DOM traversal
+    // from the host element can no longer find it.
+    target._dockListInstance = this;
     this.name = name;
     this.modelInstance = config?.modelInstance ?? null;
     this.location = config?.modelInstance?.location ?? 0;
@@ -944,6 +950,36 @@ export default class List extends El{
 
     toolbar.append(this.TOGGLE);
     this.target.classList.add('docked');
+
+    // 'target' => 'action' (see _config.php / DOCKING.md) — this control's
+    // whole host, not just its toggle button, lives in the dock's shared
+    // .action-target instead of .canvas. Applies to any List (Grid or Tile
+    // alike), not just table grids.
+    if (this.modelInstance?.dockTarget === 'action') {
+      const actionTarget = toolbar.querySelector(':scope > .action-target');
+      if (actionTarget && !actionTarget.contains(this.target)) {
+        actionTarget.append(this.target);
+      }
+    }
+  }
+
+  // Within one .action-target, only one control's form should be visible at
+  // a time — called when THIS control's toggle just opened (see the TOGGLE
+  // click listener in _bindEvents). Closes any other already-open sibling
+  // sharing the same .action-target, via the back-reference dockToggle()
+  // left on the host (target._dockListInstance) — the sibling's own TOGGLE
+  // button no longer lives near its host once docked, so plain DOM
+  // traversal from here can't find it any other way.
+  _closeActionSiblings() {
+    const actionTarget = this.target.closest('.action-target');
+    if (!actionTarget) return;
+
+    for (const sibling of actionTarget.children) {
+      if (sibling === this.target || !sibling.classList.contains('toggled')) continue;
+
+      sibling.classList.remove('toggled');
+      sibling._dockListInstance?.TOGGLE?.classList.remove('active');
+    }
   }
 
   _buildAllPayload() {
@@ -1611,7 +1647,9 @@ export default class List extends El{
     // .in-dock .toolbar), where a this.target-scoped listener would never see
     // its clicks bubble through.
     this.TOGGLE.addEventListener("click", (e) => {
-      this.target.classList.toggle("toggled");
+      const isOpen = this.target.classList.toggle("toggled");
+      this.TOGGLE.classList.toggle("active", isOpen);
+      if (isOpen) this._closeActionSiblings();
       e.stopPropagation();
     }, true);
 

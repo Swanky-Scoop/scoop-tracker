@@ -141,11 +141,18 @@ function scoop_client_metadata(): array {
     // either a unicode glyph or an image path; the client
     // (List._buildToggleButton in assets/ui/_list.js) tells them apart by
     // shape at render time, no separate flag needed here.
+    // 'target' => 'action' (opt-in, see _config.php) routes this control's
+    // whole host into the dock's shared .action-target container instead of
+    // .canvas, with only one control visible there at a time — see
+    // List.dockToggle()/_closeActionSiblings() in assets/ui/_list.js and
+    // DOCKING.md. Anything else (default null) keeps normal .canvas
+    // placement.
     $out[$route_key] = [
       'primary'      => $primary,
       'entities'     => $entities_out,
       'displayTitle' => $cfg['display_title'] ?? $route_key,
       'icon'         => $cfg['icon'] ?? mb_substr($route_key, 0, 1),
+      'target'       => $cfg['target'] ?? null,
     ];
   }
 
@@ -169,17 +176,20 @@ function scoop_enqueue_assets() {
     // Dock icon font (optional) — generated locally, never installed at
     // deploy time: find an icon via the Streamline VS Code extension, save
     // the SVG into assets/icon-font/svg/<name>.svg, then run
-    //   npx icon-font-generator assets/icon-font/svg/*.svg -o assets/icon-font/dist -n scoop-icons -p si -j
+    //   npx icon-font-generator assets/icon-font/svg/*.svg -o assets/icon-font/dist -n swankyF -p si -j
     // and commit the generated assets/icon-font/dist/ output (assets/icon-font/svg/
     // itself is excluded from deploy — source only, see deploy.yml). Reference
     // an icon by setting a type's 'icon' in scoop_routes_config() (_config.php)
     // to "if:<name>" — see _buildToggleButton() in assets/ui/_list.js for how
-    // that maps to the "si-<name>" class this generates.
-    $icon_font_css = $base_path . 'assets/icon-font/dist/scoop-icons.css';
+    // that maps to the "si-<name>" class this generates. Font family/file
+    // basename is "swankyF" — re-running the command above with a different
+    // -n regenerates under a new name and orphans these files (delete the
+    // old ones, update this path).
+    $icon_font_css = $base_path . 'assets/icon-font/dist/swankyF.css';
     if (file_exists($icon_font_css)) {
       wp_enqueue_style(
         'scoop-icon-font',
-        $base_url . 'assets/icon-font/dist/scoop-icons.css',
+        $base_url . 'assets/icon-font/dist/swankyF.css',
         [],
         filemtime($icon_font_css)
       );

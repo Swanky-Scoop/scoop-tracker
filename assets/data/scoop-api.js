@@ -610,6 +610,7 @@ export default class ScoopAPI {
         if (type === "Popular") {
           model = new PopularGridModel("Popular", null, {
             location, days, nonce: this.nonce, forceCacheBust: this._forceCacheBust,
+            metaData: SCOOP.metaData?.Popular,
           });
           // PopularPlot isn't a List subclass (see popular-plot.js) — no
           // TOGGLE/dockToggle() of its own; its constructor does no DOM work
@@ -618,6 +619,7 @@ export default class ScoopAPI {
         } else if (type === "Flavors") {
           model = new FlavorsGridModel("Flavors", null, {
             location, days, nonce: this.nonce, forceCacheBust: this._forceCacheBust,
+            metaData: SCOOP.metaData?.Flavors,
           });
           grid = new Grid(dom, "Flavors", {
             api: this, modelInstance: model, formCodec, columns: model.columns, pageStatusId: dom.id,
@@ -625,6 +627,7 @@ export default class ScoopAPI {
         } else {
           model = new AnalyticsGridModel("Analytics", null, {
             location, days, nonce: this.nonce, forceCacheBust: this._forceCacheBust,
+            metaData: SCOOP.metaData?.Analytics,
           });
           grid = new Grid(dom, "Analytics", {
             api: this, modelInstance: model, formCodec, columns: model.columns, pageStatusId: dom.id,
