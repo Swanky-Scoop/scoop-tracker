@@ -131,7 +131,13 @@ add_shortcode('scoop_dock', function ($atts, $content = null) {
     ?>
     <div class="in-dock">
       <div class="toolbar">
+        <a href="../wp-admin/edit.php?post_type=tub" class="gridToggle wp"><i class="ab-icon"></i><span class="dockTitle">WP Admin</span></a>
         <div class="action-target"></div>
+        <div class="PAGE-STATUS">
+            <h3>Status</h3>
+            <em></em>
+            <ul></ul>
+        </div>
       </div>
       <div class="canvas"><?php echo $inner; ?></div>
     </div>

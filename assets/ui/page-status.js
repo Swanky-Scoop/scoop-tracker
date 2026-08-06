@@ -79,7 +79,7 @@ export default class PageStatus {
   static _pendingCacheStatus = undefined; // set by completeLoadTiming(), consumed once nothing's still 'fetching'
 
   static _ensureHost() {
-    let DIV = document.querySelector('body > .PAGE-STATUS');
+    let DIV = document.querySelector('body .PAGE-STATUS');
     if (DIV) return DIV;
 
     DIV = DOM.el('div', { classes: ['PAGE-STATUS'] });
