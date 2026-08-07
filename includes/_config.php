@@ -25,6 +25,7 @@ function scoop_routes_config(string $batch_key = ''): array {
     'Cabinet' => [
       'display_title' => 'Flavor Plan',
       'icon'         => 'if:l',
+      'target'       => 'aside',
       'path'         => '/planning',
       'methods'      => ['GET','POST'],
       'mode'         => 'update',

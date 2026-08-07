@@ -42,7 +42,7 @@ export default class List extends El{
     super();
     this.target = target;
     // Internal back-reference from the host DOM node to its owning List
-    // instance — lets a sibling control (see _closeActionSiblings) reach
+    // instance — lets a sibling control (see _closeSlotSiblings) reach
     // this one's own TOGGLE button after dockToggle() has moved that button
     // somewhere else in the tree (the .toolbar), where plain DOM traversal
     // from the host element can no longer find it.
@@ -951,32 +951,47 @@ export default class List extends El{
     toolbar.append(this.TOGGLE);
     this.target.classList.add('docked');
 
-    // 'target' => 'action' (see _config.php / DOCKING.md) — this control's
-    // whole host, not just its toggle button, lives in the dock's shared
-    // .action-target instead of .canvas. Applies to any List (Grid or Tile
-    // alike), not just table grids. .action-target is a peer of .toolbar
-    // (not nested inside it — see the CSS docking section for why), so it's
-    // looked up from `dock`, same as .toolbar above.
-    if (this.modelInstance?.dockTarget === 'action') {
-      const actionTarget = dock.querySelector(':scope > .action-target');
-      if (actionTarget && !actionTarget.contains(this.target)) {
-        actionTarget.append(this.target);
+    // 'target' => 'action' | 'aside' (see _config.php / DOCKING.md) — this
+    // control's whole host, not just its toggle button, lives in one of the
+    // dock's shared "slots" instead of .canvas, one shared slot per name so
+    // only one control from a given slot is ever mounted there at a time
+    // (see _closeSlotSiblings()). Applies to any List (Grid or Tile alike),
+    // not just table grids. Slots are peers of .toolbar (not nested inside
+    // it — see the CSS docking section for why), so they're looked up from
+    // `dock`, same as .toolbar above. List.DOCK_SLOT_SELECTORS is the one
+    // place a new slot name gets wired to its DOM selector.
+    const slotSelector = List.DOCK_SLOT_SELECTORS[this.modelInstance?.dockTarget];
+    if (slotSelector) {
+      const slot = dock.querySelector(slotSelector);
+      if (slot && !slot.contains(this.target)) {
+        slot.append(this.target);
       }
     }
   }
 
-  // Within one .action-target, only one control's form should be visible at
-  // a time — called when THIS control's toggle just opened (see the TOGGLE
-  // click listener in _bindEvents). Closes any other already-open sibling
-  // sharing the same .action-target, via the back-reference dockToggle()
-  // left on the host (target._dockListInstance) — the sibling's own TOGGLE
-  // button no longer lives near its host once docked, so plain DOM
-  // traversal from here can't find it any other way.
-  _closeActionSiblings() {
-    const actionTarget = this.target.closest('.action-target');
-    if (!actionTarget) return;
+  // Maps a model's `dockTarget` value to the :scope-relative selector for
+  // its shared slot within .in-dock — see dockToggle() above and
+  // _closeSlotSiblings() below, the two places that need to agree on what
+  // a "slot" is. Add an entry here (plus the matching element in
+  // [scoop_dock]'s markup, includes/shortcode.php) to introduce a new slot.
+  static DOCK_SLOT_SELECTORS = {
+    action: ':scope > .action-target',
+    aside: ':scope > aside',
+  };
 
-    for (const sibling of actionTarget.children) {
+  // Within one slot (.action-target or <aside> — see DOCK_SLOT_SELECTORS),
+  // only one control's form should be visible at a time — called when THIS
+  // control's toggle just opened (see the TOGGLE click listener in
+  // _bindEvents). Closes any other already-open sibling sharing the same
+  // slot, via the back-reference dockToggle() left on the host (target.
+  // _dockListInstance) — the sibling's own TOGGLE button no longer lives
+  // near its host once docked, so plain DOM traversal from here can't find
+  // it any other way.
+  _closeSlotSiblings() {
+    const slot = this.target.closest('.action-target, aside');
+    if (!slot) return;
+
+    for (const sibling of slot.children) {
       if (sibling === this.target || !sibling.classList.contains('toggled')) continue;
 
       sibling.classList.remove('toggled');
@@ -1656,7 +1671,19 @@ export default class List extends El{
     this.TOGGLE.addEventListener("click", (e) => {
       const isOpen = this.target.classList.toggle("toggled");
       this.TOGGLE.classList.toggle("active", isOpen);
-      if (isOpen) this._closeActionSiblings();
+      if (isOpen) this._closeSlotSiblings();
+
+      // Mirrors .toggled onto the shared slot itself (.action-target or
+      // <aside> — see DOCK_SLOT_SELECTORS), not just this.target, so CSS
+      // that needs to style the SLOT differently while something's open in
+      // it (e.g. <aside>'s own min/max width, which shouldn't apply while
+      // collapsed) has a plain classname to key off instead of having to
+      // repeat the :has(.scoop-grid.toggled) selector everywhere. Safe to
+      // set from isOpen directly (rather than re-scanning every sibling)
+      // because _closeSlotSiblings() above already enforces "at most one
+      // open child per slot" before this line runs.
+      this.target.closest('.action-target, aside')?.classList.toggle('active', isOpen);
+
       e.stopPropagation();
     }, true);
 

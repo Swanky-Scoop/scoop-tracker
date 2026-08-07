@@ -1,7 +1,13 @@
 import ScoopAPI    from "./data/scoop-api.js";
 import Details     from "./ui/details.js";
+import { initDockResizers } from "./ui/dock-resizer.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
+  // Independent of grid mounting — .dock-resizer elements are server-
+  // rendered by [scoop_dock] (see includes/shortcode.php), present in the
+  // DOM before any JS runs.
+  initDockResizers();
+
   const api = new ScoopAPI({
     nonce: SCOOP.nonce,
     base: "/",

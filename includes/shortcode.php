@@ -121,18 +121,24 @@ add_shortcode('scoop_tile', function ($atts) {
 /**
  * Shortcode: [scoop_dock] ... nested [scoop_grid]/[scoop_tile] ... [/scoop_dock]
  *
- * Enclosing wrapper, not a data host itself. Emits an .in-dock container with
- * three children: an empty .action-target and an empty .toolbar (each
- * control's .gridToggle button gets moved into .toolbar once it mounts, and
- * any control whose model sets dockTarget:'action' — e.g. Batch — gets its
- * whole host moved into .action-target instead — see List.dockToggle() in
- * assets/ui/_list.js) and a .canvas holding the nested shortcodes' own
- * rendered output, unchanged. .action-target is a peer of .toolbar, not a
- * child of it — see the CSS docking section in assets/css.css for why (a
- * `transform` on a .action-target that CONTAINS a docked Batch, which is
- * itself position:fixed, would hijack Batch's viewport-relative positioning).
- * Controls inside .canvas don't know they're docked; the docking hook is
- * purely "does this control's host have an .in-dock ancestor".
+ * Enclosing wrapper, not a data host itself. Emits an .in-dock container
+ * with: an empty .action-target and an empty <aside> — two "slot" targets a
+ * control's whole host can be moved into instead of staying in .canvas (see
+ * List.dockToggle() in assets/ui/_list.js), each holding at most one open
+ * control at a time (List._closeSlotSiblings()) — which slot a given
+ * control uses is just its model's `dockTarget` value ('action' | 'aside'),
+ * read from that type's `target` entry in scoop_routes_config(); an empty
+ * .toolbar (each control's .gridToggle button gets moved in here once it
+ * mounts); a .dock-resizer drag handle (see assets/ui/dock-resizer.js) for
+ * resizing <aside> against .canvas; and .canvas itself, holding the nested
+ * shortcodes' own rendered output, unchanged, for every control that isn't
+ * in a slot. .action-target/<aside> are peers of .toolbar and .canvas, not
+ * children of either — see the CSS docking section in assets/css.css for
+ * why (a `transform` on a slot that CONTAINS a docked Batch, which is
+ * itself position:fixed, would hijack Batch's viewport-relative
+ * positioning). Controls inside .canvas don't know they're docked; the
+ * docking hook is purely "does this control's host have an .in-dock
+ * ancestor".
  */
 add_shortcode('scoop_dock', function ($atts, $content = null) {
     if (!is_user_logged_in()) {
@@ -154,6 +160,8 @@ add_shortcode('scoop_dock', function ($atts, $content = null) {
         </div>
       </div>
       <div class="canvas"><?php echo $inner; ?></div>
+      <div class="dock-resizer"></div>
+      <aside></aside>
     </div>
     <?php
     return ob_get_clean();

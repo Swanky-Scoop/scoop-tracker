@@ -99,6 +99,12 @@
      estimate of the toolbar's own rendered height plus a gap. */
   --dimension-dock-toolbar-bottom: 0.75rem;
   --dimension-dock-toolbar-clearance: 6rem;
+
+  /* .in-dock's <aside> slot (see DOCKING section below) — 3/8 of .in-dock's
+     width, leaving .canvas the remaining 5/8. Live-adjustable: dragging
+     .dock-resizer (assets/ui/dock-resizer.js) overwrites this on .in-dock
+     directly, which this initial value is just the fallback for. */
+  --dock-aside-width: 37.5%;
 }
 
 /* ============================================
@@ -821,8 +827,20 @@ html > body.TS_GRID-UPDATING .scoop-grid {
    DOCKING — [scoop_dock] baseline (see DOCKING.md)
    ============================================ */
 
+/* Row layout: .canvas | .dock-resizer | <aside>, each independently
+   scrollable (overflow-y:auto on .canvas/aside below) within one bounded,
+   non-scrolling viewport-height frame — overflow:hidden here is what
+   stops a second, redundant page-level scrollbar from also appearing.
+   .toolbar and .action-target (further below) are position:fixed overlays
+   floating on TOP of this row, unaffected by it — fixed positioning
+   escapes normal flow entirely, so adding display:flex here doesn't move
+   them. */
 .in-dock {
   position: relative;
+  display: flex;
+  flex-direction: row;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* .toolbar and .action-target are peers (see [scoop_dock]'s markup in
@@ -968,13 +986,114 @@ html > body.TS_GRID-UPDATING .scoop-grid {
 }
 
 .in-dock > .canvas {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 1rem;
 }
 
-/* Docked "aside" controls (anything left in .canvas, as opposed to
-   .action-target — see List.dockToggle()) start fully collapsed: scale(0)
+/* Draggable divider between .canvas and <aside> — see
+   assets/ui/dock-resizer.js, which drags this to update --dock-aside-width
+   on .in-dock. Only meaningful (and only shown) once <aside> actually has
+   something open — an empty, collapsed aside has nothing to resize. */
+.in-dock > .dock-resizer {
+  flex: 0 0 auto;
+  width: 0.35rem;
+  cursor: col-resize;
+  background: var(--color-border-light);
+  display: none;
+}
+
+.in-dock:has(> aside .scoop-grid.toggled) > .dock-resizer {
+  display: block;
+}
+
+/* While assets/ui/dock-resizer.js has an active drag: forces the resize
+   cursor everywhere (not just while hovering the thin handle itself, which
+   the pointer can easily outrun mid-drag) and blocks text selection, which
+   a fast drag would otherwise trigger across page content. */
+body.dock-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* <aside> — the 'aside' dock slot (see List.DOCK_SLOT_SELECTORS in
+   _list.js), a peer of .canvas and .toolbar, not nested in either (same
+   reasoning as .action-target above: a slot that CONTAINS a docked,
+   position:fixed control needs no `transform` on it, and none of today's
+   aside-targeted types are position:fixed, so this isn't load-bearing here
+   the way it is for .action-target — kept as a peer anyway for the same
+   "one shared slot, looked up from `dock`" convention). Collapsed
+   (flex-basis:0, clipped) by default; :has(.scoop-grid.toggled) — same
+   .toggled class the TOGGLE click handler already applies, no JS wiring
+   needed — expands it to --dock-aside-width with its own independent
+   vertical scroll. */
+.in-dock > aside {
+  flex: 0 0 0;
+  overflow: hidden;
+  transition: flex-basis 0.2s ease-in;
+}
+
+.in-dock > aside:has(.scoop-grid.toggled) {
+  flex: 0 0 var(--dock-aside-width);
+  overflow-y: auto;
+}
+
+/* Docked "aside" grid (currently just Cabinet/"Flavor Plan" — see
+   _config.php's `'target' => 'aside'`) gives up the general .scoop-grid
+   rule's own margin/width — <aside> above now owns the sizing/scrolling
+   for the whole panel, so the grid just needs to be a normal in-flow block
+   filling it, same pattern as .scoop-grid.Batch filling .action-target. */
+.in-dock aside > .scoop-grid {
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+/* Compact density for whatever's docked in <aside> — a narrow sidebar has
+   much less room than a full-width .canvas panel. font-size:0.67rem sets
+   the baseline (inherited by anything that doesn't set its own), which
+   covers most of a grid's text on its own; the one place within a grid
+   that's KNOWN to render bigger is a group-header row's <th> (table.zGRID
+   tbody tr th, normally 0.75rem — see "TABLE - CELLS (td)" below — sized up
+   deliberately for a full-width grid, wrong in a narrow sidebar), capped
+   here explicitly. Not a blanket `* { font-size }` override — that would
+   also shrink icon/glyph-as-text content (e.g. the .oc collapse chevrons)
+   sized in em/rem against the inherited font-size, which isn't wanted. */
+.in-dock aside {
+  font-size: 0.67rem;
+
+  & table.zGRID tbody tr th {
+    font-size: 0.67rem;
+  }
+}
+
+/* Sensible general default for controls docked in .canvas: size to content
+   rather than the general .scoop-grid rule's own `width: calc(100% - 2rem)
+   !important` (nearly full-width regardless of content) — a narrow grid
+   stays narrow, a wide one caps at 40rem and wraps to its own row via
+   flex-wrap on .canvas above. Specific types override this below where
+   that default is wrong for them (currently just ItemPivot). */
+.in-dock .canvas > .scoop-grid {
+  width: auto !important;
+  max-width: min(40rem, 100%) !important;
+}
+
+/* "Flavor Map" — a wide flavor×location matrix, sized narrow by nothing
+   more than the general rule above; give it the whole row instead of
+   competing for width. flex-basis:100% forces it alone on its own row via
+   .canvas's flex-wrap, same as width would, but survives .canvas someday
+   switching away from a plain width-driven flex layout. */
+.in-dock .canvas > .scoop-grid[data-grid-type="ItemPivot"] {
+  width: 100% !important;
+  max-width: 100% !important;
+  flex-basis: 100%;
+}
+
+/* Docked controls left in .canvas (as opposed to a slot — .action-target
+   or <aside>, see List.dockToggle()) start fully collapsed: scale(0)
    hides the WHOLE host, not just its <form> (below) — which also covers
    the loading shimmer (a ::after on .scoop-grid itself, see "GRID
    CONTAINER" further up), otherwise visible on an untoggled panel while
@@ -1432,7 +1551,31 @@ table.zGRID tr {
 /* ============================================
    TABLE - CELLS (Editable & Read-only)
    ============================================ */
+/* .active mirrors .toggled from whatever's currently open inside (see the
+   TOGGLE click handler in assets/ui/_list.js) — scoped to it so these
+   bounds don't fight the collapsed (flex-basis:0) default further up when
+   nothing's open. */
+.in-dock > aside.active {
+  max-width: 32rem;
+  min-width: 16rem;
+}
+aside table.zGRID thead {
+  position: sticky;
+  top: 0;
+}
+aside table.zGRID tr .cell {
+  padding: 1rem 3rem;
+  border-width: 0.5px;
 
+  & .badges .badge{
+    font-size: 0.5rem;
+    height: 0.9rem;
+    line-height: 0.9rem;
+  }
+  & input {
+    font-size: 0.67rem;
+  }
+}
 table.zGRID tr {
   & button,
   & input,
@@ -2216,9 +2359,21 @@ table.zGRID tr .badges .badge.warning {
     right: 0;
     max-width: 100vw;
     max-height: 100vh;
-    display: grid;
+    /* display:grid with no explicit columns used to stack EVERY child
+       (.canvas, .dock-resizer, <aside>, plus the position:fixed .toolbar/
+       .action-target overlays) as separate implicit grid rows — one per
+       child, top to bottom. That's what put <aside> at the bottom instead
+       of beside .canvas: the general .in-dock > .canvas/aside/.dock-resizer
+       rules further up rely on .in-dock being flex-row (see their comments
+       there), and this more-specific rule was overriding just `display`,
+       silently breaking that layout for this context. flex-row matches the
+       general rule now; .toolbar/.action-target are unaffected either way
+       since position:fixed already escapes normal flow regardless of the
+       parent's display type. */
+    display: flex;
+    flex-direction: row;
     text-align: center;
-    overflow: auto;
+    overflow: hidden;
 
     /* Positioning (position/width/left/bottom/transform) is intentionally
        NOT redeclared here — the general .in-dock > .action-target and

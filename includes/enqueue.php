@@ -141,11 +141,12 @@ function scoop_client_metadata(): array {
     // either a unicode glyph or an image path; the client
     // (List._buildToggleButton in assets/ui/_list.js) tells them apart by
     // shape at render time, no separate flag needed here.
-    // 'target' => 'action' (opt-in, see _config.php) routes this control's
-    // whole host into the dock's shared .action-target container instead of
-    // .canvas, with only one control visible there at a time — see
-    // List.dockToggle()/_closeActionSiblings() in assets/ui/_list.js and
-    // DOCKING.md. Anything else (default null) keeps normal .canvas
+    // 'target' => 'action' | 'aside' (opt-in, see _config.php) routes this
+    // control's whole host into the dock's matching shared slot
+    // (.action-target or <aside>) instead of .canvas, with only one control
+    // visible per slot at a time — see List.dockToggle()/
+    // List.DOCK_SLOT_SELECTORS/_closeSlotSiblings() in assets/ui/_list.js
+    // and DOCKING.md. Anything else (default null) keeps normal .canvas
     // placement.
     $out[$route_key] = [
       'primary'      => $primary,
