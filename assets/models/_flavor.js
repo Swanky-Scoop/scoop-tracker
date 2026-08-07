@@ -16,14 +16,27 @@ const EXCLUDED_STATES = new Set(["Emptied", "!Lost"]);
 export default class Flavor {
   constructor({ flavorsById, tub, location }) {
     this.flavorsById = flavorsById;
-    this.location = Number(location);
+    this.location = Number(location) || 0;
 
     const notEmpty = (tub ?? []).filter(t => !EXCLUDED_STATES.has(t.state));
-    
-    const hereNotEmpty = notEmpty.filter(t => t.location  === location);
+
+    // location 0 means "all locations" throughout this codebase (see
+    // SHORTCODES.md's "`location` defaults to multi-location when
+    // omitted") — treat it as no location filter at all, rather than
+    // comparing tub.location === 0, which is never true for a real tub and
+    // silently zeroed out hereNotEmpty for every flavor (every cell then
+    // read as "none-left" — see alertCase() below) whenever a grid mounts
+    // without a location attribute. Number(t.location) guards against a
+    // string/number type mismatch with `location`, which was the original,
+    // narrower bug behind the same symptom.
+    const hereNotEmpty = this.location
+      ? notEmpty.filter(t => Number(t.location) === this.location)
+      : notEmpty;
     const hereOpened   = hereNotEmpty.filter(t => t.state === "Opened");
     const hereFresh    = hereNotEmpty.filter(t => t.state !== "Opened" && (!t.use || t.use === 1863));
-    const remoteAll    = notEmpty.filter(t => t.location  !== location);
+    const remoteAll    = this.location
+      ? notEmpty.filter(t => Number(t.location) !== this.location)
+      : [];
 
     this.notEmptyByFlavor = Indexer.groupBy(hereNotEmpty, t => Number(t.flavor));
     this.openedByFlavor   = Indexer.groupBy(hereOpened,   t => Number(t.flavor));

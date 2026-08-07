@@ -1005,6 +1005,9 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   cursor: col-resize;
   background: var(--color-border-light);
   display: none;
+  background-color: palegoldenrod;
+  box-shadow: rgba(0, 0, 0, .5) 0 .25rem .5rem, inset 2px 0 0 rgba(255, 255, 255, .5);
+  z-index: 3;
 }
 
 .in-dock:has(> aside .scoop-grid.toggled) > .dock-resizer {
