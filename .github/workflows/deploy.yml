@@ -60,6 +60,7 @@ jobs:
             --exclude='triage' \
             --exclude='data-exports' \
             --exclude='node_modules' \
+            --exclude='tests' \
             --exclude='package.json' \
             --exclude='package-lock.json' \
             --exclude='assets/icon-font/svg' \
@@ -111,6 +112,7 @@ jobs:
             --exclude='triage' \
             --exclude='data-exports' \
             --exclude='node_modules' \
+            --exclude='tests' \
             --exclude='package.json' \
             --exclude='package-lock.json' \
             --exclude='assets/icon-font/svg' \
@@ -161,6 +163,7 @@ jobs:
             --exclude='triage' \
             --exclude='data-exports' \
             --exclude='node_modules' \
+            --exclude='tests' \
             --exclude='package.json' \
             --exclude='package-lock.json' \
             --exclude='assets/icon-font/svg' \
