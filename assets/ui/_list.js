@@ -1743,6 +1743,13 @@ export default class List extends El{
         return;
       }
 
+      const delBtn = e.target.closest("[data-delete-row]");
+      if (delBtn) {
+        e.preventDefault();
+        this._handleRowDelete(delBtn);
+        return;
+      }
+
       this._showHide(e);
       this._sortCols(e);
     }, true);
@@ -1930,6 +1937,38 @@ export default class List extends El{
       };
 
       document.addEventListener("ts:domain:updated", this._onDomainUpdated);
+    }
+  }
+
+  // Counterpart to a { type: 'delete' } column (see Grid._renderDeleteCell)
+  // — generic on this shared List class, but a no-op unless the model opts
+  // in by implementing deleteRow(rowId, api). Deliberately delegates the
+  // actual API call to the model rather than hardcoding an entity/route
+  // here, so List/Grid stay ignorant of which grid types support deletion
+  // (currently just BatchHistoryGridModel — see its deleteRow/deleteRowLabel).
+  async _handleRowDelete(btn) {
+    const rowId = Number(btn.dataset.deleteRow);
+    if (!rowId || typeof this.modelInstance?.deleteRow !== 'function') return;
+
+    const label = this.modelInstance.deleteRowLabel?.(rowId) ?? 'this item';
+    if (!confirm(`Delete ${label}? This cannot be undone.`)) return;
+
+    btn.disabled = true;
+    try {
+      const r = await this.modelInstance.deleteRow(rowId, this.api);
+
+      if (!r?.ok || !r?.data?.ok) {
+        Toast.addMessage({ title: 'Delete failed', message: r?.data?.error ?? `HTTP ${r?.status}` });
+        return;
+      }
+
+      Toast.addMessage({ title: 'Deleted', message: `Removed ${label}.` });
+      await this.api.refreshPageDomain({ force: true, info: { name: this.name } });
+    } catch (err) {
+      console.error('Row delete failed:', err);
+      Toast.addMessage({ title: 'Delete error', message: String(err) });
+    } finally {
+      btn.disabled = false;
     }
   }
 

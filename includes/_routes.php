@@ -78,8 +78,8 @@ add_action('rest_api_init', function () {
 
   foreach ($routes as $key => $cfg) {
     register_rest_route(
-      'scoop/v1', 
-      $cfg['path'], 
+      'scoop/v1',
+      $cfg['path'],
       [
         'methods'  => $cfg['methods'],
         'callback' => function(\WP_REST_Request $req) use ($cfg, $key) {
@@ -89,4 +89,19 @@ add_action('rest_api_init', function () {
       ]
     );
   }
+
+  // Batch delete — removes the batch and its related tubs (see
+  // scoop_handle_batch_delete in rest.php). Sibling of Batch's own
+  // create route (/batches) rather than a scoop_routes_config() entry,
+  // since that config's per-type loop above only ever registers one path
+  // with one fixed method set per type. Reuses Batch's own permission
+  // matrix (scoop_user_can_route) keyed on the 'DELETE' method — see
+  // includes/_policy.php.
+  register_rest_route('scoop/v1', '/batches/(?P<id>\d+)', [
+    'methods'  => ['DELETE'],
+    'callback' => function(\WP_REST_Request $req) {
+      return scoop_handle_batch_delete($req);
+    },
+    'permission_callback' => scoop_write_permission('Batch'),
+  ]);
 });

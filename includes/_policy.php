@@ -3,17 +3,69 @@
 // that gates every scoop/v1 request (scoop_write_permission() in _auth.php
 // calls scoop_user_can_route() below).
 
+/**
+ * Role → capability reference (kept in prose here so nobody has to re-derive
+ * "what can an ice_cream_maker actually do" from the routes/entities matrix
+ * below every time a role changes — update this comment whenever a block
+ * changes). Every role's block still uses the same routes/entities shape as
+ * before; a generic "entity+action" table was considered and dropped —
+ * kiosk's field-scoped 'state'-only grant and ice_cream_maker's "no tub
+ * writes at all" carve-out are one-off enough that a derivation layer
+ * wouldn't have been any shorter than just writing the arrays.
+ *
+ *   administrator    — everything.
+ *   kitchen_manager  — batch create/delete (cascades tub create/delete —
+ *                       see hooks/batch-tub.php), full tub edit (state +
+ *                       use + amount + slot), Cabinet slot-schedule write,
+ *                       flavor edit (InstockFlavor).
+ *   shift_lead       — full tub edit + Cabinet slot-schedule write. No
+ *                       batch create/delete, no flavor edit.
+ *   ice_cream_maker  — batch create/delete only. Makes tubs, doesn't touch
+ *                       them afterwards — corrections happen by deleting
+ *                       and remaking the batch, not editing a tub directly.
+ *   kiosk            — shared front-of-house tablet. FlavorTub/DateActivity
+ *                       write, but ONLY the 'state' field (no amount/use/
+ *                       slot) — tub tracking (Opened/Emptied etc.), nothing
+ *                       else. No batch, no Cabinet write, no flavor edit.
+ *   editor / author  — legacy WP roles, predate the kitchen-role set above;
+ *                       left exactly as they were, not part of this redesign.
+ *
+ *   View access: Cabinet + FlavorTub are viewable (GET) by every role named
+ *   below — "everyone except subscriber" per explicit request. A role not
+ *   named here at all (subscriber, a typo, a URE role nobody's wired in
+ *   yet) falls through to '_default', which denies everything — see
+ *   scoop_get_user_policy()'s comment on why that changed from the old
+ *   behavior of silently granting admin-equivalent access.
+ */
 function scoop_access_policy(): array {
-  
+
   $policy = [
+
+    // True fallback for any role NOT explicitly named in this array —
+    // deny everything. Every role scoop_get_user_policy() actually checks
+    // (including 'administrator') has its own named block below, so this
+    // only fires for a genuinely unrecognized role: WP's built-in
+    // 'subscriber', a typo, or a new URE-created role nobody's wired in
+    // here yet. Previously this same key doubled as BOTH the fallback AND
+    // administrator's own policy — meaning an unrecognized role silently
+    // inherited full admin-equivalent write+delete access. That was a real
+    // gap (e.g. the dead scoop_manager/scoop_backhouse/scoop_lead/
+    // scoop_staff roles registered below fell through to it) — administrator
+    // now gets its own explicit block instead.
     '_default' => [
+      'routes'   => [],
+      'entities' => [],
+    ],
+
+    'administrator' => [
       'routes' => [
-        'Cabinet'   => ['GET' => true, 'POST' => true],
-        'FlavorTub' => ['GET' => true, 'POST' => true],
-        'Batch'     => ['GET' => true, 'POST' => true],
-        'Closeout'  => ['GET' => true, 'POST' => true],
-        'DateActivity' => ['GET' => true, 'POST' => true],  // ← ADDED THIS
-        'Analytics' => ['GET' => true],
+        'Cabinet'       => ['GET' => true, 'POST' => true],
+        'FlavorTub'     => ['GET' => true, 'POST' => true],
+        'Batch'         => ['GET' => true, 'POST' => true, 'DELETE' => true],
+        'Closeout'      => ['GET' => true, 'POST' => true],
+        'DateActivity'  => ['GET' => true, 'POST' => true],
+        'InstockFlavor' => ['GET' => true, 'POST' => true],
+        'Analytics'     => ['GET' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
@@ -59,63 +111,121 @@ function scoop_access_policy(): array {
       ],
     ],
 
-    // Explicit allow-list for writes, explicit deny-list for reads. Any
-    // route/method not listed here falls through to the ?? false default
-    // in scoop_user_can_route(), i.e. denied — so this role only ever
-    // gains access by adding a line below, never by omission elsewhere.
+    // ── Kitchen roles (real WP role slugs, created + assigned via the User
+    // Role Editor plugin — see the reference comment at the top of this
+    // file for what each one is meant to do) ──────────────────────────────
+
+    'kitchen_manager' => [
+      'routes' => [
+        'Batch'         => ['GET' => true, 'POST' => true, 'DELETE' => true],
+        'Cabinet'       => ['GET' => true, 'POST' => true],
+        'FlavorTub'     => ['GET' => true, 'POST' => true],
+        'DateActivity'  => ['GET' => true, 'POST' => true],
+        'InstockFlavor' => ['GET' => true, 'POST' => true],
+        'Closeout'      => ['GET' => false, 'POST' => false],
+        'Analytics'     => ['GET' => false],
+      ],
+      'entities' => [
+        'tub'  => ['state','use','amount','slot'],
+        'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
+      ],
+    ],
+
+    'shift_lead' => [
+      'routes' => [
+        // No batch create/delete — that's ice_cream_maker/kitchen_manager's
+        // job. GET left true only for parity with every other role (Batch's
+        // GET is just a diagnostic ping — see scoop_handle_request — real
+        // batch data comes through the bundle endpoint, ungated by route).
+        'Batch'         => ['GET' => true, 'POST' => false],
+        'Cabinet'       => ['GET' => true, 'POST' => true],
+        'FlavorTub'     => ['GET' => true, 'POST' => true],
+        'DateActivity'  => ['GET' => true, 'POST' => true],
+        'InstockFlavor' => ['GET' => true, 'POST' => false],
+        'Closeout'      => ['GET' => false, 'POST' => false],
+        'Analytics'     => ['GET' => false],
+      ],
+      'entities' => [
+        'tub'  => ['state','use','amount','slot'],
+        'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
+      ],
+    ],
+
+    // Makes batches (which cascades tub creation) and can delete one to
+    // redo it, but never edits a tub directly afterwards — no FlavorTub/
+    // DateActivity write.
     'ice_cream_maker' => [
       'routes' => [
-        // Write allow-list: batch-grid only.
-        'Batch'        => ['GET' => true, 'POST' => true],
-        // Read access, not write (no allow-list entry below → no POST).
-        'Cabinet'      => ['GET' => true, 'POST' => false],
-        'FlavorTub'    => ['GET' => true, 'POST' => false],
-        'DateActivity' => ['GET' => true, 'POST' => false],
-        'InstockFlavor'=> ['GET' => true, 'POST' => false],
-        // Read deny-list.
-        'Closeout'  => ['GET' => false, 'POST' => false],
-        'Analytics' => ['GET' => false],
+        'Batch'         => ['GET' => true, 'POST' => true, 'DELETE' => true],
+        'Cabinet'       => ['GET' => true, 'POST' => false],
+        'FlavorTub'     => ['GET' => true, 'POST' => false],
+        'DateActivity'  => ['GET' => true, 'POST' => false],
+        'InstockFlavor' => ['GET' => true, 'POST' => false],
+        'Closeout'      => ['GET' => false, 'POST' => false],
+        'Analytics'     => ['GET' => false],
       ],
       'entities' => [
         'tub'  => [],
         'slot' => [],
       ],
     ],
+
+    // Shared front-of-house tablet. Tub state tracking only — no amount/use
+    // (kiosk doesn't adjust quantities), no slot (not part of Cabinet
+    // planning), no batch, no flavor edit.
+    'kiosk' => [
+      'routes' => [
+        'Batch'         => ['GET' => false, 'POST' => false, 'DELETE' => false],
+        'Cabinet'       => ['GET' => true, 'POST' => false],
+        'FlavorTub'     => ['GET' => true, 'POST' => true],
+        'DateActivity'  => ['GET' => true, 'POST' => true],
+        'InstockFlavor' => ['GET' => false, 'POST' => false],
+        'Closeout'      => ['GET' => false, 'POST' => false],
+        'Analytics'     => ['GET' => false],
+      ],
+      'entities' => [
+        'tub'  => ['state'],
+        'slot' => [],
+      ],
+    ],
   ];
-  
+
   return $policy;
 }
 
 function scoop_get_user_policy(\WP_User $user): array {
-  
+
   $policy = scoop_access_policy();
-  
-  // Check roles in priority order
-  if (in_array('administrator', $user->roles)) {
-    return $policy['_default'];
-  }
-  
-  if (in_array('editor', $user->roles)) {
-    return $policy['editor'];
-  }
-  
-  if (in_array('author', $user->roles)) {
-    return $policy['author'];
+
+  // Priority order for the rare multi-role user (WP allows more than one
+  // role per user) — first match wins. Not a strict privilege ranking
+  // between every pair (ice_cream_maker and shift_lead grant different,
+  // not strictly overlapping, things), just a stable tie-break.
+  $order = [
+    'administrator',
+    'kitchen_manager',
+    'shift_lead',
+    'ice_cream_maker',
+    'kiosk',
+    'editor',
+    'author',
+  ];
+
+  foreach ($order as $slug) {
+    if (in_array($slug, $user->roles, true)) {
+      return $policy[$slug];
+    }
   }
 
-  if (in_array('ice_cream_maker', $user->roles)) {
-    return $policy['ice_cream_maker'];
-  }
-
-  // Default policy
+  // Genuinely unrecognized role — deny everything (see '_default' above).
   return $policy['_default'];
 }
 
 function scoop_user_writeable_fields(\WP_User $user, string $entity): array {
-  
+
   $policy = scoop_get_user_policy($user);
   $fields = $policy['entities'][$entity] ?? [];
-  
+
   return $fields;
 }
 
@@ -126,91 +236,3 @@ function scoop_user_can_route(\WP_User $user, string $route, string $method): bo
 
   return $can;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// WP role registration. These add_role()'d roles/caps (scoop_manager,
-// scoop_backhouse, scoop_lead, scoop_staff, scoop_readonly/scoop_write/
-// scoop_admin caps) are NOT read by scoop_get_user_policy() above — that
-// checks $user->roles slugs directly (administrator/editor/author/
-// ice_cream_maker/_default). Kept as-is (unmodified) during the move from
-// _pods_helpers.php; not wired into the access matrix.
-// ─────────────────────────────────────────────────────────────────────────────
-
-function scoop_create_custom_roles() {
-  // Remove old roles if they exist (for updates)
-  remove_role('scoop_manager');
-  remove_role('scoop_staff');
-
-/**
- * Register custom roles for Scoop Tracker
- * Run this once on plugin activation or theme setup
- */
-
-  // Scoop Manager - Full control of inventory
-  add_role('scoop_manager', 'Manager', [
-    'read'           => true,
-    'edit_posts'     => true,
-    'upload_files'   => true,
-    'scoop_readonly' => true,
-    'scoop_write'    => true,
-    'scoop_admin'    => true,
-  ]);
-
-  // Scoop Staff - Can update state/use/amount only
-  add_role('scoop_backhouse', 'Kitchen Staff', [
-    'read'         => true,
-    'edit_posts'   => true,
-    'scoop_readonly' => true,
-    'scoop_write'    => true,
-  ]);
-
-  // Scoop Staff - Can update state/use/amount only
-  add_role('scoop_lead', 'Shift Lead', [
-    'read'         => true,
-    'edit_posts'   => true,
-    'scoop_readonly' => true,
-    'scoop_write'    => true,
-  ]);
-
-  // Scoop Staff - Can update state/use/amount only
-  add_role('scoop_staff', 'Scooper', [
-    'read'         => true,
-    'edit_posts'   => true,
-    'scoop_readonly' => true,
-    'scoop_write'    => true,
-  ]);
-
-  // Update existing roles (optional - keep your existing function too)
-  scoop_update_existing_roles();
-}
-
-function scoop_update_existing_roles() {
-  // Authors get read-only
-  if ($author = get_role('author')) {
-    $author->add_cap('scoop_readonly');
-  }
-
-  // Editors get write access
-  if ($editor = get_role('editor')) {
-    $editor->add_cap('scoop_readonly');
-    $editor->add_cap('scoop_write');
-  }
-
-  // Admins get everything
-  if ($admin = get_role('administrator')) {
-    $admin->add_cap('scoop_readonly');
-    $admin->add_cap('scoop_write');
-    $admin->add_cap('scoop_admin');
-  }
-}
-
-// Run on activation (add to your main plugin file)
-register_activation_hook(__FILE__, 'scoop_create_custom_roles');
-
-// Or run once manually via admin action
-add_action('admin_init', function() {
-  if (isset($_GET['scoop_setup_roles']) && current_user_can('manage_options')) {
-    scoop_create_custom_roles();
-    wp_die('Roles created! <a href="' . admin_url() . '">Go back</a>');
-  }
-});

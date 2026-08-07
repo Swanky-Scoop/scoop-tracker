@@ -19,7 +19,12 @@ import Indexer       from "../data/indexer.js";
  * Filter widget at the top of the grid lets the user switch between
  * 24h / 48h / 7d / 30d at runtime; selection triggers a fresh bundle fetch.
  *
- * Columns: Created, Flavor, Tubs (count), Author. Sorted newest-first.
+ * Columns: Created, Flavor, Tubs (count), Author, plus a Delete action for
+ * administrator/kitchen_manager/ice_cream_maker (see _canDeleteBatch) —
+ * removes the batch and every tub it created (scoop_handle_batch_delete in
+ * includes/rest.php). Hidden client-side for other roles as a UX nicety;
+ * the real gate is server-side (includes/_policy.php's 'Batch' route
+ * DELETE entries).
  */
 export default class BatchHistoryGridModel extends BaseGridModel {
   constructor(name = 'BatchHistory', domain, attrs = {}, metaData = null) {
@@ -31,6 +36,19 @@ export default class BatchHistoryGridModel extends BaseGridModel {
     if (domain) this.setDomain(domain);
   }
 
+  // Mirrors includes/_policy.php's 'Batch' route DELETE grant: administrator,
+  // kitchen_manager, ice_cream_maker. window.SCOOP is the global
+  // wp_localize_script() payload (see enqueue.php) — SCOOP.user is null for
+  // a logged-out visitor, which can't reach this grid at all (see
+  // scoop_require_login_for_homepage), but the null-check keeps this safe
+  // regardless.
+  _canDeleteBatch() {
+    const roles = window.SCOOP?.user?.roles ?? [];
+    return roles.includes('administrator')
+      || roles.includes('kitchen_manager')
+      || roles.includes('ice_cream_maker');
+  }
+
   buildCols() {
     this.columns = [
       { key: "post_date",   label: "Created", type: "datetime" },
@@ -38,6 +56,15 @@ export default class BatchHistoryGridModel extends BaseGridModel {
       { key: "count",       label: "Tubs",    type: "number" },
       { key: "author_name", label: "Author",  type: "string" },
     ];
+
+    if (this._canDeleteBatch()) {
+      this.columns.push({
+        key: "delete", label: "", type: "delete",
+        title: "Delete batch (and its tubs)",
+        icon: "if:d", // Trash--Streamline-Phosphor, compiled into swankyF.css as .si-d
+      });
+    }
+
     return this.columns;
   }
 
@@ -64,6 +91,18 @@ export default class BatchHistoryGridModel extends BaseGridModel {
     });
 
     return this.rows;
+  }
+
+  // ── Delete (see the { type: 'delete' } column in buildCols, rendered by
+  // Grid._renderDeleteCell, and List._handleRowDelete which calls these) ──
+  deleteRowLabel(rowId) {
+    const row = this.rows.find(r => r.id === rowId);
+    const flavor = row?.flavor?.display;
+    return flavor ? `the ${flavor} batch (and its tubs)` : 'this batch (and its tubs)';
+  }
+
+  async deleteRow(rowId, api) {
+    return api.deleteBatch(rowId);
   }
 
   // ── Date-range filter (server-side, triggers a bundle refresh on change) ──

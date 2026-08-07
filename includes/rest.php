@@ -104,7 +104,95 @@
       'type' => $pod_name,
       'created' => ['id' => (int)$new_id],
     ], 200);
-  } 
+  }
+
+  /**
+   * DELETE /scoop/v1/batches/{id} — removes a batch and every tub created
+   * from it. Irreversible (track_pods_* tables are MyISAM, no transactions —
+   * see CLAUDE.md's Data repair policy), so tubs are deleted first and the
+   * batch last: a failure partway through leaves orphaned tubs (recoverable
+   * by re-running the delete) rather than a tub-less batch pointing at
+   * nothing. Uses pods_api()->delete_pod_item() (not a direct wpdb delete)
+   * so Pods' own table + relationship cleanup runs, same reasoning as the
+   * "safe" pods-api create path documented in hooks/batch-tub.php.
+   */
+  function scoop_handle_batch_delete(\WP_REST_Request $req) {
+    $batch_id = (int)$req->get_param('id');
+
+    if ($batch_id <= 0) {
+      return new \WP_REST_Response(['ok' => false, 'error' => 'Invalid batch id.'], 400);
+    }
+
+    $post = get_post($batch_id);
+    if (!$post || $post->post_type !== 'batch') {
+      return new \WP_REST_Response(['ok' => false, 'error' => 'Batch not found.'], 404);
+    }
+
+    if (!function_exists('pods_api') || !is_object(pods_api()) || !function_exists('pods')) {
+      return new \WP_REST_Response(['ok' => false, 'error' => 'Pods API not available.'], 500);
+    }
+
+    $batch       = pods('batch', $batch_id);
+    $flavor_id   = ($batch && $batch->exists()) ? (int)$batch->field('flavor.ID') : 0;
+    $batch_title = get_the_title($batch_id) ?: "Batch {$batch_id}";
+
+    $tub_ids = scoop_inventory_change_tubs_for_relation('batch.ID = ' . $batch_id);
+
+    $deleted_tubs = [];
+    foreach ($tub_ids as $tub_id) {
+      $result = pods_api()->delete_pod_item(['pod' => 'tub', 'id' => $tub_id]);
+      if ($result) {
+        $deleted_tubs[] = $tub_id;
+      } else {
+        error_log("scoop_handle_batch_delete: failed to delete tub {$tub_id} for batch {$batch_id}");
+      }
+    }
+
+    $batch_deleted = pods_api()->delete_pod_item(['pod' => 'batch', 'id' => $batch_id]);
+
+    if (!$batch_deleted) {
+      error_log("scoop_handle_batch_delete: failed to delete batch {$batch_id}");
+      return new \WP_REST_Response([
+        'ok'    => false,
+        'error' => 'Batch delete failed.',
+        'deleted_tubs' => $deleted_tubs,
+      ], 500);
+    }
+
+    $user  = wp_get_current_user()->user_login;
+    $date  = date('D m/d');
+    $tub_count = count($deleted_tubs);
+    $details = "<strong>{$batch_title}</strong><br />Removed {$batch_title} and {$tub_count} tub" . ($tub_count === 1 ? '' : 's') . '.';
+
+    $change_id = scoop_inventory_change_add([
+      'post_status'  => 'publish',
+      'title'        => "{$user} deleted {$batch_title} on {$date}",
+      'change_count' => 1,
+      'entity'       => 'batch',
+      'envelope'     => 'BatchHistory',
+      'mode'         => 'delete',
+      'phase'        => 'deleted',
+      'source'       => 'batch',
+      'problem'      => 'none',
+      'tubs'         => $deleted_tubs,
+      'flavors'      => $flavor_id ? [$flavor_id] : [],
+      'details'      => $details,
+      'post_content' => wp_kses($details, ['strong' => [], 'br' => []]),
+    ], [
+      'entity'   => 'batch',
+      'mode'     => 'delete',
+      'batch_id' => $batch_id,
+    ]);
+
+    if (!$change_id) {
+      error_log("scoop_handle_batch_delete: inventory_change add returned empty result for batch={$batch_id}");
+    }
+
+    return new \WP_REST_Response([
+      'ok' => true,
+      'deleted' => ['id' => $batch_id, 'tubs' => $deleted_tubs],
+    ], 200);
+  }
 
 
 
