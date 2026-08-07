@@ -68,7 +68,7 @@ When adding a new grid type, you typically need to touch: `_config.php`, `_specs
 - **Route-level**: `scoop_user_can_route()` in `includes/_policy.php` — can this role GET/POST this route at all?
 - **Field-level**: the writable set for a row is `spec.writeable ∩ scoop_user_writeable_fields(user, entity)`. `scoop_client_metadata()` in `enqueue.php` computes this intersection per-user-per-entity and ships it to the client as the `write` flag on each column, so the JS already knows what's editable for the current user.
 
-Roles checked in priority order: `administrator` → `editor` → `author` → `_default`.
+Roles checked in priority order: `administrator` → `kitchen_manager` → `shift_lead` → `ice_cream_maker` → `kiosk` → `editor` → `author` → `_default` (deny-everything fallback for any unrecognized role). `kitchen_manager`/`shift_lead`/`ice_cream_maker`/`kiosk` are real WP role slugs created via the User Role Editor plugin, not registered by this codebase — see `includes/_policy.php`'s top-of-file comment for what each role can do.
 
 ### Pods hooks enforce write rules
 

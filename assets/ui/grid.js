@@ -32,10 +32,14 @@ export default class Grid extends List {
   }
 
   buildMetaFieldDom(field) {
+    // A 'delete' action column has nothing to sort by — omit 'sortable' and
+    // data-sort-key so List._sortCols's [data-sort-key] delegation skips it.
+    const sortable = field.type !== 'delete';
+
     return this.el('th', {
       text: field.label ?? field.key,
-      classes: [field.key, field.type, 'sortable'],
-      data: { sortKey: field.key },
+      classes: [field.key, field.type, sortable ? 'sortable' : null],
+      data: sortable ? { sortKey: field.key } : {},
     });
   }
 
@@ -89,12 +93,13 @@ export default class Grid extends List {
     return TR;
   }
 
-  buildFieldDom(col, data) {
+  buildFieldDom(col, data, row) {
     const CELL = this.el('td', { classes: ['cell'] });
 
     // Table cells stay terse: any multi-value ('ids') field shows a count,
     // not the id list. Tile shows the fuller list — see tile.js.
     if (col.dataType === 'ids') return this._renderIdsCount(CELL, col, data);
+    if (col.type === 'delete') return this._renderDeleteCell(CELL, col, row);
 
     return this._renderFieldValue(CELL, col, data);
   }
@@ -106,6 +111,38 @@ export default class Grid extends List {
     if (col.hidden) CELL.classList.add('hidden');
     CELL.append(String(ids.length));
 
+    return CELL;
+  }
+
+  // A model opts a row into deletion by declaring a { type: 'delete' }
+  // column (see BatchHistoryGridModel.buildCols) — this is what renders it.
+  // The click itself is handled generically by List's delegated FORM
+  // listener (see _list.js's [data-delete-row] branch and
+  // List._handleRowDelete), which defers the actual API call to
+  // modelInstance.deleteRow() so Grid/List stay ignorant of which entity
+  // "delete" means for any given grid type.
+  _renderDeleteCell(CELL, col, row) {
+    CELL.classList.add(col.key, 'delete-action', 'read-only');
+    const rowId = row?.id?.rowId ?? row?.id ?? 0;
+
+    const BTN = this.el('button', {
+      classes: ['row-delete'],
+      attrs: { type: 'button', title: col.title ?? 'Delete' },
+      data: { deleteRow: rowId },
+    });
+
+    // col.icon reuses List's "if:<name>" icon-font marker convention (see
+    // _buildToggleButton/ICON_FONT_MARKER) — falls back to a plain '✕' glyph
+    // if col.icon isn't set to one.
+    const icon = String(col.icon ?? '');
+    if (icon.startsWith(List.ICON_FONT_MARKER)) {
+      const cls = icon.slice(List.ICON_FONT_MARKER.length);
+      BTN.append(this.el('i', { classes: [`${List.ICON_FONT_CSS_PREFIX}${cls}`] }));
+    } else {
+      BTN.append('✕');
+    }
+
+    CELL.append(BTN);
     return CELL;
   }
 

@@ -1544,6 +1544,36 @@ table.zGRID tr {
     display: none;
   }
 
+  & .delete-action {
+    width: 2rem;
+    padding: 0.25rem;
+    text-align: center;
+
+    & button.row-delete {
+      width: 1.5rem;
+      height: 1.5rem;
+      line-height: 1.5rem;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background-color: transparent;
+      color: var(--color-alert-committed);
+      font-size: 1rem; /* si-d (Trash--Streamline-Phosphor) glyph size, see swankyF.css */
+      cursor: pointer;
+
+      &:hover,
+      &:focus {
+        background-color: var(--color-alert-committed);
+        color: var(--color-text-white);
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+    }
+  }
+
   & .number {
     width: 4rem;
 

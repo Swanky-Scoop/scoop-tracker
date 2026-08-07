@@ -214,6 +214,18 @@ export default class ScoopAPI {
     return { ok: r.ok, status: r.status, data: r.data };
   }
 
+  // Batch delete — DELETE /scoop/v1/batches/{id} (see scoop_handle_batch_delete
+  // in includes/rest.php). Sibling of the Batch create route (this.route('Batch')
+  // is the base "/batches" URL), not its own entry in SCOOP.routes, since the
+  // server registers it as one fixed path per type (see includes/_routes.php).
+  async deleteBatch(id) {
+    const url = new URL(this.route('Batch').toString());
+    url.pathname = url.pathname.replace(/\/?$/, `/${id}`);
+
+    const r = await this._fetch(url, { method: 'DELETE' });
+    return { ok: r.ok, status: r.status, data: r.data };
+  }
+
   // --- BUNDLE LOADING ---
 
   _setPageTypes() {
