@@ -1,4 +1,4 @@
-@import url('https://cdnjs.cloudflare.com/ajax/libs/Iosevka/6.0.0/iosevka/iosevka.min.css');
+﻿@import url('https://cdnjs.cloudflare.com/ajax/libs/Iosevka/6.0.0/iosevka/iosevka.min.css');
 
 
 /* ============================================
@@ -42,6 +42,16 @@
   --color-alert-last: rgba(255, 255, 0, 0.25);
   --color-alert-last-border: #660;
 
+  /* Status/Trend Colors — each reused across at least two otherwise-
+     unrelated features (Analytics' supply/trend columns, DateActivity's
+     problem/phase columns, Popular's scatter-plot points and key) that
+     happen to want the same semantic color; kept as one shared value here
+     so they can't quietly drift apart. */
+  --color-status-critical: #d32f2f;
+  --color-status-neutral: #757575;
+  --color-status-info: #0b6fa4;
+  --color-trend-falling: #b5483d;
+
   /* Unsaved-edit ("dirty") Colors — a row with any unsaved cell, the specific
      cell that changed, and the group containing a dirty row. Tweak freely;
      nothing else keys off these values. */
@@ -81,7 +91,6 @@
   --dimension-nav-width: 5rem;
   --dimension-nav-btn: calc(var(--dimension-nav-width) - 1.25rem);
   --dimension-toaster-width: 20rem;
-  /* width: calc(var(--dimension-nav-width) - 1.25rem); */
 
   /* Batch + its embedded BatchHistory receipt (see .scoop-grid.Batch below)
      — one shared target width so both tables line up. Batch's own table is
@@ -129,7 +138,7 @@
      100%)`); the horizontal-scroll fallback on .canvas is reserved for
      'full-stack'/'full-nostack' content that's intrinsically wide (e.g.
      ItemPivot's own table), which IS expected to scroll. Paired with the
-     40rem ceiling on .scoop-grid itself (see "GRID CONTAINER" further up)
+     40rem ceiling on .scoop-grid itself (see "GRID CONTAINER" further down)
      so a lone control grows toward 40rem but never past it, leaving calm
      space for .TOASTER to slide in from the right. */
   --dimension-canvas-control-min: 30rem;
@@ -308,15 +317,12 @@ html body {
         overflow: hidden;
         border-color: var(--color-green-darkest);
         background-color: var(--color-bg-cell);
-        overflow: hidden;
 
         & .popularView {
           gap:0;
           margin: 0;
           border-color: var(--color-green-darkest);
           background-color: var(--color-bg-cell);
-
-          & .popularGridLines{}
         }
 
         & .popularKey{
@@ -866,95 +872,6 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   }
 }
 
-/* BatchHistory's "Created" column (key: post_date — see
-   BatchHistoryGridModel.buildCols) is the least essential of its four
-   columns when the GRID ITSELF is cramped (Flavor/Tubs/Author still tell
-   you what happened; "when" becomes a scroll-up-to-check detail) — a
-   viewport media query would be the wrong tool here, since this can be
-   narrow because <aside> ate the width, not because the screen is small.
-   container-type establishes each of BatchHistory's two host elements
-   (standalone and embedded — same two contexts as the container-name
-   below) as a size query subject for their own descendants; the query
-   below then reads THAT box's width, not the viewport's. Every column's
-   key is already stamped as a class on both its <th> and <td> (see
-   grid.js's buildMetaFieldDom/_list.js's _renderFieldValue — same
-   mechanism th.current_flavor/td.current_flavor further up relies on), so
-   hiding it is a pure display:none, no JS/layout change needed — fully
-   reactive both directions, exactly like a media query, just against this
-   element's own box instead of the viewport. Both hosts already size
-   themselves from CSS rather than their content (.scoop-grid's own width
-   rules further up; form.batch-history-embedded's `width: var(--dimension-
-   batch-grid-width) !important` further up), so inline-size containment
-   doesn't change how either renders.
-
-   28rem, not 32rem: --dimension-batch-grid-width (see :root further up)
-   caps out at a flat 30rem and never goes wider, on ANY screen — so a
-   32rem threshold could never be satisfied in the embedded context and the
-   column would look permanently hidden, never "coming back" no matter how
-   wide the window got. 28rem leaves that popup 2rem of room to actually
-   cross back over the threshold before it hits its own 30rem ceiling. */
-.scoop-grid[data-grid-type="BatchHistory"],
-form.batch-history-embedded {
-  container-type: inline-size;
-  container-name: batch-history;
-}
-
-@container batch-history (max-width: 28rem) {
-  .post_date {
-    display: none;
-  }
-}
-
-/* Cabinet's "Next Flavor" column (key: next_flavor — see _specs.php's
-   slot columns) is the planning grid's own least-essential column when
-   its host is cramped, same reasoning/mechanism as BatchHistory's
-   Created above. Unlike BatchHistory, no width ceiling problem here:
-   Cabinet is the grid docked to <aside> ('target' => 'aside' in
-   _config.php), and .in-dock > aside.active's own range (16rem-32rem —
-   see "DOCKING" further down) straddles this 28rem threshold on both
-   sides, so dragging .dock-resizer wider/narrower genuinely crosses it
-   either way. Also covers Cabinet rendered as a plain, non-docked page
-   grid, where .scoop-grid's own width rules (further up) can just as
-   easily land under 28rem on a narrow phone. */
-.scoop-grid[data-grid-type="Cabinet"] {
-  container-type: inline-size;
-  container-name: cabinet;
-}
-
-@container cabinet (max-width: 28rem) {
-  .next_flavor {
-    display: none;
-  }
-}
-
-/* FlavorTub sheds columns progressively as its host narrows, same
-   mechanism as Cabinet/BatchHistory above — least-essential first:
-   "Updated" (key: post_modified, label from _specs.php) goes first at
-   38rem, then "Amount" (key: amount) and "Editor" (key: editor_name,
-   label from _specs.php — see FlavorTubGridModel's setShowList) at 32rem.
-   FlavorTub has no fixed-width ceiling like BatchHistory's embedded
-   popup — as a canvas half-stack control it ranges from --dimension-
-   canvas-control-min (30rem) up to 40rem, or below 30rem via .canvas's
-   own gutter-collapse/scroll fallback (further up) — so both thresholds
-   are comfortably crossable in both directions. */
-.scoop-grid[data-grid-type="FlavorTub"] {
-  container-type: inline-size;
-  container-name: flavor-tub;
-}
-
-@container flavor-tub (max-width: 38rem) {
-  .post_modified {
-    display: none;
-  }
-}
-
-@container flavor-tub (max-width: 32rem) {
-  .amount,
-  .editor_name {
-    display: none;
-  }
-}
-
 /* ============================================
    DOCKING — [scoop_dock] baseline (see DOCKING.md)
    ============================================ */
@@ -1261,6 +1178,18 @@ body.dock-resizing {
   transition: flex-basis 0s linear 0s;
 }
 
+/* .active mirrors .toggled from whatever's currently open inside (see the
+   TOGGLE click handler in assets/ui/_list.js) — scoped to it so these
+   bounds don't fight the collapsed (flex-basis:0) default above when
+   nothing's open. Must stay textually BEFORE the mobile @media override
+   below: both target the same property at equal specificity, so on a
+   narrow screen the LATER one in source order wins — this rule needs to
+   lose that tiebreak once the media query's condition is also true. */
+.in-dock > aside.active {
+  max-width: 32rem;
+  min-width: 16rem;
+}
+
 /* Below this, splitting the screen between .canvas and <aside> leaves too
    little of either to be usable — <aside> takes over as a full-screen
    panel instead of a side column. .canvas and .dock-resizer are hidden
@@ -1469,6 +1398,172 @@ body.dock-resizing {
   opacity: 1;
   pointer-events: auto;
 }
+
+/* ============================================
+   TUBS - Docked view
+   ============================================ */
+
+   html body main .entry-content > .in-dock {
+    z-index: 99999;
+    background-color: var(--color-green-dark);
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    max-width: 100vw;
+    max-height: 100vh;
+    /* display:grid with no explicit columns used to stack EVERY child
+       (.canvas, .dock-resizer, <aside>, plus the position:fixed .toolbar/
+       .action-target overlays) as separate implicit grid rows — one per
+       child, top to bottom. That's what put <aside> at the bottom instead
+       of beside .canvas: the general .in-dock > .canvas/aside/.dock-resizer
+       rules further up rely on .in-dock being flex-row (see their comments
+       there), and this more-specific rule was overriding just `display`,
+       silently breaking that layout for this context. flex-row matches the
+       general rule now; .toolbar/.action-target are unaffected either way
+       since position:fixed already escapes normal flow regardless of the
+       parent's display type. */
+    display: flex;
+    flex-direction: row;
+    text-align: center;
+    overflow: hidden;
+
+    & .active .scoop-grid{
+      box-shadow: rgba(0,0,0,.10) 0 -50rem 0 100rem, inset  rgba(0,0,0,.25) 0 0 100rem, rgba(0,0,0,.25) 0 0 30rem;
+      
+    }
+    .scoop-grid.Batch {
+      min-height: 0;
+      text-align: left;
+      border-radius: 10rem;
+    }
+    /* Excludes aside's docked grid — it gets its own slide-from-the-right
+       transition instead (see .in-dock aside > .scoop-grid further up).
+       animation always wins over a transition on the same property, so
+       leaving flyup unscoped here silently overrode that slide with this
+       bottom-up entrance instead. */
+    .scoop-grid.toggled:not(aside > .scoop-grid) {
+      animation: flyup 0.5s ease-out;
+    }
+
+    & > .toolbar{
+      background-color: rgba(0,0,0,.5 );
+      position: fixed;
+      padding:.5rem;
+      bottom:var(--dimension-dock-toolbar-bottom);
+      display:inline-flex;
+      flex-direction: row;
+      white-space: nowrap;
+      left: 50%;
+      border-radius: 2rem;        /* Move left edge to screen center */
+      transform: translateX(-50%);
+      z-index: 99;
+
+      & > .PAGE-STATUS {
+          order: 99;
+          position: static;
+          top: initial;
+          margin: 0;
+          padding: 0 .125rem;
+          background: none;
+
+          &.fresh {padding-right: 1rem;}
+      }
+
+    }
+    & .gridToggle{
+      display: inline-grid;
+      place-items: center;
+      color: rgba(255, 255, 255, 0.5);
+      font-weight: 100;
+      background-color: rgba(0,0,0,.75);
+      border-radius: 50%;
+      width:2rem;
+      height:2rem;
+      font-size:.6rem;
+      text-align: center;
+      border:1px solid rgba(255, 255, 255, 0.33);
+
+      &.wp{ order: 99; 
+        text-decoration: none;
+        & i:before {
+          content: "\f120"/'';
+          font-style: normal;
+          font-family: 'dashicons';
+          font-size: 1rem;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 1rem;
+          line-height: 1rem;
+
+        }
+      }
+
+      &.active{
+        background-color: var(--color-green-dark);
+        &:focus{
+          & .dockTitle{
+            opacity: 0;
+          }
+        }
+      }
+      &:hover,
+      &:focus{
+        color: rgba(255, 255, 255, 1);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+        /* Fades in, holds ~1s, fades back out on its own — an @keyframes
+           animation (not a plain transition) is what lets it auto-hide even
+           while still hovered, instead of only fading on mouse-out. */
+        & .dockTitle{
+          animation: dockTitlePeek 1.4s ease forwards;
+        }
+      }
+    }
+    & .dockTitle{
+      display: block;
+      opacity: 0;
+      position: absolute;
+      bottom:100%;
+      margin-bottom:1rem;
+      background-color: rgba(0,0,0,1);
+      color: rgba(255, 255, 255, .75);
+      z-index: 9;
+      padding: .5rem;
+      border-radius: .75rem;
+      font-size: .75rem;
+      
+      &:before{
+        display: inline-block;
+        content: '';
+        position: absolute;
+        top: 100%;
+        border: 0.5rem solid transparent;
+        border-top-color: rgba(0,0,0,1);
+        left:50%;
+        transform: translateX(-50%);
+      }
+    }
+
+   }
+
+@keyframes dockTitlePeek {
+  0%   { opacity: 0; }
+  15%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+
+/* ============================================
+   KITCHEN 
+   ============================================ */
+
+   html body main .kitchen .Batch.scoop-grid{
+
+      background-color: var(--color-green-dark);
+   }
 
 /* ============================================
    FORM
@@ -1917,14 +2012,6 @@ table.zGRID tr {
 /* ============================================
    TABLE - CELLS (Editable & Read-only)
    ============================================ */
-/* .active mirrors .toggled from whatever's currently open inside (see the
-   TOGGLE click handler in assets/ui/_list.js) — scoped to it so these
-   bounds don't fight the collapsed (flex-basis:0) default further up when
-   nothing's open. */
-.in-dock > aside.active {
-  max-width: 32rem;
-  min-width: 16rem;
-}
 aside table.zGRID thead {
   position: sticky;
   top: 0;
@@ -2079,6 +2166,7 @@ table.zGRID tr {
   }
 }
 
+
 /* ============================================
    GRID FILTER INPUT
    ============================================ */
@@ -2098,6 +2186,203 @@ table.zGRID tr {
   width: 100%;
   border: 1px solid var(--color-green-dark);
   font-size: 0.67rem;
+}
+
+/* ============================================
+   ROW STATE — loading / autosave / dirty-edit / emptied-opened
+   ============================================ */
+
+/* ── Loading state opacity ── */
+form table {
+  & thead th,
+  & tbody td *,
+  & tbody td {
+    opacity: 1;
+  }
+}
+
+.TS_loading form table {
+  & thead th,
+  & tbody > *,
+  & tbody td * {
+    opacity: 0.5;
+  }
+}
+
+/* ── Autosave grids ──────────────────────────────────────────────────────────
+   Grids whose model sets `autosave = true` persist each change immediately and
+   render no save button. The button is also hidden via the `hidden` attribute
+   in JS; this rule is a backup. Per-cell flashes confirm a save (or an error).
+   A model may still opt some fields into autosave and leave the rest manual
+   (`autosaveFields` — no grid currently does this; autosave has turned out to
+   need to be all-or-nothing per grid, see flavor-tub-grid-model.js) — that
+   gets the extra `autosave-partial` class and keeps the button. */
+.zGRID-form.autosave:not(.autosave-partial) > button.save { display: none; }
+
+.zGRID td.cell-saved { animation: scoopCellSaved 0.8s ease-out; }
+.zGRID td.cell-error { animation: scoopCellError 0.8s ease-out; }
+
+/* ── Emptied tub rows ──────────────────────────────────────────────────────
+   .state-Emptied comes from FlavorTubGridModel's rowClassFields (generic
+   List._rowClasses mechanism — see _list.js), not a bespoke flag. !important
+   so it always wins over .row-dirty/.row-dirty-clearing below: Emptied is
+   the more important signal at the row level, even while she's actively
+   correcting it. The one cell she's actually typing into still gets its own
+   orange via .cell-dirty (also !important, more local/urgent than either
+   row-level color). */
+.state-Emptied {
+  background-color: var(--color-state-emptied-row-bg) !important;
+}
+
+.state-Opened {
+  background-color: var(--color-state-opened-row-bg);
+}
+
+/* ── Unsaved edits ("dirty" state) ────────────────────────────────────────
+   Covers two states that read the same visually — changed-not-saved
+   (dirtySet) and changed-but-not-yet-confirmed-by-a-real-refresh
+   (awaitingRefreshSet) — see the constructor comment on awaitingRefreshSet
+   in _list.js for why the color deliberately does NOT clear the instant a
+   save POST confirms: the server can rewrite/revert what was sent (see
+   scoop_enforce_tub_rules), so only a genuine domain refetch actually
+   proves the value stuck. Tag-agnostic on purpose (Grid uses <tr>/<td>,
+   Tile uses <li>/<div>) so both views pick these up the same way.
+
+   The *-clearing variants aren't toggled by a timer — List._onDomainUpdated
+   stamps them onto the freshly-rebuilt elements that just got confirmed by
+   a real refresh (see _flashResolvedMarks/_flashClearing), so the fade only
+   ever plays once resolution is genuine. DIRTY_CLEAR_FADE_MS there must
+   match the transition durations here. */
+[data-row-id].row-dirty {
+  background-color: var(--color-dirty-row-bg);
+}
+
+[data-row-id].row-dirty-clearing {
+  background-color: transparent;
+  transition: background-color 0.6s ease-out;
+}
+
+.cell-dirty {
+  background-color: var(--color-dirty-cell-bg) !important;
+}
+
+.cell-dirty-clearing {
+  background-color: transparent !important;
+  transition: background-color 0.6s ease-out;
+}
+
+[data-group-container].group-dirty {
+  outline: 2px solid var(--color-dirty-group-outline);
+  outline-offset: -1px;
+}
+
+[data-group-container].group-dirty-clearing {
+  outline: 2px solid transparent;
+  outline-offset: -1px;
+  transition: outline-color 0.6s ease-out;
+}
+
+@keyframes scoopCellSaved {
+  0%   { background: #b6e0b6; }
+  100% { background: transparent; }
+}
+@keyframes scoopCellError {
+  0%   { background: #f3b6b6; }
+  100% { background: transparent; }
+}
+
+@keyframes flyup {
+  0%   { transform: translateY(100vh) scaleX(.25); opacity: 0; }
+  100% { transform: translateY(0) scaleX(1); opacity: 1; }
+}
+
+/* BatchHistory's "Created" column (key: post_date — see
+   BatchHistoryGridModel.buildCols) is the least essential of its four
+   columns when the GRID ITSELF is cramped (Flavor/Tubs/Author still tell
+   you what happened; "when" becomes a scroll-up-to-check detail) — a
+   viewport media query would be the wrong tool here, since this can be
+   narrow because <aside> ate the width, not because the screen is small.
+   container-type establishes each of BatchHistory's two host elements
+   (standalone and embedded — same two contexts as the container-name
+   below) as a size query subject for their own descendants; the query
+   below then reads THAT box's width, not the viewport's. Every column's
+   key is already stamped as a class on both its <th> and <td> (see
+   grid.js's buildMetaFieldDom/_list.js's _renderFieldValue — same
+   mechanism th.current_flavor/td.current_flavor further up relies on), so
+   hiding it is a pure display:none, no JS/layout change needed — fully
+   reactive both directions, exactly like a media query, just against this
+   element's own box instead of the viewport. Both hosts already size
+   themselves from CSS rather than their content (.scoop-grid's own width
+   rules further up; form.batch-history-embedded's `width: var(--dimension-
+   batch-grid-width) !important` further up), so inline-size containment
+   doesn't change how either renders.
+
+   28rem, not 32rem: --dimension-batch-grid-width (see :root further up)
+   caps out at a flat 30rem and never goes wider, on ANY screen — so a
+   32rem threshold could never be satisfied in the embedded context and the
+   column would look permanently hidden, never "coming back" no matter how
+   wide the window got. 28rem leaves that popup 2rem of room to actually
+   cross back over the threshold before it hits its own 30rem ceiling. */
+.scoop-grid[data-grid-type="BatchHistory"],
+form.batch-history-embedded {
+  container-type: inline-size;
+  container-name: batch-history;
+}
+
+@container batch-history (max-width: 28rem) {
+  .post_date {
+    display: none;
+  }
+}
+
+/* Cabinet's "Next Flavor" column (key: next_flavor — see _specs.php's
+   slot columns) is the planning grid's own least-essential column when
+   its host is cramped, same reasoning/mechanism as BatchHistory's
+   Created above. Unlike BatchHistory, no width ceiling problem here:
+   Cabinet is the grid docked to <aside> ('target' => 'aside' in
+   _config.php), and .in-dock > aside.active's own range (16rem-32rem —
+   see "DOCKING" further up) straddles this 28rem threshold on both
+   sides, so dragging .dock-resizer wider/narrower genuinely crosses it
+   either way. Also covers Cabinet rendered as a plain, non-docked page
+   grid, where .scoop-grid's own width rules (further up) can just as
+   easily land under 28rem on a narrow phone. */
+.scoop-grid[data-grid-type="Cabinet"] {
+  container-type: inline-size;
+  container-name: cabinet;
+}
+
+@container cabinet (max-width: 28rem) {
+  .next_flavor {
+    display: none;
+  }
+}
+
+/* FlavorTub sheds columns progressively as its host narrows, same
+   mechanism as Cabinet/BatchHistory above — least-essential first:
+   "Updated" (key: post_modified, label from _specs.php) goes first at
+   38rem, then "Amount" (key: amount) and "Editor" (key: editor_name,
+   label from _specs.php — see FlavorTubGridModel's setShowList) at 32rem.
+   FlavorTub has no fixed-width ceiling like BatchHistory's embedded
+   popup — as a canvas half-stack control it ranges from --dimension-
+   canvas-control-min (30rem) up to 40rem, or below 30rem via .canvas's
+   own gutter-collapse/scroll fallback (further up) — so both thresholds
+   are comfortably crossable in both directions. */
+.scoop-grid[data-grid-type="FlavorTub"] {
+  container-type: inline-size;
+  container-name: flavor-tub;
+}
+
+@container flavor-tub (max-width: 38rem) {
+  .post_modified {
+    display: none;
+  }
+}
+
+@container flavor-tub (max-width: 32rem) {
+  .amount,
+  .editor_name {
+    display: none;
+  }
 }
 
 
@@ -2142,7 +2427,7 @@ body > .modal{
     max-height: 90vh;
     max-width: 95vw;
     width: 40rem;
-    background-color: #32620E;
+    background-color: var(--color-green-dark);
     flex-direction: column;
     opacity: 0;
     transition-delay: 300ms;
@@ -2250,7 +2535,6 @@ body > .modal{
         border: none;
         box-shadow: inset 0 10rem 10rem -5rem var(--shadow-dark);
       }
-      & .add-special{}
     }
     & h3 {
       font-size: 1rem;
@@ -2280,31 +2564,12 @@ body > .modal{
   }
 
 /* ============================================
-   LOADING STATES
+   ANALYTICS
    ============================================ */
 
-form table {
-  & thead th,
-  & tbody td *,
-  & tbody td {
-    opacity: 1;
-  }
-}
-
-.TS_loading form table {
-  & thead th,
-  & tbody > *,
-  & tbody td * {
-    opacity: 0.5;
-  }
-}
-
-/* ============================================
-   ANALYTICS - Days of Supply color coding
-   ============================================ */
-
+/* ── Days of Supply color coding ── */
 .zGRID td.supply-critical {
-  color: #d32f2f;
+  color: var(--color-status-critical);
   font-weight: 600;
 }
 .zGRID td.supply-warning {
@@ -2315,24 +2580,18 @@ form table {
   color: var(--color-green-dark);
 }
 
-/* ============================================
-   ANALYTICS - Trend direction indicators
-   ============================================ */
-
+/* ── Trend direction indicators ── */
 .zGRID td.trend-rising {
   color: var(--color-green-dark);
 }
 .zGRID td.trend-falling {
-  color: #d32f2f;
+  color: var(--color-status-critical);
 }
 .zGRID td.trend-steady {
-  color: #757575;
+  color: var(--color-status-neutral);
 }
 
-/* ============================================
-   ANALYTICS - Hide save button (read-only grid)
-   ============================================ */
-
+/* ── Hide save button (read-only grid) ── */
 .scoop-grid[data-grid-type="Analytics"] button.save,
 .scoop-grid[data-grid-type="Flavors"] button.save,
 .scoop-grid[data-grid-type="CabinetWorkflow"] button.save,
@@ -2525,7 +2784,7 @@ form table {
 }
 
 .popularPoint {
-  fill: #0b6fa4;
+  fill: var(--color-status-info);
   stroke: white;
   stroke-width: 1.5;
   cursor: pointer;
@@ -2538,7 +2797,7 @@ form table {
 }
 
 .popularPoint.trend-falling {
-  fill: #b5483d;
+  fill: var(--color-trend-falling);
 }
 
 .popularPoint.is-active,
@@ -2585,7 +2844,7 @@ form table {
   outline: 1px solid var(--color-border-light);
 }
 .popularKey .zGRID td.avg_sellthrough_days.trend-rising  { color: var(--color-green-dark); }
-.popularKey .zGRID td.avg_sellthrough_days.trend-falling { color: #b5483d; }
+.popularKey .zGRID td.avg_sellthrough_days.trend-falling { color: var(--color-trend-falling); }
 
 .popularEmpty {
   padding: 1rem;
@@ -2608,12 +2867,12 @@ form table {
 .zGRID td.problem-warning,
 .zGRID td.problem-error,
 table.zGRID tr .badges .badge.warning {
-  color: #d32f2f;
+  color: var(--color-status-critical);
   font-weight: 700;
 }
 
 .zGRID td.problem-info {
-  color: #757575;
+  color: var(--color-status-neutral);
   font-weight: 600;
 }
 
@@ -2623,261 +2882,9 @@ table.zGRID tr .badges .badge.warning {
 }
 
 .zGRID td.phase-opened {
-  color: #0b6fa4;
+  color: var(--color-status-info);
 }
 
 .zGRID td.phase-emptied {
   color: #7a4f01;
 }
-
-/* ── Autosave grids ──────────────────────────────────────────────────────────
-   Grids whose model sets `autosave = true` persist each change immediately and
-   render no save button. The button is also hidden via the `hidden` attribute
-   in JS; this rule is a backup. Per-cell flashes confirm a save (or an error).
-   A model may still opt some fields into autosave and leave the rest manual
-   (`autosaveFields` — no grid currently does this; autosave has turned out to
-   need to be all-or-nothing per grid, see flavor-tub-grid-model.js) — that
-   gets the extra `autosave-partial` class and keeps the button. */
-.zGRID-form.autosave:not(.autosave-partial) > button.save { display: none; }
-
-.zGRID td.cell-saved { animation: scoopCellSaved 0.8s ease-out; }
-.zGRID td.cell-error { animation: scoopCellError 0.8s ease-out; }
-
-/* ── Emptied tub rows ──────────────────────────────────────────────────────
-   .state-Emptied comes from FlavorTubGridModel's rowClassFields (generic
-   List._rowClasses mechanism — see _list.js), not a bespoke flag. !important
-   so it always wins over .row-dirty/.row-dirty-clearing below: Emptied is
-   the more important signal at the row level, even while she's actively
-   correcting it. The one cell she's actually typing into still gets its own
-   orange via .cell-dirty (also !important, more local/urgent than either
-   row-level color). */
-.state-Emptied {
-  background-color: var(--color-state-emptied-row-bg) !important;
-}
-
-.state-Opened {
-  background-color: var(--color-state-opened-row-bg);
-}
-
-/* ── Unsaved edits ("dirty" state) ────────────────────────────────────────
-   Covers two states that read the same visually — changed-not-saved
-   (dirtySet) and changed-but-not-yet-confirmed-by-a-real-refresh
-   (awaitingRefreshSet) — see the constructor comment on awaitingRefreshSet
-   in _list.js for why the color deliberately does NOT clear the instant a
-   save POST confirms: the server can rewrite/revert what was sent (see
-   scoop_enforce_tub_rules), so only a genuine domain refetch actually
-   proves the value stuck. Tag-agnostic on purpose (Grid uses <tr>/<td>,
-   Tile uses <li>/<div>) so both views pick these up the same way.
-
-   The *-clearing variants aren't toggled by a timer — List._onDomainUpdated
-   stamps them onto the freshly-rebuilt elements that just got confirmed by
-   a real refresh (see _flashResolvedMarks/_flashClearing), so the fade only
-   ever plays once resolution is genuine. DIRTY_CLEAR_FADE_MS there must
-   match the transition durations here. */
-[data-row-id].row-dirty {
-  background-color: var(--color-dirty-row-bg);
-}
-
-[data-row-id].row-dirty-clearing {
-  background-color: transparent;
-  transition: background-color 0.6s ease-out;
-}
-
-.cell-dirty {
-  background-color: var(--color-dirty-cell-bg) !important;
-}
-
-.cell-dirty-clearing {
-  background-color: transparent !important;
-  transition: background-color 0.6s ease-out;
-}
-
-[data-group-container].group-dirty {
-  outline: 2px solid var(--color-dirty-group-outline);
-  outline-offset: -1px;
-}
-
-[data-group-container].group-dirty-clearing {
-  outline: 2px solid transparent;
-  outline-offset: -1px;
-  transition: outline-color 0.6s ease-out;
-}
-
-@keyframes scoopCellSaved {
-  0%   { background: #b6e0b6; }
-  100% { background: transparent; }
-}
-@keyframes scoopCellError {
-  0%   { background: #f3b6b6; }
-  100% { background: transparent; }
-}
-
-@keyframes flyup {
-  0%   { transform: translateY(100vh) scaleX(.25); opacity: 0; }
-  100% { transform: translateY(0) scaleX(1); opacity: 1; }
-}
-/*=============================================
-   TUBS - Docked view
-   ============================================ */
-
-   html body main .entry-content > .in-dock {
-    z-index: 99999;
-    background-color: var(--color-green-dark);
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    right: 0;
-    max-width: 100vw;
-    max-height: 100vh;
-    /* display:grid with no explicit columns used to stack EVERY child
-       (.canvas, .dock-resizer, <aside>, plus the position:fixed .toolbar/
-       .action-target overlays) as separate implicit grid rows — one per
-       child, top to bottom. That's what put <aside> at the bottom instead
-       of beside .canvas: the general .in-dock > .canvas/aside/.dock-resizer
-       rules further up rely on .in-dock being flex-row (see their comments
-       there), and this more-specific rule was overriding just `display`,
-       silently breaking that layout for this context. flex-row matches the
-       general rule now; .toolbar/.action-target are unaffected either way
-       since position:fixed already escapes normal flow regardless of the
-       parent's display type. */
-    display: flex;
-    flex-direction: row;
-    text-align: center;
-    overflow: hidden;
-
-    & .active .scoop-grid{
-      box-shadow: rgba(0,0,0,.10) 0 -50rem 0 100rem, inset  rgba(0,0,0,.25) 0 0 100rem, rgba(0,0,0,.25) 0 0 30rem;
-      
-    }
-    .scoop-grid.Batch {
-      min-height: 0;
-      text-align: left;
-      border-radius: 10rem;
-    }
-    /* Excludes aside's docked grid — it gets its own slide-from-the-right
-       transition instead (see .in-dock aside > .scoop-grid further up).
-       animation always wins over a transition on the same property, so
-       leaving flyup unscoped here silently overrode that slide with this
-       bottom-up entrance instead. */
-    .scoop-grid.toggled:not(aside > .scoop-grid) {
-      animation: flyup 0.5s ease-out;
-    }
-
-    & > .toolbar{
-      background-color: rgba(0,0,0,.5 );
-      position: fixed;
-      padding:.5rem;
-      bottom:var(--dimension-dock-toolbar-bottom);
-      display:inline-flex;
-      flex-direction: row;
-      white-space: nowrap;
-      left: 50%;
-      border-radius: 2rem;        /* Move left edge to screen center */
-      transform: translateX(-50%);
-      z-index: 99;
-
-      & > .PAGE-STATUS {
-          order: 99;
-          position: static;
-          top: initial;
-          margin: 0;
-          padding: 0 .125rem;
-          background: none;
-
-          &.fresh {padding-right: 1rem;}
-      }
-
-    }
-    & .gridToggle{
-      display: inline-grid;
-      place-items: center;
-      color: rgba(255, 255, 255, 0.5);
-      font-weight: 100;
-      background-color: rgba(0,0,0,.75);
-      border-radius: 50%;
-      width:2rem;
-      height:2rem;
-      font-size:.6rem;
-      text-align: center;
-      border:1px solid rgba(255, 255, 255, 0.33);
-
-      &.wp{ order: 99; 
-        text-decoration: none;
-        & i:before {
-          content: "\f120"/'';
-          font-style: normal;
-          font-family: 'dashicons';
-          font-size: 1rem;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          height: 1rem;
-          line-height: 1rem;
-
-        }
-      }
-
-      &.active{
-        background-color: var(--color-green-dark);
-        &:focus{
-          & .dockTitle{
-            opacity: 0;
-          }
-        }
-      }
-      &:hover,
-      &:focus{
-        color: rgba(255, 255, 255, 1);
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
-        /* Fades in, holds ~1s, fades back out on its own — an @keyframes
-           animation (not a plain transition) is what lets it auto-hide even
-           while still hovered, instead of only fading on mouse-out. */
-        & .dockTitle{
-          animation: dockTitlePeek 1.4s ease forwards;
-        }
-      }
-    }
-    & .dockTitle{
-      display: block;
-      opacity: 0;
-      position: absolute;
-      bottom:100%;
-      margin-bottom:1rem;
-      background-color: rgba(0,0,0,1);
-      color: rgba(255, 255, 255, .75);
-      z-index: 9;
-      padding: .5rem;
-      border-radius: .75rem;
-      font-size: .75rem;
-      
-      &:before{
-        display: inline-block;
-        content: '';
-        position: absolute;
-        top: 100%;
-        border: 0.5rem solid transparent;
-        border-top-color: rgba(0,0,0,1);
-        left:50%;
-        transform: translateX(-50%);
-      }
-    }
-
-   }
-
-@keyframes dockTitlePeek {
-  0%   { opacity: 0; }
-  15%  { opacity: 1; }
-  70%  { opacity: 1; }
-  100% { opacity: 0; }
-}
-
-
-/* ============================================
-   KITCHEN 
-   ============================================ */
-
-   html body main .kitchen .Batch.scoop-grid{
-
-      background-color: var(--color-green-dark);
-   }
