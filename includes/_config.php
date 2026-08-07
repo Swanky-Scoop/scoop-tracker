@@ -53,6 +53,7 @@ function scoop_routes_config(string $batch_key = ''): array {
     'ItemPivot' => [
       'display_title' => 'Flavor map',
       'icon'         => 'if:m',
+      'canvas_mode'  => 'full-nostack',
     ],
     'Flavors' => [
       'display_title' => 'Flavor History',

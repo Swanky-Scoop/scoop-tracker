@@ -148,12 +148,19 @@ function scoop_client_metadata(): array {
     // List.DOCK_SLOT_SELECTORS/_closeSlotSiblings() in assets/ui/_list.js
     // and DOCKING.md. Anything else (default null) keeps normal .canvas
     // placement.
+    // 'canvas_mode' => 'half-stack' (default) | 'full-stack' |
+    // 'half-nostack' | 'full-nostack' — only meaningful for controls that
+    // stay in .canvas (i.e. no 'target' above); see BaseGridModel's
+    // canvasMode comment (assets/models/_base-grid-model.js) and the
+    // "TABLE ...canvas..." sizing rules in assets/css.css for what each
+    // value actually does.
     $out[$route_key] = [
       'primary'      => $primary,
       'entities'     => $entities_out,
       'displayTitle' => $cfg['display_title'] ?? $route_key,
       'icon'         => $cfg['icon'] ?? mb_substr($route_key, 0, 1),
       'target'       => $cfg['target'] ?? null,
+      'canvasMode'   => $cfg['canvas_mode'] ?? 'half-stack',
     ];
   }
 

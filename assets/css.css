@@ -1070,26 +1070,39 @@ body.dock-resizing {
   }
 }
 
-/* Sensible general default for controls docked in .canvas: size to content
-   rather than the general .scoop-grid rule's own `width: calc(100% - 2rem)
-   !important` (nearly full-width regardless of content) — a narrow grid
-   stays narrow, a wide one caps at 40rem and wraps to its own row via
-   flex-wrap on .canvas above. Specific types override this below where
-   that default is wrong for them (currently just ItemPivot). */
+/* Per-type canvas placement strategy (see BaseGridModel's canvasMode
+   comment in assets/models/_base-grid-model.js and 'canvas_mode' in
+   scoop_routes_config()) — List's constructor stamps data-canvas-mode onto
+   the host from the model, so no per-type selector is needed here, just
+   one rule per mode name:
+     half-stack (default) — roughly half .canvas's width, wraps via
+       .canvas's flex-wrap so up to 2 sit side by side, and any number of
+       rows can stack above/below.
+     full-stack  — the whole row width, but other rows can still stack
+       above/below it.
+     half-nostack / full-nostack — 'nostack' expects the whole canvas
+       HEIGHT, not just its own row: min-height:100% (of .canvas — "at
+       least fill it, taller if content needs more") plus JS-enforced
+       exclusivity (List._enforceCanvasNostack() in assets/ui/_list.js)
+       closes every other open .canvas control the moment a nostack one
+       opens, and vice versa — nothing is meant to render above/below it.
+   Overrides the general .scoop-grid rule's own `width: calc(100% - 2rem)
+   !important` (nearly full-width regardless of content). */
 .in-dock .canvas > .scoop-grid {
   width: auto !important;
-  max-width: min(40rem, 100%) !important;
+  flex: 1 1 calc(50% - 0.5rem);
+  max-width: calc(50% - 0.5rem);
 }
 
-/* "Flavor Map" — a wide flavor×location matrix, sized narrow by nothing
-   more than the general rule above; give it the whole row instead of
-   competing for width. flex-basis:100% forces it alone on its own row via
-   .canvas's flex-wrap, same as width would, but survives .canvas someday
-   switching away from a plain width-driven flex layout. */
-.in-dock .canvas > .scoop-grid[data-grid-type="ItemPivot"] {
-  width: 100% !important;
-  max-width: 100% !important;
+.in-dock .canvas > .scoop-grid[data-canvas-mode="full-stack"],
+.in-dock .canvas > .scoop-grid[data-canvas-mode="full-nostack"] {
   flex-basis: 100%;
+  max-width: 100%;
+}
+
+.in-dock .canvas > .scoop-grid[data-canvas-mode="half-nostack"],
+.in-dock .canvas > .scoop-grid[data-canvas-mode="full-nostack"] {
+  min-height: 100%;
 }
 
 /* Docked controls left in .canvas (as opposed to a slot — .action-target

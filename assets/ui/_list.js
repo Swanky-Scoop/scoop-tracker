@@ -109,6 +109,12 @@ export default class List extends El{
     this._autosaveTimer = null;
 
     this.loadConfig(config);
+
+    // Only meaningful within .in-dock's .canvas (see the "canvas" sizing
+    // rules in css.css and _enforceCanvasNostack() below) — harmless to set
+    // unconditionally outside a dock, nothing there selects on it.
+    target.dataset.canvasMode = this.modelInstance?.canvasMode ?? 'half-stack';
+
     this._build();
 
     // Preload fields from metadata if available
@@ -999,6 +1005,37 @@ export default class List extends El{
     }
   }
 
+  // A 'nostack' canvasMode control (see BaseGridModel's canvasMode comment
+  // and the "canvas" sizing rules in css.css — currently just ItemPivot,
+  // 'full-nostack') expects the whole .canvas, not just its own row/column:
+  // nothing else should be open alongside it, in either direction — opening
+  // one closes every other open .canvas control, and opening any OTHER
+  // control while a nostack one is already open closes that nostack control
+  // too. Plain 'stack'/'half' controls never trigger this and keep
+  // coexisting normally; only called from the TOGGLE click handler, and
+  // only relevant for controls that stay in .canvas (dockTarget routes a
+  // control into a slot instead, where _closeSlotSiblings() above is the
+  // equivalent exclusivity rule).
+  _enforceCanvasNostack() {
+    const canvas = this.target.closest('.canvas');
+    if (!canvas) return;
+
+    const isNostack = !!this.modelInstance?.canvasMode?.endsWith('nostack');
+    const hasOpenNostack = [...canvas.children].some(el =>
+      el !== this.target
+      && el.classList.contains('toggled')
+      && el._dockListInstance?.modelInstance?.canvasMode?.endsWith('nostack')
+    );
+    if (!isNostack && !hasOpenNostack) return;
+
+    for (const sibling of canvas.children) {
+      if (sibling === this.target || !sibling.classList.contains('toggled')) continue;
+
+      sibling.classList.remove('toggled');
+      sibling._dockListInstance?.TOGGLE?.classList.remove('active');
+    }
+  }
+
   _buildAllPayload() {
     const changes = { cells: {} };
 
@@ -1672,6 +1709,7 @@ export default class List extends El{
       const isOpen = this.target.classList.toggle("toggled");
       this.TOGGLE.classList.toggle("active", isOpen);
       if (isOpen) this._closeSlotSiblings();
+      this._enforceCanvasNostack();
 
       // Mirrors .toggled onto the shared slot itself (.action-target or
       // <aside> — see DOCK_SLOT_SELECTORS), not just this.target, so CSS

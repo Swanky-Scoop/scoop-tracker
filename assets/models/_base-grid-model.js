@@ -44,9 +44,19 @@ export default class BaseGridModel {
 
       // Named dockTarget, not target — this.target on List (assets/ui/_list.js)
       // is the host DOM element; this is the unrelated string config value
-      // ('action', or null for normal .canvas placement) from 'target' in
-      // scoop_routes_config() (_config.php). See DOCKING.md.
+      // ('action' | 'aside', or null for normal .canvas placement) from
+      // 'target' in scoop_routes_config() (_config.php). See DOCKING.md.
       this.dockTarget = options?.dockTarget ?? this.metaData?.target ?? null;
+
+      // How this control's host should size/behave when docked in .canvas
+      // (irrelevant once dockTarget routes it into a slot instead — see
+      // above) — one of 'half-stack' (default) | 'full-stack' |
+      // 'half-nostack' | 'full-nostack'. 'half'/'full' is roughly how much
+      // canvas width it claims; 'nostack' means it expects the whole canvas
+      // HEIGHT too, so opening it closes every other open canvas control
+      // (and vice versa) — see List._enforceCanvasNostack() in
+      // assets/ui/_list.js. From 'canvas_mode' in scoop_routes_config().
+      this.canvasMode = options?.canvasMode ?? this.metaData?.canvasMode ?? 'half-stack';
 
       this.showList = [];
       this.columns = [];
