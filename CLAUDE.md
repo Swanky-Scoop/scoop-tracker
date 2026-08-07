@@ -18,7 +18,7 @@ To exercise changes, commit and push to `main` (deploys to TEST) and reload a pa
 
 ### Local development mirror (fastest loop)
 
-There is a [Local](https://localwp.com/) (by Flywheel) site, `swank-tracker`, served at `https://ops.swanky.local`, whose plugin directory is a **symbolic link to this repository**:
+There is a [Local](https://localwp.com/) site, `swank-tracker`, served at `https://ops.swanky.local`, whose plugin directory is a **symbolic link to this repository**. This is the free-standing Local app only — no Flywheel/WP Engine hosting account or remote-fetch/sync feature is in use, so local and production data don't sync automatically (see below):
 
 ```
 …/Local Sites/swank-tracker/app/public/wp-content/plugins/scoop_rest  →  <repo root>
