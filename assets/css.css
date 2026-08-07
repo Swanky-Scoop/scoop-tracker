@@ -1091,13 +1091,19 @@ body.dock-resizing {
 .in-dock .canvas > .scoop-grid {
   width: auto !important;
   flex: 1 1 calc(50% - 0.5rem);
-  max-width: calc(50% - 0.5rem);
+  /* !important on both this and the full-stack/full-nostack override below
+     — needed to beat the general .scoop-grid rule's own `max-width: 40rem
+     !important` (see "GRID CONTAINER" further up), which otherwise wins
+     over either of these regardless of specificity since neither had
+     !important before. Without it, full-nostack was silently capped at
+     40rem instead of actually reaching 100% width. */
+  max-width: calc(50% - 0.5rem) !important;
 }
 
 .in-dock .canvas > .scoop-grid[data-canvas-mode="full-stack"],
 .in-dock .canvas > .scoop-grid[data-canvas-mode="full-nostack"] {
   flex-basis: 100%;
-  max-width: 100%;
+  max-width: 100% !important;
 }
 
 .in-dock .canvas > .scoop-grid[data-canvas-mode="half-nostack"],
@@ -1112,14 +1118,28 @@ body.dock-resizing {
    CONTAINER" further up), otherwise visible on an untoggled panel while
    its bundle data is still loading even though nothing about it is
    actually on screen yet. Scales up together with the same .toggled class
-   the TOGGLE click handler already applies (see the form rule below). */
+   the TOGGLE click handler already applies (see the form rule below).
+
+   position:absolute while collapsed (same technique as .scoop-grid.Batch/
+   form.batch-history-embedded further up) takes it OUT of .canvas's flex
+   layout entirely — transform alone doesn't do that, a scaled-to-0 box
+   still gets measured at full size for flex-wrap purposes, which is what
+   let a closed FlavorTub (unbounded table height, no scroll of its own)
+   push a newly-opened full-nostack ItemPivot thousands of pixels down into
+   a wrapped row instead of alone at the top of an empty canvas. Back to
+   position:relative once .toggled so it actually participates in layout
+   again. */
 .in-dock .canvas > .scoop-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
   transform: scale(0);
   transition: transform 0.2s ease-in;
   pointer-events: none;
 }
 
 .in-dock .canvas > .scoop-grid.toggled {
+  position: relative;
   transform: scale(1);
   pointer-events: auto;
 }
