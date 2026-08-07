@@ -86,8 +86,20 @@
   /* Batch + its embedded BatchHistory receipt (see .scoop-grid.Batch below)
      — one shared target width so both tables line up. Batch's own table is
      narrower than the target by its Save button's protruding width, so the
-     button's own outer edge lines up flush with BatchHistory's table too. */
-  --dimension-batch-grid-width: 30rem;
+     button's own outer edge lines up flush with BatchHistory's table too.
+
+     min(30rem, calc(100vw - 1rem)) — not a plain 30rem — because both
+     tables read this var directly for their own `width` (see the table
+     rule inside `& form:not(.batch-history-embedded)` and
+     `form.batch-history-embedded` further down), not a percentage of
+     their ancestors. Capping .in-dock > .action-target's own width (or
+     .scoop-grid.Batch's) doesn't help: a raw-rem-width descendant just
+     overflows past a narrower ancestor instead of shrinking with it.
+     Capping the shared variable itself is what actually keeps the popup
+     inside the viewport (with 0.5rem to spare on each side) on a narrow
+     phone, and keeps both tables shrinking in lockstep so they still line
+     up. */
+  --dimension-batch-grid-width: min(30rem, calc(100vw - 1rem));
   --dimension-batch-save-btn-width: 2rem;
   --dimension-batch-save-btn-tuck: 0.125rem;
   --dimension-batch-count-col-width: 4rem;
@@ -97,14 +109,40 @@
      clearance is how far above the toolbar .action-target (and anything
      fixed-positioned that docks inside it, e.g. .scoop-grid.Batch) sits, an
      estimate of the toolbar's own rendered height plus a gap. */
-  --dimension-dock-toolbar-bottom: 0.75rem;
-  --dimension-dock-toolbar-clearance: 6rem;
+  --dimension-dock-toolbar-bottom: 2.5rem;
+  --dimension-dock-toolbar-clearance: 5rem;
 
   /* .in-dock's <aside> slot (see DOCKING section below) — 3/8 of .in-dock's
      width, leaving .canvas the remaining 5/8. Live-adjustable: dragging
      .dock-resizer (assets/ui/dock-resizer.js) overwrites this on .in-dock
      directly, which this initial value is just the fallback for. */
   --dock-aside-width: 37.5%;
+
+  /* Floor for a half-stack/half-nostack .canvas control (see DOCKING
+     section below) — below this a control's own content gets cramped, so
+     .canvas's padding collapses to 0 first (see --dimension-canvas-gutter-
+     collapse below) and, past that, a horizontal scrollbar is the accepted
+     last resort rather than shrinking a control any further. Paired with
+     the 40rem ceiling on .scoop-grid itself (see "GRID CONTAINER" further
+     up) so a lone control grows toward 40rem but never past it, leaving
+     calm space for .TOASTER to slide in from the right. */
+  --dimension-canvas-control-min: 30rem;
+
+  /* .canvas's own outer gutter (see DOCKING section below) — kept at
+     --dimension-canvas-gutter whenever there's room, but dropped to 0 once
+     available width can't otherwise fit one --dimension-canvas-control-min-
+     wide control without scrolling. A variable (not a literal 1rem) because
+     a sticky .gridFilterInput inside .canvas has to cancel this padding out
+     of its own `top` offset — see ".in-dock .canvas .gridFilterInput"
+     further down — and the two must move together or the filter drifts out
+     of flush again. 34rem gives a control at its 30rem floor a 2rem margin
+     (1rem each side) of room to lose before an actual scrollbar becomes
+     necessary. Viewport-based (like popularView's own breakpoint further
+     down), not a true container query against .canvas itself — so with
+     <aside> open the padding can drop a little earlier than this number
+     alone implies, since .canvas is then narrower than the viewport. */
+  --dimension-canvas-gutter: 1rem;
+  --dimension-canvas-gutter-collapse: 34rem;
 }
 
 /* ============================================
@@ -215,6 +253,9 @@ html body {
     margin: 0 !important;
     padding: 0 !important;
 
+    & .in-dock .scoop-grid.Batch {
+      top:0;
+    }
     & .scoop-grid {
       margin: 1rem !important;
       max-width: 40rem !important;
@@ -278,10 +319,6 @@ html body {
 
           & .zGRID-form{
             width: 100%;
-
-            & .gridFilterInput{
-              top:0
-            }
           }
 
         }
@@ -823,6 +860,45 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   }
 }
 
+/* BatchHistory's "Created" column (key: post_date — see
+   BatchHistoryGridModel.buildCols) is the least essential of its four
+   columns when the GRID ITSELF is cramped (Flavor/Tubs/Author still tell
+   you what happened; "when" becomes a scroll-up-to-check detail) — a
+   viewport media query would be the wrong tool here, since this can be
+   narrow because <aside> ate the width, not because the screen is small.
+   container-type establishes each of BatchHistory's two host elements
+   (standalone and embedded — same two contexts as the container-name
+   below) as a size query subject for their own descendants; the query
+   below then reads THAT box's width, not the viewport's. Every column's
+   key is already stamped as a class on both its <th> and <td> (see
+   grid.js's buildMetaFieldDom/_list.js's _renderFieldValue — same
+   mechanism th.current_flavor/td.current_flavor further up relies on), so
+   hiding it is a pure display:none, no JS/layout change needed — fully
+   reactive both directions, exactly like a media query, just against this
+   element's own box instead of the viewport. Both hosts already size
+   themselves from CSS rather than their content (.scoop-grid's own width
+   rules further up; form.batch-history-embedded's `width: var(--dimension-
+   batch-grid-width) !important` further up), so inline-size containment
+   doesn't change how either renders.
+
+   28rem, not 32rem: --dimension-batch-grid-width (see :root further up)
+   caps out at a flat 30rem and never goes wider, on ANY screen — so a
+   32rem threshold could never be satisfied in the embedded context and the
+   column would look permanently hidden, never "coming back" no matter how
+   wide the window got. 28rem leaves that popup 2rem of room to actually
+   cross back over the threshold before it hits its own 30rem ceiling. */
+.scoop-grid[data-grid-type="BatchHistory"],
+form.batch-history-embedded {
+  container-type: inline-size;
+  container-name: batch-history;
+}
+
+@container batch-history (max-width: 28rem) {
+  .post_date {
+    display: none;
+  }
+}
+
 /* ============================================
    DOCKING — [scoop_dock] baseline (see DOCKING.md)
    ============================================ */
@@ -853,13 +929,23 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   position: fixed;
   bottom: var(--dimension-dock-toolbar-bottom);
   left: 50%;
+  /* With width left to its default 'auto', a fixed-position box with only
+     `left` set (no `right`) shrink-to-fits against the space from that left
+     offset to the containing block's edge — i.e. only ~50% of the
+     viewport, wrapping content that exceeds THAT long before `transform`
+     below ever repositions it. width: max-content sizes the box from its
+     own content instead, sidestepping that halved available-width — the
+     classic gotcha with the left:50%/translateX(-50%) centering trick. */
+  width: max-content;
   transform: translateX(-50%);
   z-index: 99;
   display: flex;
   flex-direction: row;
-  flex-wrap: wrap;
+  /* No wrap — see width: max-content's own comment above; a wrapped
+     toolbar row was a symptom of the same bug, not a separate one. */
+  flex-wrap: nowrap;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.33rem;
   padding: 0.5rem;
 }
 
@@ -885,6 +971,10 @@ html > body.TS_GRID-UPDATING .scoop-grid {
    slides it up into view, still centered throughout via translateX. */
 .in-dock > .action-target {
   position: fixed;
+  /* --dimension-batch-grid-width is itself capped to calc(100vw - 1rem)
+     (see :root further up) — capping it HERE too wouldn't be enough on its
+     own, since the actual content-bearing table inside .scoop-grid.Batch
+     reads that variable directly rather than a percentage of this box. */
   width: var(--dimension-batch-grid-width);
   left: 50%;
   bottom: calc(var(--dimension-dock-toolbar-bottom) + var(--dimension-dock-toolbar-clearance));
@@ -958,8 +1048,11 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   }
 
   & .dockIcon {
-    font-size: 1.25rem;
-    line-height: 1.1rem;
+    font-size: 1rem;
+    line-height: 1rem;
+    display: flex;
+    vertical-align: middle;
+    justify-content: center;
   }
 
   & img.dockIcon {
@@ -989,10 +1082,66 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   flex: 1 1 auto;
   min-width: 0;
   overflow-y: auto;
+  /* Lets a control that can't fit even at its --dimension-canvas-control-
+     min floor (see :root further up) scroll into view instead of being
+     silently clipped by .in-dock's own overflow:hidden (see "TUBS - Docked
+     view" further down) — the accepted last resort once the gutter below
+     has already gone to 0. */
+  overflow-x: auto;
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
   gap: 1rem;
+  /* Outer gutter — collapses to 0 below --dimension-canvas-gutter-collapse
+     (see :root further up) so a tight viewport spends its width on control
+     content before resorting to the horizontal scrollbar above. */
+  padding: var(--dimension-canvas-gutter);
+
+  & br {
+    display: none !important;
+  }
+}
+
+/* A sticky descendant's `top` offset is measured from .canvas's PADDING
+   edge, not its border edge — so a plain `top: 0` sticks a filter bar
+   --dimension-canvas-gutter below the actual visible top of .canvas,
+   leaving a gap that whatever's scrolling underneath shows through. Pulling
+   it up by that same amount (negative top) re-aligns it with .canvas's real
+   top edge instead. Scoped to .in-dock .canvas specifically — .gridFilterInput
+   elsewhere (a plain page, <aside>) has no padded scrolling ancestor between
+   it and the viewport, so the un-compensated top: 0 there is already
+   correct. Must collapse to 0 in lockstep with .canvas's own padding
+   (below) — see --dimension-canvas-gutter-collapse's own comment (:root,
+   further up). */
+.in-dock .canvas .gridFilterInput {
+  top: calc(var(--dimension-canvas-gutter) * -1);
+}
+
+/* Same fix, opposite edge: form.zGRID-form's save button (see "FORM"
+   further down) sticks with `bottom: 0`, which is measured from .canvas's
+   PADDING-bottom edge — --dimension-canvas-gutter above the real visible
+   bottom of .canvas. Uncompensated, the button stops that far short of the
+   bottom instead of staying flush, which reads as "not sticking" once the
+   gap is wide enough to notice. Same scoping caveat as .gridFilterInput
+   above: only .in-dock .canvas has this padded scrolling ancestor. */
+.in-dock .canvas button.save {
+  bottom: calc(var(--dimension-canvas-gutter) * -1);
+}
+
+/* --dimension-canvas-gutter-collapse's own value, hardcoded here since
+   media query conditions can't reference custom properties. */
+@media (max-width: 34rem) {
+  .in-dock > .canvas {
+    padding: 0;
+  }
+
+  .in-dock .canvas .gridFilterInput {
+    top: 0;
+  }
+
+  .in-dock .canvas button.save {
+    bottom: 0;
+  }
 }
 
 /* Draggable divider between .canvas and <aside> — see
@@ -1033,26 +1182,54 @@ body.dock-resizing {
    (flex-basis:0, clipped) by default; :has(.scoop-grid.toggled) — same
    .toggled class the TOGGLE click handler already applies, no JS wiring
    needed — expands it to --dock-aside-width with its own independent
-   vertical scroll. */
+   vertical scroll.
+
+   The width itself (flex-basis) is NOT what animates — it snaps open
+   instantly on toggle-on, and on toggle-off it holds its width for 0.2s
+   (transition-delay) before collapsing. What the user actually sees slide
+   is the docked .scoop-grid's own transform, below: opening the box first
+   (instantly) gives the slide-in transform full-width room to animate into;
+   closing keeps the box open just long enough for the slide-out transform
+   to finish before the now off-screen content's box collapses to 0. */
 .in-dock > aside {
   flex: 0 0 0;
   overflow: hidden;
-  transition: flex-basis 0.2s ease-in;
+  transition: flex-basis 0s linear 0.2s;
 }
 
 .in-dock > aside:has(.scoop-grid.toggled) {
   flex: 0 0 var(--dock-aside-width);
   overflow-y: auto;
+  transition: flex-basis 0s linear 0s;
 }
 
 /* Docked "aside" grid (currently just Cabinet/"Flavor Plan" — see
    _config.php's `'target' => 'aside'`) gives up the general .scoop-grid
    rule's own margin/width — <aside> above now owns the sizing/scrolling
    for the whole panel, so the grid just needs to be a normal in-flow block
-   filling it, same pattern as .scoop-grid.Batch filling .action-target. */
+   filling it, same pattern as .scoop-grid.Batch filling .action-target.
+   translateX(100%)/(0) — off to the right of its own (already full-width)
+   box by default, slid into place once .toggled — is the actual slide-in/
+   slide-out the <aside> box's own transition (above) is timed around. */
 .in-dock aside > .scoop-grid {
   width: 100% !important;
   margin: 0 !important;
+  transform: translateX(100%);
+  transition: transform 0.2s ease-in;
+}
+
+.in-dock aside > .scoop-grid.toggled {
+  transform: translateX(0);
+}
+
+/* The form's own open/close pop (.in-dock .scoop-grid > form further down —
+   translateY(100%) scale(0.9), a vertical "pop up" meant for canvas/
+   action-target controls) would compound with the horizontal slide above
+   into a diagonal motion. Neutralized here so aside's only visible motion
+   is the container's slide; opacity fade is left alone, it reads fine
+   alongside a slide. */
+.in-dock aside > .scoop-grid > form {
+  transform: none;
 }
 
 /* Compact density for whatever's docked in <aside> — a narrow sidebar has
@@ -1093,16 +1270,42 @@ body.dock-resizing {
    !important` (nearly full-width regardless of content). */
 .in-dock .canvas > .scoop-grid {
   width: auto !important;
-  flex: 1 1 calc(50% - 0.5rem);
-  /* !important on both this and the full-stack/full-nostack override below
-     — needed to beat the general .scoop-grid rule's own `max-width: 40rem
-     !important` (see "GRID CONTAINER" further up), which otherwise wins
-     over either of these regardless of specificity since neither had
-     !important before. Without it, full-nostack was silently capped at
-     40rem instead of actually reaching 100% width. */
-  max-width: calc(50% - 0.5rem) !important;
+  /* .canvas now owns all spacing itself (padding for the outer gutter, gap
+     between items — both further up) — without this, every canvas item
+     also carried the general .scoop-grid rule's own `margin: 1rem
+     !important` (see "LAYOUT - MAIN & FOOTER" further up, still in effect
+     since .in-dock still nests under `main`), stacking on top of .canvas's
+     gap/padding for uneven, doubled-up spacing. */
+  margin: 0 !important;
 }
 
+/* half-stack / half-nostack: flex-grow:1 is what lets a LONE control
+   stretch to fill its row (toward the 40rem ceiling below) instead of
+   sitting frozen at its --dimension-canvas-control-min basis; .canvas's own
+   flex-wrap (further up) is what drops a second/third control to a new row
+   once they can't all fit at that basis in the remaining width — no
+   per-breakpoint column-count rule needed, flexbox works it out from the
+   floor/ceiling alone. See --dimension-canvas-control-min's own comment (
+   :root, further up) for how 30rem/40rem were picked; below that floor,
+   .canvas's own gutter collapse and then horizontal scroll (both further
+   up) are the accepted fallback rather than shrinking a control further.
+   !important is needed on max-width to beat the general .scoop-grid rule's
+   own `max-width: 40rem !important` (see "GRID CONTAINER" further up),
+   which otherwise wins over this regardless of specificity since this had
+   no !important before — same value today, but this rule needs to be able
+   to move independently of that one later. */
+.in-dock .canvas > .scoop-grid[data-canvas-mode="half-stack"],
+.in-dock .canvas > .scoop-grid[data-canvas-mode="half-nostack"] {
+  flex: 1 1 var(--dimension-canvas-control-min);
+  min-width: var(--dimension-canvas-control-min);
+  max-width: 40rem !important;
+}
+
+/* !important — needed to beat the general .scoop-grid rule's own
+   `max-width: 40rem !important` (see "GRID CONTAINER" further up), which
+   otherwise wins over this regardless of specificity since it had no
+   !important before. Without it, full-nostack was silently capped at
+   40rem instead of actually reaching 100% width. */
 .in-dock .canvas > .scoop-grid[data-canvas-mode="full-stack"],
 .in-dock .canvas > .scoop-grid[data-canvas-mode="full-nostack"] {
   flex-basis: 100%;
@@ -1789,7 +1992,12 @@ table.zGRID tr {
   border-top-left-radius: 0.25rem;
   position: sticky;
   z-index: 8;
-  top: 2rem;
+  /* Flush with the very top of the scrolling container — its own static
+     position (wherever that falls in normal flow) is untouched, this only
+     controls where it stops once scrolled up. .scoop-grid thead's own
+     top: 2rem (further up) is what then sticks it just below this bar
+     instead of underneath it. */
+  top: 0;
   width: 100%;
   border: 1px solid var(--color-green-dark);
   font-size: 0.67rem;
@@ -2441,21 +2649,21 @@ table.zGRID tr .badges .badge.warning {
     text-align: center;
     overflow: hidden;
 
-    /* Positioning (position/width/left/bottom/transform) is intentionally
-       NOT redeclared here — the general .in-dock > .action-target and
-       .in-dock .scoop-grid.Batch rules further up the file already fully
-       own that (fixed, explicit-width, transform-based slide via
-       :has(.scoop-grid.toggled)) and apply regardless of .entry-content
-       nesting. Redeclaring only SOME of those properties here (as this
-       block used to) left the general rule's `transform` still applying on
-       top of a different left/width scheme, which is what caused the
-       "shifts sideways when toggled closed" bug — two incomplete,
-       partially-overlapping rule sets fighting over the same element. */
+    & .active .scoop-grid{
+      box-shadow: rgba(0,0,0,.10) 0 -50rem 0 100rem, inset  rgba(0,0,0,.25) 0 0 100rem, rgba(0,0,0,.25) 0 0 30rem;
+      
+    }
     .scoop-grid.Batch {
       min-height: 0;
       text-align: left;
+      border-radius: 10rem;
     }
-    .scoop-grid.toggled {
+    /* Excludes aside's docked grid — it gets its own slide-from-the-right
+       transition instead (see .in-dock aside > .scoop-grid further up).
+       animation always wins over a transition on the same property, so
+       leaving flyup unscoped here silently overrode that slide with this
+       bottom-up entrance instead. */
+    .scoop-grid.toggled:not(aside > .scoop-grid) {
       animation: flyup 0.5s ease-out;
     }
 
@@ -2463,7 +2671,7 @@ table.zGRID tr .badges .badge.warning {
       background-color: rgba(0,0,0,.5 );
       position: fixed;
       padding:.5rem;
-      bottom:.75rem;
+      bottom:var(--dimension-dock-toolbar-bottom);
       display:inline-flex;
       flex-direction: row;
       white-space: nowrap;
@@ -2491,12 +2699,11 @@ table.zGRID tr .badges .badge.warning {
       font-weight: 100;
       background-color: rgba(0,0,0,.75);
       border-radius: 50%;
-      width:2.2rem;
-      height:2.2rem;
+      width:2rem;
+      height:2rem;
       font-size:.6rem;
       text-align: center;
       border:1px solid rgba(255, 255, 255, 0.33);
-      zbox-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.33);
 
       &.wp{ order: 99; 
         text-decoration: none;
@@ -2505,6 +2712,11 @@ table.zGRID tr .badges .badge.warning {
           font-style: normal;
           font-family: 'dashicons';
           font-size: 1rem;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 1rem;
+          line-height: 1rem;
 
         }
       }
