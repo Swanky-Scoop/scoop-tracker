@@ -6,6 +6,12 @@ export default class DateActivityGridModel extends BaseGridModel{
   constructor(name, domain, attrs = {}){
     super(name, null, attrs );
     this.filter = true;
+    // Read-only activity log — every row is either an audit-derived
+    // inventory_change entry or a legacy tub-state snapshot, neither of
+    // which is meant to be hand-edited here. See _buildSubmitButton/
+    // _applyAutosaveUI in _list.js: this swaps the Save button for a plain
+    // forced-refetch trigger instead.
+    this.manualRefreshOnly = true;
     this.dateFilters = this._normalizeDateFilters(attrs?.dateFilters);
     this.filterValues = this._initialFilterValues(attrs?.filterValues, attrs?.modifiedRange);
     this.modifiedRange = this.filterValues.activity ?? 'last_48_hours';
@@ -137,9 +143,9 @@ export default class DateActivityGridModel extends BaseGridModel{
      // { key: "source",        label: "Source",   type: "string" },
      // { key: "problem",       label: "Problem",  type: "string" },
       { key: "tub",           label: "Tub",      type: "string" },
-      { key: "state",         label: "State",    write: true, control: "find", type: "string" },
-      { key: "use",           label: "Use",      write: true, control: "find", type: "use", titleMap: "use" },
-      { key: "amount",        label: "Amount",   write: true, control: "text", type: "number", step: 0.01, min: 0, max: 1, title: "Fraction of this tub that is full (0 to 1)." },
+      { key: "state",         label: "State",    control: "find", type: "string" },
+      { key: "use",           label: "Use",      control: "find", type: "use", titleMap: "use" },
+      { key: "amount",        label: "Amount",   control: "text", type: "number", step: 0.01, min: 0, max: 1, title: "Fraction of this tub that is full (0 to 1)." },
       { key: "created_on",    label: "Created",  type: "datetime" },
       { key: "opened_on",     label: "Opened",   type: "datetime" },
       { key: "emptied_at",    label: "Emptied",  type: "datetime" },
@@ -238,7 +244,6 @@ export default class DateActivityGridModel extends BaseGridModel{
       _activitySource: change.source || 'audit',
       _activityProblem: change.problem || 'none',
       _activityAt: activityAt,
-      _activityReadOnly: true,
       _title: change._title || tub?._title || `Change ${change.id}`,
       tub: tub?._title || (tub?.id ? `Tub ${tub.id}` : this._auditTubLabel(change)),
       state: tub?.state || '',
@@ -305,15 +310,42 @@ export default class DateActivityGridModel extends BaseGridModel{
   }
 
   _modifiedWindow() {
-    return this._filterWindow('activity') ?? this._fallbackWindowForPreset(this.getFilterValue('activity'));
+    return this._effectiveWindow('activity');
   }
 
   _activeDateWindows() {
     return this.dateFilters
-      .map(key => ({ key, window: this._filterWindow(key) ?? this._fallbackWindowForPreset(this.getFilterValue(key)) }))
+      .map(key => ({ key, window: this._effectiveWindow(key) }))
       .filter(item => item.window && Number.isFinite(item.window.start) && Number.isFinite(item.window.end));
   }
 
+  // The window actually used to filter rows for display: the narrower of
+  // (a) what the server actually fetched for this key (_filterWindow — the
+  // exact SQL boundary, so freshly-loaded data lines up with what's shown)
+  // and (b) what's currently selected client-side (_fallbackWindowForPreset).
+  // Needed because canFilterClientSide lets the user narrow the select
+  // without a refetch — at that point the domain's own _date_filters.ranges
+  // still reflects the WIDER window that was actually loaded, so filtering
+  // must fall back to the client-computed narrower one instead of the stale
+  // server range. Taking the intersection is safe either way: it never
+  // shows more than what's actually loaded, and always honors whichever
+  // preset is currently selected.
+  _effectiveWindow(key) {
+    const loaded = this._filterWindow(key);
+    const requested = this._fallbackWindowForPreset(this.getFilterValue(key));
+
+    if (!loaded) return requested;
+    if (!requested) return loaded;
+
+    return {
+      start: Math.max(loaded.start, requested.start),
+      end: Math.min(loaded.end, requested.end),
+    };
+  }
+
+  // The exact window the server actually queried for this key, per the last
+  // real bundle fetch — used both by _effectiveWindow above and by
+  // canFilterClientSide below to know how far back data is actually loaded.
   _filterWindow(key) {
     const range = this.domain?._date_filters?.ranges?.[key];
     if (!range) return null;
@@ -323,6 +355,26 @@ export default class DateActivityGridModel extends BaseGridModel{
 
     if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
     return { start, end };
+  }
+
+  // Lets _list.js's _applyFilterChange skip the server refetch a 'server'
+  // mode filter would otherwise always trigger. Only safe for the activity
+  // scale: narrowing (or re-selecting) a window that's fully within what
+  // was actually fetched needs nothing new from the server — the existing
+  // rows just get filtered tighter client-side (see _effectiveWindow).
+  // Widening past that always needs a real fetch, since older activity
+  // genuinely isn't loaded yet.
+  canFilterClientSide(key) {
+    const normalizedKey = this._normalizeDateFilterKey(key);
+    if (normalizedKey !== 'activity') return false;
+
+    const loaded = this._filterWindow(normalizedKey);
+    if (!loaded) return false;
+
+    const requested = this._fallbackWindowForPreset(this.getFilterValue(normalizedKey));
+    if (!requested) return false;
+
+    return requested.start >= loaded.start;
   }
 
   _fallbackWindowForPreset(preset = 'last_48_hours') {
@@ -443,12 +495,6 @@ export default class DateActivityGridModel extends BaseGridModel{
     const phase = this._phaseForTub(item);
     const source = this._sourceForTub(item);
     const problem = this._problemForTub(item, slotWarnings);
-
-    if (item._activityReadOnly) {
-      for (const colKey of ['state', 'use', 'amount']) {
-        if (row[colKey]) row[colKey].write = false;
-      }
-    }
 
     row.phase = this._readOnlyCell(phase, item, 'phase', { alertCase: `phase-${phase}` });
     row.source = this._readOnlyCell(source, item, 'source', { alertCase: `source-${source}` });

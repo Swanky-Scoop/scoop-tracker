@@ -59,6 +59,9 @@ function scoop_routes_config(string $batch_key = ''): array {
       'display_title' => 'Flavor History',
       'icon'         => 'if:s',
     ],
+    'Analytics' => [
+      'icon'         => 'if:E',
+    ],
     'FlavorTub' => [
       'display_title' => 'Curret tubs',
       'icon'         => 'if:f',

@@ -917,6 +917,24 @@ export default class List extends El{
   //   contains '/' or ends  -> image path, rendered as <img>.
   //   in an image extension
   //   anything else         -> literal text/unicode glyph.
+  // Shared SUBMIT button for Grid/Tile's buildCoreDom(). A model can opt
+  // into read-only-with-refresh by setting this.manualRefreshOnly = true
+  // (e.g. DateActivityGridModel, whose columns are all server-corrected via
+  // inventory_change audit rows rather than hand-edited) — it gets a plain
+  // "refresh" trigger instead of a save button. Keeps the 'save' class
+  // either way so the extensive form/dock layout CSS keyed on button.save
+  // still applies; 'refresh' is purely a behavioral marker consumed by
+  // _bindEvents' delegated click handler and _applyAutosaveUI's hidden logic.
+  _buildSubmitButton() {
+    const manualRefresh = !!this.modelInstance?.manualRefreshOnly;
+
+    return this.el('button', {
+      classes: manualRefresh ? ['save', 'refresh'] : ['save'],
+      text: manualRefresh ? 'refresh' : 'save',
+      attrs: { type: manualRefresh ? 'button' : 'submit' },
+    });
+  }
+
   _buildToggleButton() {
     const icon  = this.modelInstance?.icon ?? (this.name ? String(this.name).charAt(0) : '?');
     const title = this.modelInstance?.displayTitle ?? this.name ?? '';
@@ -1536,7 +1554,15 @@ export default class List extends El{
     // nothing to show" without re-deriving it from this.items itself.
     this.FORM.classList.toggle('empty', !hasItems);
 
-    if (this.SUBMIT) this.SUBMIT.hidden = (on && !partial) || !hasWriteableFields || !hasItems;
+    // A manual-refresh grid (see _buildSubmitButton) has no writeable
+    // fields by design — the "hide when nothing to save" rule below doesn't
+    // apply to it; it should stay available any time there's something to
+    // refresh against.
+    if (this.SUBMIT) {
+      this.SUBMIT.hidden = this.modelInstance?.manualRefreshOnly
+        ? !hasItems
+        : (on && !partial) || !hasWriteableFields || !hasItems;
+    }
 
     // The find-in-grid text filter only ever narrows an existing list —
     // nothing to narrow with zero items, so hide it along with SUBMIT.
@@ -1774,6 +1800,13 @@ export default class List extends El{
         return;
       }
 
+      const refreshBtn = e.target.closest("button.refresh");
+      if (refreshBtn) {
+        e.preventDefault();
+        this._handleManualRefresh(refreshBtn);
+        return;
+      }
+
       this._showHide(e);
       this._sortCols(e);
     }, true);
@@ -1991,6 +2024,22 @@ export default class List extends El{
     } catch (err) {
       console.error('Row delete failed:', err);
       Toast.addMessage({ title: 'Delete error', message: String(err) });
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // Counterpart to a manual-refresh grid's button.refresh (see
+  // _buildSubmitButton) — an explicit, forced bundle refetch. Reuses
+  // refreshGridFilters' force:true call rather than a plain refresh() so a
+  // stale narrowed-window filter (see canFilterClientSide) still gets a real
+  // round-trip when the user actually asks for one.
+  async _handleManualRefresh(btn) {
+    if (typeof this.api?.refreshGridFilters !== 'function') return;
+
+    btn.disabled = true;
+    try {
+      await this.api.refreshGridFilters(this);
     } finally {
       btn.disabled = false;
     }

@@ -33,7 +33,7 @@ export default class Tile extends List {
     this.FORM    = el('form',   { classes: ['zTILE-form'] });
     this.TOGGLE  = this._buildToggleButton();
     this.FILTERS = el('div',    { classes: ['gridFilters', 'empty'] });
-    this.SUBMIT  = el('button', { classes: ['save'], text: 'save', attrs: { type: 'submit' } });
+    this.SUBMIT  = this._buildSubmitButton();
     this.FRAME   = el('div',    { classes: ['zTILE'] });
     this.TOOLS   = el('div',    { classes: ['tileTools'] });
 

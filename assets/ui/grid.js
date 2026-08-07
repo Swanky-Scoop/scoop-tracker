@@ -19,7 +19,7 @@ export default class Grid extends List {
     this.FORM    = el('form',   { classes: ['zGRID-form'] });
     this.TOGGLE  = this._buildToggleButton();
     this.FILTERS = el('div',    { classes: ['gridFilters', 'empty'] });
-    this.SUBMIT  = el('button', { classes: ['save'], text: 'save', attrs: { type: 'submit' } });
+    this.SUBMIT  = this._buildSubmitButton();
     this.TABLE   = el('table',  { classes: ['zGRID'] });
     this.THEAD   = el('thead');
     this.TRH     = el('tr');
