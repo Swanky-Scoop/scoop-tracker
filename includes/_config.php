@@ -46,6 +46,10 @@ function scoop_routes_config(string $batch_key = ''): array {
       'pod_name'     => 'batch',
       'allowed_fields_cb' => 'scoop_batches_allowed_fields',
     ],
+    'Popular' => [
+      'display_title' => 'Popular plot',
+      'icon'         => 'if:z',
+    ],
     'BatchHistory' => [
       'display_title' => 'Batch History',
       'icon'         => 'if:t',

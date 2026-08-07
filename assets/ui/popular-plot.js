@@ -1,4 +1,6 @@
 import Grid      from "./grid.js";
+import List      from "./_list.js";
+import El        from "./_el.js";
 import FormCodec from "../data/form-codec.js";
 
 export default class PopularPlot {
@@ -18,6 +20,56 @@ export default class PopularPlot {
     this.width = 1280;
     this.height = 780;
     this.margin = { top: 36, right: 36, bottom: 84, left: 96 };
+
+    // TOGGLE/dockToggle() plumbing, borrowed from List (see the methods
+    // below) rather than reimplemented, so PopularPlot can dock the same
+    // way every List subclass (Grid/Tile) does — see DOCKING.md. Built here
+    // (not in render()) so mountAllGrids() can call dockToggle() right
+    // after construction, before any fetch/render has happened; matches the
+    // "safe to build now" assumption already documented at that call site
+    // in scoop-api.js. _dockListInstance mirrors List's own constructor —
+    // lets a sibling control's _closeSlotSiblings()/_enforceCanvasExclusivity()
+    // find this one's TOGGLE after dockToggle() has moved it elsewhere.
+    target._dockListInstance = this;
+    this.TOGGLE = this._buildToggleButton();
+    if (!this.target.contains(this.TOGGLE)) this.target.append(this.TOGGLE);
+
+    // Copied verbatim from List's own TOGGLE click binding (_list.js,
+    // _bindEvents) rather than borrowed via .call(), since it's an event
+    // listener — defining it here captures `this` as this PopularPlot
+    // instance directly, same effect without the indirection.
+    this.TOGGLE.addEventListener("click", (e) => {
+      const isOpen = this.target.classList.toggle("toggled");
+      this.TOGGLE.classList.toggle("active", isOpen);
+      if (isOpen) this._closeSlotSiblings();
+      this._enforceCanvasExclusivity();
+      this.target.closest('.action-target, aside')?.classList.toggle('active', isOpen);
+      e.stopPropagation();
+    }, true);
+  }
+
+  // Borrowed from List (_list.js) rather than reimplemented — each only
+  // depends on this.target/this.modelInstance/this.TOGGLE/this.el/this.name,
+  // none of which are List-specific, so staying borrowed keeps this in sync
+  // with List's implementation automatically instead of drifting.
+  el(tag, opts) {
+    return El.prototype.el.call(this, tag, opts);
+  }
+
+  _buildToggleButton() {
+    return List.prototype._buildToggleButton.call(this);
+  }
+
+  dockToggle() {
+    return List.prototype.dockToggle.call(this);
+  }
+
+  _closeSlotSiblings() {
+    return List.prototype._closeSlotSiblings.call(this);
+  }
+
+  _enforceCanvasExclusivity() {
+    return List.prototype._enforceCanvasExclusivity.call(this);
   }
 
   init(state = this.modelInstance) {
@@ -34,7 +86,12 @@ export default class PopularPlot {
     const data = this.state?.getPlotData?.() ?? { points: [] };
     const points = data.points ?? [];
 
-    this.target.replaceChildren();
+    // Only ever clear the plot's own content, not the whole host — TOGGLE
+    // lives directly in this.target too (see constructor) and must survive
+    // every re-render (e.g. a days-filter change), same as it implicitly
+    // does for every List subclass (whose rebuilds never clear this.target
+    // itself, only rebuild the parts inside FORM).
+    this.root?.remove();
     this.root = this._el("div", { classes: ["popularView"] });
 
     if (!points.length) {
