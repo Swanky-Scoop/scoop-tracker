@@ -111,8 +111,8 @@ export default class List extends El{
     this.loadConfig(config);
 
     // Only meaningful within .in-dock's .canvas (see the "canvas" sizing
-    // rules in css.css and _enforceCanvasNostack() below) — harmless to set
-    // unconditionally outside a dock, nothing there selects on it.
+    // rules in css.css and _enforceCanvasExclusivity() below) — harmless to
+    // set unconditionally outside a dock, nothing there selects on it.
     target.dataset.canvasMode = this.modelInstance?.canvasMode ?? 'half-stack';
 
     this._build();
@@ -1005,18 +1005,25 @@ export default class List extends El{
     }
   }
 
-  // A 'nostack' canvasMode control (see BaseGridModel's canvasMode comment
-  // and the "canvas" sizing rules in css.css — currently just ItemPivot,
-  // 'full-nostack') expects the whole .canvas, not just its own row/column:
-  // nothing else should be open alongside it, in either direction — opening
-  // one closes every other open .canvas control, and opening any OTHER
-  // control while a nostack one is already open closes that nostack control
-  // too. Plain 'stack'/'half' controls never trigger this and keep
-  // coexisting normally; only called from the TOGGLE click handler, and
-  // only relevant for controls that stay in .canvas (dockTarget routes a
-  // control into a slot instead, where _closeSlotSiblings() above is the
-  // equivalent exclusivity rule).
-  _enforceCanvasNostack() {
+  // Two independent reasons a .canvas control needs every OTHER open
+  // control closed:
+  //  - 'nostack' canvasMode (see BaseGridModel's canvasMode comment and the
+  //    "canvas" sizing rules in css.css — currently just ItemPivot,
+  //    'full-nostack') expects the whole .canvas, not just its own row/
+  //    column: nothing else should be open alongside it, in either
+  //    direction — opening one closes every other open .canvas control,
+  //    and opening any OTHER control while a nostack one is already open
+  //    closes that nostack control too.
+  //  - Below CANVAS_SINGLE_OPEN_BREAKPOINT, .canvas has no room for more
+  //    than one open control regardless of canvasMode — same "close every
+  //    other one" behavior, just keyed off the viewport instead of the
+  //    type. Plain 'stack'/'half' controls above that width never trigger
+  //    this and keep coexisting normally.
+  // Only called from the TOGGLE click handler, and only relevant for
+  // controls that stay in .canvas (dockTarget routes a control into a slot
+  // instead, where _closeSlotSiblings() above is the equivalent
+  // exclusivity rule).
+  _enforceCanvasExclusivity() {
     const canvas = this.target.closest('.canvas');
     if (!canvas) return;
 
@@ -1026,7 +1033,10 @@ export default class List extends El{
       && el.classList.contains('toggled')
       && el._dockListInstance?.modelInstance?.canvasMode?.endsWith('nostack')
     );
-    if (!isNostack && !hasOpenNostack) return;
+    const isNarrowViewport = window.matchMedia(
+      `(max-width: ${List.CANVAS_SINGLE_OPEN_BREAKPOINT})`
+    ).matches;
+    if (!isNostack && !hasOpenNostack && !isNarrowViewport) return;
 
     for (const sibling of canvas.children) {
       if (sibling === this.target || !sibling.classList.contains('toggled')) continue;
@@ -1035,6 +1045,13 @@ export default class List extends El{
       sibling._dockListInstance?.TOGGLE?.classList.remove('active');
     }
   }
+
+  // Below this viewport width, .in-dock's .canvas shows at most one open
+  // control at a time (see _enforceCanvasExclusivity above) — a separate,
+  // narrower breakpoint than <aside>'s own take-over-100%-width one in
+  // css.css (32rem); the two aren't related, they just both key off
+  // viewport width.
+  static CANVAS_SINGLE_OPEN_BREAKPOINT = '24rem';
 
   _buildAllPayload() {
     const changes = { cells: {} };
@@ -1709,7 +1726,7 @@ export default class List extends El{
       const isOpen = this.target.classList.toggle("toggled");
       this.TOGGLE.classList.toggle("active", isOpen);
       if (isOpen) this._closeSlotSiblings();
-      this._enforceCanvasNostack();
+      this._enforceCanvasExclusivity();
 
       // Mirrors .toggled onto the shared slot itself (.action-target or
       // <aside> — see DOCK_SLOT_SELECTORS), not just this.target, so CSS

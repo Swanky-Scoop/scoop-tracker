@@ -54,7 +54,7 @@ export default class BaseGridModel {
       // 'half-nostack' | 'full-nostack'. 'half'/'full' is roughly how much
       // canvas width it claims; 'nostack' means it expects the whole canvas
       // HEIGHT too, so opening it closes every other open canvas control
-      // (and vice versa) — see List._enforceCanvasNostack() in
+      // (and vice versa) — see List._enforceCanvasExclusivity() in
       // assets/ui/_list.js. From 'canvas_mode' in scoop_routes_config().
       this.canvasMode = options?.canvasMode ?? this.metaData?.canvasMode ?? 'half-stack';
 

@@ -118,14 +118,20 @@
      directly, which this initial value is just the fallback for. */
   --dock-aside-width: 37.5%;
 
-  /* Floor for a half-stack/half-nostack .canvas control (see DOCKING
-     section below) — below this a control's own content gets cramped, so
-     .canvas's padding collapses to 0 first (see --dimension-canvas-gutter-
-     collapse below) and, past that, a horizontal scrollbar is the accepted
-     last resort rather than shrinking a control any further. Paired with
-     the 40rem ceiling on .scoop-grid itself (see "GRID CONTAINER" further
-     up) so a lone control grows toward 40rem but never past it, leaving
-     calm space for .TOASTER to slide in from the right. */
+  /* Preferred (not hard-floor) width for a half-stack/half-nostack .canvas
+     control (see DOCKING section below) — below this a control's own
+     content starts to feel cramped, so .canvas's padding collapses to 0
+     first (see --dimension-canvas-gutter-collapse below) to buy back a
+     little room. Past that, the control itself shrinks below this value
+     rather than forcing .canvas into a horizontal scroll — a 'half' target
+     must never be wider than the screen actually available to it (see the
+     half-stack/half-nostack rule further down, `min-width: min(...,
+     100%)`); the horizontal-scroll fallback on .canvas is reserved for
+     'full-stack'/'full-nostack' content that's intrinsically wide (e.g.
+     ItemPivot's own table), which IS expected to scroll. Paired with the
+     40rem ceiling on .scoop-grid itself (see "GRID CONTAINER" further up)
+     so a lone control grows toward 40rem but never past it, leaving calm
+     space for .TOASTER to slide in from the right. */
   --dimension-canvas-control-min: 30rem;
 
   /* .canvas's own outer gutter (see DOCKING section below) — kept at
@@ -899,6 +905,56 @@ form.batch-history-embedded {
   }
 }
 
+/* Cabinet's "Next Flavor" column (key: next_flavor — see _specs.php's
+   slot columns) is the planning grid's own least-essential column when
+   its host is cramped, same reasoning/mechanism as BatchHistory's
+   Created above. Unlike BatchHistory, no width ceiling problem here:
+   Cabinet is the grid docked to <aside> ('target' => 'aside' in
+   _config.php), and .in-dock > aside.active's own range (16rem-32rem —
+   see "DOCKING" further down) straddles this 28rem threshold on both
+   sides, so dragging .dock-resizer wider/narrower genuinely crosses it
+   either way. Also covers Cabinet rendered as a plain, non-docked page
+   grid, where .scoop-grid's own width rules (further up) can just as
+   easily land under 28rem on a narrow phone. */
+.scoop-grid[data-grid-type="Cabinet"] {
+  container-type: inline-size;
+  container-name: cabinet;
+}
+
+@container cabinet (max-width: 28rem) {
+  .next_flavor {
+    display: none;
+  }
+}
+
+/* FlavorTub sheds columns progressively as its host narrows, same
+   mechanism as Cabinet/BatchHistory above — least-essential first:
+   "Updated" (key: post_modified, label from _specs.php) goes first at
+   38rem, then "Amount" (key: amount) and "Editor" (key: editor_name,
+   label from _specs.php — see FlavorTubGridModel's setShowList) at 32rem.
+   FlavorTub has no fixed-width ceiling like BatchHistory's embedded
+   popup — as a canvas half-stack control it ranges from --dimension-
+   canvas-control-min (30rem) up to 40rem, or below 30rem via .canvas's
+   own gutter-collapse/scroll fallback (further up) — so both thresholds
+   are comfortably crossable in both directions. */
+.scoop-grid[data-grid-type="FlavorTub"] {
+  container-type: inline-size;
+  container-name: flavor-tub;
+}
+
+@container flavor-tub (max-width: 38rem) {
+  .post_modified {
+    display: none;
+  }
+}
+
+@container flavor-tub (max-width: 32rem) {
+  .amount,
+  .editor_name {
+    display: none;
+  }
+}
+
 /* ============================================
    DOCKING — [scoop_dock] baseline (see DOCKING.md)
    ============================================ */
@@ -1082,11 +1138,13 @@ form.batch-history-embedded {
   flex: 1 1 auto;
   min-width: 0;
   overflow-y: auto;
-  /* Lets a control that can't fit even at its --dimension-canvas-control-
-     min floor (see :root further up) scroll into view instead of being
-     silently clipped by .in-dock's own overflow:hidden (see "TUBS - Docked
-     view" further down) — the accepted last resort once the gutter below
-     has already gone to 0. */
+  /* Half-stack/half-nostack controls now shrink below --dimension-canvas-
+     control-min rather than forcing this (see that var's own comment and
+     the half-stack/half-nostack rule further down), so this is really for
+     'full-stack'/'full-nostack' content that's intrinsically wide (e.g.
+     ItemPivot's own table, which sets its own overflow-x too) — lets it
+     scroll into view instead of being silently clipped by .in-dock's own
+     overflow:hidden (see "TUBS - Docked view" further down). */
   overflow-x: auto;
   display: flex;
   flex-wrap: wrap;
@@ -1203,6 +1261,30 @@ body.dock-resizing {
   transition: flex-basis 0s linear 0s;
 }
 
+/* Below this, splitting the screen between .canvas and <aside> leaves too
+   little of either to be usable — <aside> takes over as a full-screen
+   panel instead of a side column. .canvas and .dock-resizer are hidden
+   outright rather than left to shrink: .canvas's own min-width:0 (further
+   up) would let it collapse to 0 width on its own, but .dock-resizer's
+   flex:0 0 auto (further up) doesn't shrink, so without this it would sit
+   as a stray sliver eating into aside's own 100% and overflowing the row
+   by its own width. Same :has(> aside .scoop-grid.toggled) condition the
+   resizer's own visibility rule (further up) already keys off. */
+@media (max-width: 32rem) {
+  .in-dock:has(> aside .scoop-grid.toggled) > .canvas,
+  .in-dock:has(> aside .scoop-grid.toggled) > .dock-resizer {
+    display: none;
+  }
+
+  .in-dock > aside:has(.scoop-grid.toggled) {
+    flex: 0 0 100%;
+  }
+
+  .in-dock > aside.active {
+    max-width: 100%;
+  }
+}
+
 /* Docked "aside" grid (currently just Cabinet/"Flavor Plan" — see
    _config.php's `'target' => 'aside'`) gives up the general .scoop-grid
    rule's own margin/width — <aside> above now owns the sizing/scrolling
@@ -1263,9 +1345,13 @@ body.dock-resizing {
      half-nostack / full-nostack — 'nostack' expects the whole canvas
        HEIGHT, not just its own row: min-height:100% (of .canvas — "at
        least fill it, taller if content needs more") plus JS-enforced
-       exclusivity (List._enforceCanvasNostack() in assets/ui/_list.js)
+       exclusivity (List._enforceCanvasExclusivity() in assets/ui/_list.js)
        closes every other open .canvas control the moment a nostack one
        opens, and vice versa — nothing is meant to render above/below it.
+       The same JS method also closes every other open control, regardless
+       of canvasMode, below a narrow-viewport breakpoint (see
+       List.CANVAS_SINGLE_OPEN_BREAKPOINT) — .canvas only ever shows one
+       open control at a time on a small enough phone.
    Overrides the general .scoop-grid rule's own `width: calc(100% - 2rem)
    !important` (nearly full-width regardless of content). */
 .in-dock .canvas > .scoop-grid {
@@ -1286,9 +1372,20 @@ body.dock-resizing {
    once they can't all fit at that basis in the remaining width — no
    per-breakpoint column-count rule needed, flexbox works it out from the
    floor/ceiling alone. See --dimension-canvas-control-min's own comment (
-   :root, further up) for how 30rem/40rem were picked; below that floor,
-   .canvas's own gutter collapse and then horizontal scroll (both further
-   up) are the accepted fallback rather than shrinking a control further.
+   :root, further up) for how 30rem/40rem were picked.
+
+   min-width: min(30rem, 100%) — NOT a bare var() — on purpose: a 'half'
+   control must never be wider than the screen actually available to it,
+   full stop, so the floor has to be able to yield once .canvas itself is
+   narrower than 30rem, rather than forcing this control past the edge and
+   into .canvas's own horizontal scroll (that scroll — see .canvas's
+   overflow-x further up — is reserved for 'full-stack'/'full-nostack'
+   content that's intrinsically wide, e.g. ItemPivot's own table, which
+   IS expected to scroll; a half control shrinking to fit is not the same
+   situation and shouldn't reach for the same fallback). 100% here
+   resolves against .canvas's own content box, same as any percentage on a
+   flex item's min-width.
+
    !important is needed on max-width to beat the general .scoop-grid rule's
    own `max-width: 40rem !important` (see "GRID CONTAINER" further up),
    which otherwise wins over this regardless of specificity since this had
@@ -1297,7 +1394,7 @@ body.dock-resizing {
 .in-dock .canvas > .scoop-grid[data-canvas-mode="half-stack"],
 .in-dock .canvas > .scoop-grid[data-canvas-mode="half-nostack"] {
   flex: 1 1 var(--dimension-canvas-control-min);
-  min-width: var(--dimension-canvas-control-min);
+  min-width: min(var(--dimension-canvas-control-min), 100%);
   max-width: 40rem !important;
 }
 
