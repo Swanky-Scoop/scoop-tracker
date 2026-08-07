@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash('/c/Users/gus reiber/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe' 'C:\\\\Users\\\\GUSREI~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-gus-reiber-OneDrive-Documents-git-scoop-tracker\\\\8d73c76a-520b-48f1-ae04-a459f1826bad\\\\scratchpad\\\\diag.php')",
+      "Bash('/c/Users/gus reiber/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe' -d display_errors=1 -d display_startup_errors=1 -d html_errors=0 -d error_reporting=E_ALL 'C:\\\\Users\\\\GUSREI~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-gus-reiber-OneDrive-Documents-git-scoop-tracker\\\\8d73c76a-520b-48f1-ae04-a459f1826bad\\\\scratchpad\\\\diag.php')"
+    ]
+  }
+}
