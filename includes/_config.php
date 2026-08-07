@@ -83,12 +83,15 @@ function scoop_routes_config(string $batch_key = ''): array {
       'allowed_fields_cb' => 'scoop_closeouts_allowed_fields',
     ],
     'DateActivity' => [
+      'display_title' => 'User activity',
+      'icon'         => 'if:i',
       'path'         => '/dateactivity',
       'methods'      => ['GET','POST'],
       'mode'         => 'update',
       'envelope_key' => 'DateActivity',
       'post_type'    => 'tub',
       'pod_name'     => 'tub',
+      'canvas_mode'  => 'full-nostack',
       'allowed_fields_cb' => 'scoop_tubs_allowed_fields',
     ],
     'InstockFlavor' => [

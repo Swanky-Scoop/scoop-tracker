@@ -1,10 +1,10 @@
 @font-face {
     font-family: "swankyF";
-    src: url("./swankyF.eot?f9c473b554187c747b5e9591a2640152?#iefix") format("embedded-opentype"),
-url("./swankyF.woff2?f9c473b554187c747b5e9591a2640152") format("woff2"),
-url("./swankyF.woff?f9c473b554187c747b5e9591a2640152") format("woff"),
-url("./swankyF.ttf?f9c473b554187c747b5e9591a2640152") format("truetype"),
-url("./swankyF.svg?f9c473b554187c747b5e9591a2640152#swankyF") format("svg");
+    src: url("./swankyF.eot?8b344ed07d095d7c0752c645f3ab6e80?#iefix") format("embedded-opentype"),
+url("./swankyF.woff2?8b344ed07d095d7c0752c645f3ab6e80") format("woff2"),
+url("./swankyF.woff?8b344ed07d095d7c0752c645f3ab6e80") format("woff"),
+url("./swankyF.ttf?8b344ed07d095d7c0752c645f3ab6e80") format("truetype"),
+url("./swankyF.svg?8b344ed07d095d7c0752c645f3ab6e80#swankyF") format("svg");
 }
 
 i[class^="si-"]:before, i[class*=" si-"]:before {
@@ -18,63 +18,60 @@ i[class^="si-"]:before, i[class*=" si-"]:before {
     -moz-osx-font-smoothing: grayscale;
 }
 
-.si-+:before {
+.si-b:before {
     content: "\f101";
 }
-.si-b:before {
+.si-c:before {
     content: "\f102";
 }
-.si-c:before {
+.si-d:before {
     content: "\f103";
 }
-.si-d:before {
+.si-Eyedropper-Sample--Streamline-Phosphor:before {
     content: "\f104";
 }
-.si-Eyedropper-Sample--Streamline-Phosphor:before {
+.si-f:before {
     content: "\f105";
 }
-.si-f:before {
+.si-h:before {
     content: "\f106";
 }
-.si-h:before {
+.si-i:before {
     content: "\f107";
 }
 .si-l:before {
     content: "\f108";
 }
-.si-List-Checks--Streamline-Phosphor:before {
+.si-m:before {
     content: "\f109";
 }
-.si-m:before {
+.si-p:before {
     content: "\f10a";
 }
-.si-p:before {
+.si-plus:before {
     content: "\f10b";
 }
-.si-Plus--Streamline-Font-Awesome:before {
+.si-s:before {
     content: "\f10c";
 }
-.si-Plus-Fill--Streamline-Mingcute-Fill:before {
+.si-Shooting-Star--Streamline-Phosphor:before {
     content: "\f10d";
 }
-.si-plus:before {
+.si-t:before {
     content: "\f10e";
 }
-.si-s:before {
+.si-Trash--Streamline-Phosphor:before {
     content: "\f10f";
 }
-.si-Shooting-Star--Streamline-Phosphor:before {
+.si-Trash-Bold--Streamline-Phosphor:before {
     content: "\f110";
 }
-.si-t:before {
+.si-u:before {
     content: "\f111";
 }
-.si-Trash-Bold--Streamline-Phosphor:before {
+.si-User-List--Streamline-Phosphor:before {
     content: "\f112";
 }
-.si-u:before {
-    content: "\f113";
-}
 .si-x:before {
-    content: "\f114";
+    content: "\f113";
 }

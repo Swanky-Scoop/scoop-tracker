@@ -35,7 +35,7 @@ function scoop_cache_version(): int {
 // bundle.php's own whole-bundle cache (which still exists unchanged; this
 // only matters when THAT one misses).
 function scoop_slow_changing_entity_types(): array {
-  return [ 'flavor', 'use', 'location' ];
+  return [ 'flavor', 'use', 'location', 'cabinet' ];
 }
 
 function scoop_entity_cache_version( string $entity_key ): int {

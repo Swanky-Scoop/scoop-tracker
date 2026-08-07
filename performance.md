@@ -61,6 +61,20 @@ The SQL `find()` itself is trivial everywhere (86.6ms for 333 rows). ~83% of tot
 
 **Fix:** Once #12 lands (so `flavor`'s per-request shape no longer includes tub-derived fields), the remaining `flavor` fields are safe to cache far more durably than `SCOOP_CACHE_TTL`'s 5-minute safety net — invalidated only by an actual `flavor` save, not the global version. This is a more targeted version of #4's already-recommended whitelist fix: rather than (or in addition to) whitelisting *which post types* bump the cache at all, give slow-changing entity types (`flavor`, `use`, `location`) their own invalidation scope, separate from fast-changing ones (`tub`, `inventory_change`).
 
+### 14. `DateActivity`'s `slot`/`cabinet` needs carried avoidable N+1 and cache-bust cost
+
+**Status (2026-08-07):** *Implemented.* Two low-risk fixes, same class as #12/#13, found while investigating why `DateActivity` (the widest bundle spec — `tub`, `inventory_change`, `flavor`, `use`, `location`, `slot`, `cabinet`, see [scoop_bundle_specs](includes/_specs.php#L11)) is the slowest grid to load.
+
+**What (a):** [scoop_fetch_entities](includes/bundle-fetch.php#L311) resolved `slot.location` via `$pod->field()` per row, but [scoop_enrich_slots_with_location](includes/bundle-fetch.php#L613) unconditionally overwrites `$slot['location']` for every row right after — the first resolution's result was never read. Pure waste on every request needing `slot` (`Cabinet`, `CabinetWorkflow`, `InstockFlavor`, `ItemPivot`, `DateActivity`).
+
+**Fix (a):** `unset($needs_field['location'])` for `key === 'slot'` before the per-row loop, mirroring the existing `flavor.tubs`/`current_slots` skip pattern from #12.
+
+**What (b):** `cabinet` posts are only saved during physical fridge setup ([includes/hooks/cabinet-slot.php](includes/hooks/cabinet-slot.php) — cabinet save creates that cabinet's slots once) — never touched by routine tub/slot operations — but was invalidated by the global `scoop_cache_version`, same pattern as #13's `flavor`/`use`/`location`.
+
+**Fix (b):** Added `cabinet` to [scoop_slow_changing_entity_types()](includes/_cache.php#L37), giving it its own entity-level cache scope bumped only by a real cabinet save.
+
+**Not done — biggest remaining lever for `DateActivity` specifically:** `tub`'s own `$pod->field()` N+1 (#11) is still the dominant cost, and `DateActivity` always needs the full `tub` fetch (client-side legacy fallback in [date-activity-grid-model.js](assets/models/date-activity-grid-model.js#L219) re-includes any tub not already represented by an `inventory_change` audit row). Unlike `FlavorTub`, `DateActivity`'s bundle also can't lean on the 5-minute transient much during business hours — normal tub-save traffic busts the whole-bundle cache continuously, which is exactly when staff are looking at this grid. #11's `get_post_meta()` bypass (deferred pending equivalence verification per its own note) is the fix that would actually move `DateActivity`'s cold-path number; not attempted here.
+
 ### 1. Analytics endpoint has no transient cache
 
 **Status (2026-05-26):** *Addressed.* `scoop_analytics_cache_key()` lives in [includes/_cache.php](includes/_cache.php) and is keyed by `version | days | location | grid_type`. [includes/analytics.php](includes/analytics.php) reads the transient at the top of `scoop_analytics_handler()` and writes on both success paths (empty-flavors and main). Cache hits re-stamp `trace_id` so each response still has a unique debug ID; `_cache: 'hit'|'miss'` distinguishes the path. Invalidation rides on the same version-bump as the bundle cache.

@@ -360,6 +360,13 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     unset( $needs_field['tubs'], $needs_field['current_slots'] );
   }
 
+  // slot.location is unconditionally overwritten by
+  // scoop_enrich_slots_with_location() below (single bulk cabinet lookup) —
+  // resolving it per-row via $pod->field() here first is pure waste.
+  if ( $key === 'slot' ) {
+    unset( $needs_field['location'] );
+  }
+
   $loc_id = ! empty( $ctx['location'] ) ? (int) $ctx['location'] : 0;
 
   // NOT IN trash/auto-draft matches the original get_posts( 'post_status'=>'any' )

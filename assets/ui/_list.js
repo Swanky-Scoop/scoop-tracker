@@ -710,6 +710,10 @@ export default class List extends El{
   // — see _bindEvents): pushes the control's current value into the model
   // and re-renders. 'server' mode defers to refreshGridFilters (a real
   // refetch); everything else just rebuilds this grid's own rows client-side.
+  // A model can opt out of the refetch even in 'server' mode by implementing
+  // canFilterClientSide(key) — e.g. DateActivityGridModel uses it to narrow
+  // the activity-scale window against data already loaded instead of forcing
+  // a fresh bundle fetch every time the window shrinks.
   async _applyFilterChange(el) {
     const key = el.dataset.filterKey;
     const mode = el.dataset.filterMode;
@@ -719,7 +723,10 @@ export default class List extends El{
       this.modelInstance.setFilterValue(key, value);
     }
 
-    if (mode === 'server' && typeof this.api?.refreshGridFilters === 'function') {
+    const skipRefetch = typeof this.modelInstance?.canFilterClientSide === 'function'
+      && this.modelInstance.canFilterClientSide(key);
+
+    if (mode === 'server' && !skipRefetch && typeof this.api?.refreshGridFilters === 'function') {
       el.disabled = true;
       try {
         await this.api.refreshGridFilters(this);
