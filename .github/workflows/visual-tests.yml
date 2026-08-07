@@ -1,0 +1,62 @@
+name: Visual regression tests
+
+# Path-filtered so this doesn't run on every unrelated PHP/docs change — only
+# when the stylesheet under test or the test harness itself moves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'assets/css.css'
+      - 'tests/visual/**'
+      - '.github/workflows/visual-tests.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  visual-tests:
+    runs-on: ubuntu-latest
+
+    # Official Playwright image, not "install playwright on ubuntu-latest" —
+    # this is what actually gets you the deterministic font/subpixel
+    # rendering the Mac/Windows-vs-Linux problem needs. The tag's version
+    # MUST match the @playwright/test version in tests/visual/package.json
+    # exactly (see tests/visual/README.md) — a mismatched browser/test-runner
+    # pair is a common, confusing source of spurious diffs or hard failures.
+    container:
+      image: mcr.microsoft.com/playwright:v1.48.2-jammy
+      # Chromium under Docker's default 64MB /dev/shm frequently crashes on
+      # anything non-trivial; --ipc=host is the standard fix recommended by
+      # Playwright's own Docker docs.
+      options: --ipc=host
+
+    defaults:
+      run:
+        working-directory: tests/visual
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: npm ci
+
+      - name: Run visual regression tests
+        run: npx playwright test
+
+      # Only uploaded when something actually failed — see css.css's own
+      # `.gitignore`-style split: passing runs don't need artifacts at all.
+      - name: Upload diff report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/visual/playwright-report/
+          retention-days: 14
+
+      - name: Upload raw diff images (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: tests/visual/test-results/
+          retention-days: 14

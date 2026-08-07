@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Fixture: docked view (canvas + aside)</title>
+<!--
+  Hand-authored to match the REAL markup shapes, not a reimplementation:
+    - outer html>body>main>.entry-content>.in-dock nesting matches
+      includes/shortcode.php's [scoop_dock] output — required for the
+      "TUBS - Docked view" section in css.css (the full-viewport, z-index
+      99999 production skin) to apply at all; without this exact ancestry
+      .in-dock only gets its bare (non-fullscreen) fallback styling.
+    - .canvas's FlavorTub host and <aside>'s Cabinet host are written as
+      if ScoopAPI/Grid had already mounted them (populated <form>/<table>,
+      .toggled, data-canvas-mode) — the pre-mount empty-shell state isn't
+      the state actually worth screenshotting.
+    - Column classes (post_modified/amount/editor_name on FlavorTub;
+      current_flavor/immediate_flavor/next_flavor on Cabinet) are real
+      column keys (see flavor-tub-grid-model.js / _specs.php's slot
+      columns) — this is what the @container column-dropping rules in
+      css.css key off.
+  Loads the real assets/css.css directly — a CSS change is what a diff
+  here should be catching, not a copy of it.
+-->
+<link rel="stylesheet" href="../../../assets/css.css">
+</head>
+<body>
+<header></header>
+<main>
+<div class="entry-content">
+<div class="in-dock">
+
+  <div class="action-target"></div>
+
+  <div class="toolbar">
+    <a href="#" class="gridToggle wp"><i class="ab-icon"></i><span class="dockTitle">WP Admin</span></a>
+    <button type="button" class="gridToggle active">
+      <span class="dockIcon">F</span><span class="dockTitle">Flavor Tubs</span>
+    </button>
+    <button type="button" class="gridToggle active">
+      <span class="dockIcon">C</span><span class="dockTitle">Flavor Plan</span>
+    </button>
+    <div class="PAGE-STATUS fresh">
+      <h3>Status</h3>
+      <em>Up to date</em>
+      <ul><li class="PAGE-STATUS-ETA">refreshing in 4:58</li></ul>
+    </div>
+  </div>
+
+  <div class="canvas">
+    <div class="scoop-grid FlavorTub toggled docked" data-grid-type="FlavorTub" data-view="grid" data-canvas-mode="half-stack">
+      <form class="zGRID-form">
+        <div class="gridFilters">
+          <div class="gridFilter"><label>Use</label><select><option>All</option></select></div>
+        </div>
+        <input class="gridFilterInput" type="text" placeholder="Filter…" readonly>
+        <table class="zGRID">
+          <thead>
+            <tr>
+              <th class="index sortable">#</th>
+              <th class="state sortable">State</th>
+              <th class="use sortable">Use</th>
+              <th class="amount sortable">Amount</th>
+              <th class="editor_name sortable">Editor</th>
+              <th class="post_modified sortable">Updated</th>
+            </tr>
+          </thead>
+          <tbody class="groupBody static opened">
+            <tr class="row" data-row-id="101">
+              <td class="cell index read-only">1</td>
+              <td class="cell state read-only">Freezing</td>
+              <td class="cell use read-only">Cones</td>
+              <td class="cell amount read-only">4.5</td>
+              <td class="cell editor_name read-only">A. Baker</td>
+              <td class="cell post_modified read-only">2026-08-01 09:14</td>
+            </tr>
+            <tr class="row row-dirty" data-row-id="102">
+              <td class="cell index read-only">2</td>
+              <td class="cell state read-only">Opened</td>
+              <td class="cell use cell-dirty">Scoop</td>
+              <td class="cell amount read-only">2.0</td>
+              <td class="cell editor_name read-only">A. Baker</td>
+              <td class="cell post_modified read-only">2026-08-01 10:02</td>
+            </tr>
+            <tr class="row state-Emptied" data-row-id="103">
+              <td class="cell index read-only">3</td>
+              <td class="cell state read-only">Emptied</td>
+              <td class="cell use read-only">Cones</td>
+              <td class="cell amount read-only">0.0</td>
+              <td class="cell editor_name read-only">R. Diaz</td>
+              <td class="cell post_modified read-only">2026-07-31 18:40</td>
+            </tr>
+          </tbody>
+        </table>
+        <button type="submit" class="save">Save</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="dock-resizer"></div>
+
+  <aside class="active">
+    <div class="scoop-grid Cabinet toggled docked" data-grid-type="Cabinet" data-view="grid">
+      <form class="zGRID-form">
+        <input class="gridFilterInput" type="text" placeholder="Filter…" readonly>
+        <table class="zGRID">
+          <thead>
+            <tr>
+              <th class="slot_label">Slot</th>
+              <th class="current_flavor">Current</th>
+              <th class="immediate_flavor">Next Up</th>
+              <th class="next_flavor">Next Flavor</th>
+            </tr>
+          </thead>
+          <tbody class="groupBody static opened">
+            <tr class="row" data-row-id="1">
+              <td class="cell slot_label read-only">Cabinet 1 / A</td>
+              <td class="cell current_flavor">Vanilla Bean</td>
+              <td class="cell immediate_flavor">Cookies &amp; Cream</td>
+              <td class="cell next_flavor">Mint Chip</td>
+            </tr>
+            <tr class="row" data-row-id="2">
+              <td class="cell slot_label read-only">Cabinet 1 / B</td>
+              <td class="cell current_flavor">Strawberry</td>
+              <td class="cell immediate_flavor">—</td>
+              <td class="cell next_flavor">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+    </div>
+  </aside>
+
+</div>
+</div>
+</main>
+</body>
+</html>

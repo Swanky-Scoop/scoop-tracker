@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Fixture: Batch popup + embedded BatchHistory</title>
+<!--
+  Same real-markup-shapes approach as docked-view.html (see its own
+  comment for the full rationale) — this one covers .action-target's
+  slot instead: Batch's own single flavor+count row PLUS its embedded
+  BatchHistory receipt (form.batch-history-embedded), both open at once,
+  which is exactly the width-capping/column-dropping combination several
+  turns of work went into (--dimension-batch-grid-width's viewport cap,
+  BatchHistory's post_date container-query drop).
+-->
+<link rel="stylesheet" href="../../../assets/css.css">
+</head>
+<body>
+<header></header>
+<main>
+<div class="entry-content">
+<div class="in-dock">
+
+  <div class="action-target">
+    <div class="scoop-grid Batch toggled history-open docked" data-grid-type="Batch" data-view="grid" data-history="1">
+      <form class="zGRID-form">
+        <table class="zGRID">
+          <thead><tr><th class="flavor">Flavor</th><th class="count">Count</th></tr></thead>
+          <tbody class="groupBody static opened">
+            <tr class="row" data-row-id="new">
+              <td class="cell flavor"><span class="findIt has-value">Pistachio</span></td>
+              <td class="cell count">6</td>
+            </tr>
+          </tbody>
+        </table>
+        <button type="submit" class="save"></button>
+      </form>
+      <button type="button" class="history-min-max active"></button>
+      <form class="zGRID-form batch-history-embedded">
+        <table class="zGRID">
+          <thead>
+            <tr>
+              <th class="post_date sortable">Created</th>
+              <th class="flavor sortable">Flavor</th>
+              <th class="count sortable">Tubs</th>
+              <th class="author_name sortable">Author</th>
+            </tr>
+          </thead>
+          <tbody class="groupBody static opened">
+            <tr class="row" data-row-id="9001">
+              <td class="cell post_date read-only">2026-08-01 08:03</td>
+              <td class="cell flavor read-only">Vanilla Bean</td>
+              <td class="cell count read-only">8</td>
+              <td class="cell author_name read-only">A. Baker</td>
+            </tr>
+            <tr class="row" data-row-id="9000">
+              <td class="cell post_date read-only">2026-07-31 14:20</td>
+              <td class="cell flavor read-only">Mint Chip</td>
+              <td class="cell count read-only">4</td>
+              <td class="cell author_name read-only">R. Diaz</td>
+            </tr>
+          </tbody>
+        </table>
+      </form>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <a href="#" class="gridToggle wp"><i class="ab-icon"></i><span class="dockTitle">WP Admin</span></a>
+    <button type="button" class="gridToggle active">
+      <span class="dockIcon">🍨</span><span class="dockTitle">New Batch</span>
+    </button>
+    <div class="PAGE-STATUS fresh">
+      <h3>Status</h3>
+      <em>Up to date</em>
+      <ul><li class="PAGE-STATUS-ETA">refreshing in 4:58</li></ul>
+    </div>
+  </div>
+
+  <div class="canvas"></div>
+  <div class="dock-resizer"></div>
+  <aside></aside>
+
+</div>
+</div>
+</main>
+</body>
+</html>

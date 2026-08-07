@@ -1,0 +1,12 @@
+{
+  "name": "scoop-tracker-visual-tests",
+  "private": true,
+  "description": "Visual regression tests for assets/css.css against static HTML fixtures. Deliberately isolated from the plugin itself (which stays build-step-free, see CLAUDE.md) — this package.json exists only so CI (and anyone locally with Node) can run Playwright. Nothing here ships to WordPress.",
+  "scripts": {
+    "test": "playwright test",
+    "test:update": "playwright test --update-snapshots"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.48.2"
+  }
+}

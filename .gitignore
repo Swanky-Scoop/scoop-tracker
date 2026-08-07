@@ -27,3 +27,11 @@ node_modules/
 # Regenerated every `npm run build:icons` run (see scripts/normalize-icon-svgs.js)
 # — stroke-outlined copies of assets/icon-font/svg/, not source, never committed.
 assets/icon-font/.normalized/
+
+# Playwright visual test run output (tests/visual/README.md) — regenerated
+# every run, not source. The baseline PNGs under tests/visual/tests/
+# *-snapshots/ are NOT covered by this and stay tracked; they're the whole
+# point of the suite.
+tests/visual/test-results/
+tests/visual/playwright-report/
+tests/visual/blob-report/
