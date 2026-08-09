@@ -6,6 +6,16 @@ export default class PopularGridModel extends AnalyticsGridModel {
     if (!Array.isArray(this.points)) this.points = [];
     if (this.excludedCount == null) this.excludedCount = 0;
 
+    // Never routed through scoop_routes_config() (see DOCKING.md), so
+    // BaseGridModel's constructor had nothing to read this from and fell
+    // back to 'half-stack' — wrong for a scatter plot that wants the whole
+    // canvas: half-stack caps it at max-width:40rem and keeps the outer
+    // gutter around it (see the [data-canvas-mode] rules in css.css).
+    // full-nostack also drops that gutter entirely (:has(...[data-canvas-
+    // mode="full-nostack"]) in css.css) and gets nostack's exclusivity via
+    // List._enforceCanvasExclusivity() — see PopularPlot's borrowed copy.
+    this.canvasMode = 'full-nostack';
+
     // Allergen select is rendered via getFilterDefs(); no need to set
     // this.filter = true (that flag enables Grid's built-in FindInGrid text
     // widget, which would duplicate PopularPlot._mountFilter()'s input).
@@ -20,8 +30,8 @@ export default class PopularGridModel extends AnalyticsGridModel {
   buildCols() {
     this._allColumns = [
       { key: "flavor_name",          label: "Flavor",    type: "string" },
-      { key: "total_sold",           label: "Tubs Sold", type: "number" },
-      { key: "avg_sellthrough_days", label: "Avg Days",  type: "number" },
+      { key: "total_sold",           label: "Sold",      type: "number" },
+      { key: "avg_sellthrough_days", label: "Day avg",   type: "number" },
     ];
     this._applyColumnFilter();
     return this.columns;
@@ -100,6 +110,7 @@ export default class PopularGridModel extends AnalyticsGridModel {
         sellRatePerDay: this._finiteNumber(f.sell_rate_per_day),
         currentStock: this._finiteNumber(f.current_stock),
         trend: f.trend ?? "steady",
+        trendPct: this._finiteNumber(f.trend_pct),
       });
     });
 

@@ -319,6 +319,7 @@ html body {
         background-color: var(--color-bg-cell);
 
         & .popularView {
+          min-height: 100vh;
           gap:0;
           margin: 0;
           border-color: var(--color-green-darkest);
@@ -328,7 +329,8 @@ html body {
         & .popularKey{
           padding: 0;
           margin: 0;
-
+          min-height: 100vh;
+          & button {display: none;}
           & .zGRID-form{
             width: 100%;
           }
@@ -694,7 +696,20 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   color: var(--color-text-base);
   font-style: italic;
 }
-
+.popularKey .zGRID-form .zGRID{
+  & td, th{
+    font-size:.67rem;
+    padding:.25em .5em;
+  }
+  & td, th{
+    font-size:.6rem;
+    padding:.33em .5em !important;
+    height: 1.5em;
+    &.number{
+      text-align:right;
+    }
+  }
+}
 /* Special Grid Types: Batch, plus its optionally-embedded BatchHistory
    receipt (`history="true"` — see ScoopAPI._mountEmbeddedBatchHistory).
    Both tables share --dimension-batch-grid-width so they line up; Batch's
@@ -1117,6 +1132,31 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   .in-dock .canvas button.save {
     bottom: 0;
   }
+}
+
+/* full-nostack fills the entire canvas by design (see the canvas-mode
+   comment further down, data-canvas-mode="full-nostack") — the outer
+   gutter the other three modes (half-stack, half-nostack, full-stack) keep
+   is just wasted space for it, so drop .canvas's own padding to 0 whenever
+   the currently-open control is full-nostack. Safe to key off :has() like
+   this because 'nostack' exclusivity (List._enforceCanvasExclusivity())
+   guarantees a full-nostack control is never open alongside anything else
+   in .canvas — it's always the only child when this matches. Higher
+   specificity than the base rules above (an attribute selector inside
+   :has() beats two bare classes) so source order doesn't matter, but kept
+   below them for readability. Must move in lockstep with the two
+   compensation rules below, same reasoning as the narrow-viewport collapse
+   above — both exist only to cancel out this same padding. */
+.in-dock > .canvas:has(> .scoop-grid.toggled[data-canvas-mode="full-nostack"]) {
+  padding: 0;
+}
+
+.in-dock .canvas:has(> .scoop-grid.toggled[data-canvas-mode="full-nostack"]) .gridFilterInput {
+  top: 0;
+}
+
+.in-dock .canvas:has(> .scoop-grid.toggled[data-canvas-mode="full-nostack"]) button.save {
+  bottom: 0;
 }
 
 /* Draggable divider between .canvas and <aside> — see
@@ -2735,7 +2775,7 @@ body > .modal{
 
 .popularView {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(20rem, 26rem);
+  grid-template-columns: 4fr minmax(16rem, 1fr);
   gap: 1rem;
   align-items: stretch;
   margin: 1rem 0;
@@ -2754,12 +2794,100 @@ body > .modal{
   padding: 0.75rem;
 }
 
+/* Fixed 1rem outer gutters and 0.5rem inner gaps around the axis-label/
+   tick-number columns+rows (each sized to its own content via `auto`) —
+   only the plot cell (the SVG, column 6/row 2) is `1fr` in BOTH dimensions,
+   so it's the one thing that actually grows or shrinks as the container
+   resizes; every label and every gap around it stays a constant physical
+   size regardless.
+
+   height is set here only as a fallback for the instant before JS runs —
+   popular-plot.js's _syncChartHeight() immediately overrides it with the
+   real, MEASURED available viewport space (window.innerHeight minus
+   wherever the chart's top edge actually landed on the page, re-measured
+   on resize). A CSS vh-formula can't know how far down the page this
+   control sits, so it was leaving the X axis scrolled off-screen on pages
+   with more chrome above the chart than expected — a real measurement
+   can't be wrong the way a guessed formula can. */
+.popularChart {
+  display: grid;
+  /* Plot track is minmax(0, 1fr), not bare 1fr — a bare 1fr's implicit
+     minimum size is auto (its content's intrinsic size), not 0, so the
+     track refuses to shrink below the SVG's own intrinsic size. The SVG
+     has no explicit width/height attributes or viewBox (only CSS
+     width:100%/height:100% — see popular-plot.js), so its intrinsic
+     replaced-element size falls back to the browser default (300x150),
+     which without a minmax(0, ...) floor can be taller than the space
+     actually available — and popular-plot.js's _syncChartHeight() setting
+     .popularChart's own height in px doesn't help: the row still won't
+     shrink to fit it, so the SVG paints past the bottom of .popularChart
+     instead of resizing with it. minmax(0, 1fr) removes that implicit
+     floor so the track (and the SVG, at height:100% of it) actually
+     tracks the row's real allotted size — which in turn is what lets the
+     ResizeObserver in popular-plot.js's render() see the real size change
+     and redraw the plot content to match (see _drawPlotContent). */
+  grid-template-columns: 1rem auto 0.5rem auto 0.5rem minmax(0, 1fr) 1rem;
+  grid-template-rows: 1rem minmax(0, 1fr) 0.5rem auto 0.5rem auto 1rem;
+  width: 100%;
+  height: 34rem;
+}
+
 .popularSvg {
+  grid-column: 6 / 7;
+  grid-row: 2 / 3;
   display: block;
   width: 100%;
-  height: auto;
-  min-height: 38rem;
+  height: 100%;
+  /* Belt-and-suspenders alongside .popularChart's minmax(0, 1fr) tracks —
+     a grid ITEM also defaults to min-height/min-width:auto independent of
+     its track, so both need the explicit 0 floor for the SVG to actually
+     shrink instead of overflowing its cell. */
+  min-width: 0;
+  min-height: 0;
   overflow: visible;
+}
+
+.popularYLabel {
+  grid-column: 2 / 3;
+  grid-row: 2 / 3;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.popularYTicks {
+  grid-column: 4 / 5;
+  grid-row: 2 / 3;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.popularXTicks {
+  grid-column: 6 / 7;
+  grid-row: 4 / 5;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.popularXLabel {
+  grid-column: 6 / 7;
+  grid-row: 6 / 7;
+  text-align: center;
+}
+
+/* Same translucent-over-page-background tone as the key table's own cells
+   (table.zGRID's background) — scoped to the plot rect only (fills the
+   whole SVG now — margins are .popularChart's grid tracks, not part of
+   this SVG at all anymore), not .popularPlotShell's own more-transparent
+   background that the surrounding label cells still sit on. */
+.popularPlotArea {
+  fill: var(--overlay-white);
 }
 
 .popularGridLines line {
@@ -2772,32 +2900,65 @@ body > .modal{
   stroke-width: 1.5;
 }
 
+/* .popularTick/.popularAxisLabel are plain HTML now (spans/divs outside
+   the SVG — see .popularYTicks/.popularXTicks/.popularYLabel/.popularXLabel
+   above), not SVG <text>, so their own size is set by ordinary CSS
+   font-size (fixed, never scaled by the plot's viewBox) rather than
+   needing a CSS-length workaround the way circle radii do. color replaces
+   the old SVG `fill`. */
 .popularTick,
 .popularAxisLabel {
-  fill: var(--color-text-base);
+  color: var(--color-text-base);
   font-size: 0.78rem;
+  line-height: 1.2;
 }
 
 .popularAxisLabel {
-  fill: var(--color-green-dark);
+  color: var(--color-green-dark);
   font-weight: 700;
 }
 
 .popularPoint {
-  fill: var(--color-status-info);
-  stroke: white;
   stroke-width: 1.5;
-  cursor: pointer;
-  opacity: 0.82;
   transition: opacity 120ms ease, r 120ms ease, stroke-width 120ms ease;
 }
 
-.popularPoint.trend-rising {
+/* Decorative halo (trend-magnitude size, dairy/stock-level hue — see
+   _stockFillColor/_strokeColor in popular-plot.js, set as SVG presentation
+   attributes rather than here, since a stylesheet fill/stroke rule would
+   win the cascade over those). Never the hover/click target — the center
+   dot below is. */
+.popularPointHalo {
+  pointer-events: none;
+}
+
+/* Center dot — the original point marker, restored: fixed small size
+   (_pointRadius), fixed trend-based coloring, and the only interactive
+   target (cursor/tabindex/hover/focus) now that the halo is decorative. */
+.popularPointCenter {
+  fill: var(--color-status-info);
+  stroke: white;
+  cursor: pointer;
+}
+
+.popularPointCenter.trend-rising {
   fill: var(--color-green-dark);
 }
 
-.popularPoint.trend-falling {
+.popularPointCenter.trend-falling {
   fill: var(--color-trend-falling);
+}
+
+/* Hover/active brightens the halo back to full saturation of its own hue
+   (the resting rgb(0,204,0)/rgb(204,204,0) from _strokeColor, darkened for
+   legibility) instead of the generic pale-yellow highlight below — three
+   classes beats that rule's two regardless of source order. */
+.popularPointHalo.dairy.is-active {
+  stroke: rgba(0, 255, 0, 1);
+}
+
+.popularPointHalo.non-dairy.is-active {
+  stroke: rgba(255, 255, 0, 1);
 }
 
 .popularPoint.is-active,
@@ -2825,6 +2986,11 @@ body > .modal{
 
 .popularActiveLabel .popularLabelMetric {
   fill: var(--color-text-base);
+}
+
+.popularActiveLabel .popularLabelDetail {
+  fill: var(--color-text-base);
+  font-size: 0.68rem;
 }
 
 .popularKey {
