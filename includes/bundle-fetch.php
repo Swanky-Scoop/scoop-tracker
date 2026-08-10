@@ -430,6 +430,110 @@ function scoop_bulk_tub_relationships( string $tub_where_sql ): array {
   return $out;
 }
 
+/**
+ * inventory_change.tubs/.flavors — same N+1 pattern as tub's six fields
+ * above, on a different pod. Both are multi-value ('ids' data_type,
+ * pick_format_type=multi, pick_limit=0 — confirmed via each field's own
+ * Pods config, postmeta on the _pods_field posts) and both are configured
+ * pick_post_status=publish, same as every tub relationship field verified
+ * so far — an EXPLICIT per-field Pods setting, not a hidden framework
+ * default (worth restating: it would be a mistake to assume this holds for
+ * some OTHER field without checking that field's own config first).
+ *
+ * This matters a lot more here than it did for tub: an inventory_change
+ * row logs everything touched by one action (e.g. a whole batch's tubs at
+ * once — one real row carried 23 related tubs), and since those tubs
+ * accumulate `draft` status over time (this shop's practice of
+ * unpublishing tubs once Emptied), a field that started with 23 related
+ * tubs can resolve down to as few as 2 by the time it's read — DateActivity
+ * displaying a shrinking, inaccurate picture of what an inventory_change
+ * event actually touched, silently, well after the fact.
+ *
+ * Verified equivalent to $pod->field() across all 1,546 real local
+ * inventory_change rows (3,092 (row, field) checks) — exact SET match AND
+ * exact ORDER match (weight-ordered) on every single one, 0 mismatches
+ * either way — see the CabinetWorkflow QA conversation.
+ *
+ * Unlike tub, inventory_change's own WHERE clauses (scoop_fetch_entities,
+ * $key === 'inventory_change') only ever reference wp_posts columns
+ * (t.post_date, t.post_status) — no bare pod-storage-table column
+ * references — so the subquery below needs no extra JOIN the way tub's
+ * did.
+ */
+function scoop_inventory_change_relationship_field_ids(): array {
+  static $cache = null;
+  if ( $cache !== null ) return $cache;
+
+  $transient_key = 'scoop_ic_rel_field_ids';
+  $cached = get_transient( $transient_key );
+  if ( is_array( $cached ) && count( $cached ) === 2 ) {
+    $cache = $cached;
+    return $cache;
+  }
+
+  global $wpdb;
+  $slugs = [ 'tubs', 'flavors' ];
+
+  $pod_post_id = $wpdb->get_var( $wpdb->prepare(
+    "SELECT ID FROM {$wpdb->posts} WHERE post_type = '_pods_pod' AND post_name = %s LIMIT 1",
+    'inventory_change'
+  ) );
+
+  $out = [];
+  if ( $pod_post_id ) {
+    $placeholders = implode( ',', array_fill( 0, count( $slugs ), '%s' ) );
+    $rows = $wpdb->get_results( $wpdb->prepare(
+      "SELECT ID, post_name FROM {$wpdb->posts} WHERE post_type = '_pods_field' AND post_parent = %d AND post_name IN ({$placeholders})",
+      array_merge( [ $pod_post_id ], $slugs )
+    ) );
+    foreach ( $rows as $r ) {
+      $out[ $r->post_name ] = (int) $r->ID;
+    }
+  }
+
+  $cache = $out;
+  set_transient( $transient_key, $out, DAY_IN_SECONDS );
+  return $out;
+}
+
+/**
+ * Returns [ inventory_change_id => [ 'tubs' => [ids...], 'flavors' => [ids...] ], ... ]
+ * — full arrays in weight order (unlike tub's single-value bypass, these
+ * are genuinely multi-value; 'first match wins' would be wrong here).
+ * $ic_where_sql: the exact same WHERE scoop_fetch_entities builds for
+ * 'inventory_change', so this can never select a different row set than
+ * the row loop actually iterates.
+ */
+function scoop_bulk_inventory_change_relationships( string $ic_where_sql ): array {
+  $field_ids = scoop_inventory_change_relationship_field_ids();
+  if ( empty( $field_ids ) ) return [];
+
+  global $wpdb;
+  $id_to_slug    = array_flip( $field_ids );
+  $field_id_list = implode( ',', array_map( 'intval', array_values( $field_ids ) ) );
+
+  $rows = $wpdb->get_results(
+    "SELECT r.item_id, r.field_id, r.related_item_id
+     FROM {$wpdb->prefix}podsrel r
+     INNER JOIN {$wpdb->posts} p ON p.ID = r.related_item_id
+     WHERE r.field_id IN ({$field_id_list})
+       AND p.post_status = 'publish'
+       AND r.item_id IN (
+         SELECT t.ID FROM {$wpdb->posts} t WHERE t.post_type = 'inventory_change' AND ({$ic_where_sql})
+       )
+     ORDER BY r.item_id, r.field_id, r.weight, r.id"
+  );
+
+  $out = [];
+  foreach ( $rows as $r ) {
+    $slug = $id_to_slug[ (int) $r->field_id ] ?? null;
+    if ( ! $slug ) continue;
+    $out[ (int) $r->item_id ][ $slug ][] = (int) $r->related_item_id;
+  }
+
+  return $out;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Core fetch
 // ─────────────────────────────────────────────────────────────────────────────
@@ -504,6 +608,12 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     foreach ( [ 'batch', 'flavor', 'location', 'use', 'slot', 'closeout' ] as $rel_field ) {
       unset( $needs_field[ $rel_field ] );
     }
+  }
+
+  // inventory_change.tubs/.flavors — same bulk-read swap, see
+  // scoop_bulk_inventory_change_relationships()'s header comment.
+  if ( $key === 'inventory_change' ) {
+    unset( $needs_field['tubs'], $needs_field['flavors'] );
   }
 
   $loc_id = ! empty( $ctx['location'] ) ? (int) $ctx['location'] : 0;
@@ -641,6 +751,15 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     $t_rel_bulk_ms = ( microtime( true ) - $t0 ) * 1000;
   }
 
+  // Same idea for inventory_change.tubs/.flavors — see
+  // scoop_bulk_inventory_change_relationships()'s header comment.
+  $ic_relationships = [];
+  if ( $key === 'inventory_change' ) {
+    $t0 = microtime( true );
+    $ic_relationships = scoop_bulk_inventory_change_relationships( $find_where );
+    $t_rel_bulk_ms = ( microtime( true ) - $t0 ) * 1000;
+  }
+
   $pod = pods( $pod_name );
   if ( ! $pod ) return [];
 
@@ -687,6 +806,17 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
       foreach ( [ 'batch', 'flavor', 'location', 'use', 'slot', 'closeout' ] as $rel_field ) {
         if ( ! array_key_exists( $rel_field, $spec_fields ) ) continue;
         $row[ $rel_field ] = $tub_relationships[ $id ][ $rel_field ] ?? 0;
+      }
+    }
+
+    // inventory_change.tubs/.flavors, from the bulk podsrel read above —
+    // already plain arrays of resolved post IDs in weight order, matching
+    // scoop_relation_ids_out()'s own output shape. See
+    // scoop_bulk_inventory_change_relationships().
+    if ( $key === 'inventory_change' ) {
+      foreach ( [ 'tubs', 'flavors' ] as $rel_field ) {
+        if ( ! array_key_exists( $rel_field, $spec_fields ) ) continue;
+        $row[ $rel_field ] = $ic_relationships[ $id ][ $rel_field ] ?? [];
       }
     }
 

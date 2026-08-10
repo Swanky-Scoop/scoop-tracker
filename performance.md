@@ -19,7 +19,7 @@ Each finding has:
 
 ### 11. Bundle fetch N+1 via `$pod->field()` dominates cold-cache request time
 
-**Status (2026-07-30):** *Diagnosed with real numbers, not yet fixed.* Permanent timing instrumentation added to `scoop_fetch_entities()`/`scoop_bundle_get()` (gated behind `SCOOP_DEBUG_LOG`, zero cost when off) — reusable to measure any fix attempt.
+**Status (2026-08-10):** *Fixed for `tub` (committed) and `inventory_change` (implemented, verified locally, not yet committed) via a `wp_podsrel` bulk-read bypass — see the new section below for the full equivalence verification and real before/after numbers.* Permanent timing instrumentation added to `scoop_fetch_entities()`/`scoop_bundle_get()` (gated behind `SCOOP_DEBUG_LOG`, zero cost when off) — reusable to measure any fix attempt.
 
 **Location:** [scoop_fetch_entities](includes/bundle-fetch.php#L311)
 
@@ -44,6 +44,30 @@ The SQL `find()` itself is trivial everywhere (86.6ms for 333 rows). ~83% of tot
 Root cause, confirmed via direct `wp_podsrel`/`wp_postmeta` inspection on tub 11754: `wp_podsrel` reliably has all 4 relationship rows (`batch`, `flavor`, `location`, `use`). `wp_postmeta` has exactly **one** mirrored row — `meta_key = '_pods_use'` (note the `_pods_` prefix — not a bare `meta_key = 'flavor'` as previously assumed) — and nothing at all for `batch`/`flavor`/`location`/`slot`/`closeout`. So the "auto-mirror into postmeta" behavior is real for at most one of `tub`'s six relationship fields, not all six, and the key naming isn't even the plain field name. Whatever produced the original 5-row confirmation didn't catch this, most likely by chance (5 rows all happened to only be checked on a field/case that matched, or the comparison logic had the same wrong assumption on both sides).
 
 **Conclusion: this bypass is unsafe as conceived and must not be implemented as a plain `get_post_meta()` swap.** It would silently blank out `batch`/`flavor`/`location`/`slot`/`closeout` on the large majority of tub rows. `wp_podsrel` itself (not `wp_postmeta`) does reliably hold the data — a bulk single-query read from `wp_podsrel` (`WHERE item_id IN (...) AND field_id IN (...)`, mapping `field_id` back to field name once) is a theoretically safer bypass target, but it wasn't attempted here and would need its own from-scratch equivalence pass (field_id stability across environments, multi-value fields, etc.) before being trusted. The stale "confirmed identical" memory this was based on has been corrected.
+
+**`wp_podsrel` bulk-read bypass — implemented 2026-08-10, verified via full equivalence passes (this time genuinely full, not a small sample).** Two new functions in `bundle-fetch.php`: `scoop_bulk_tub_relationships()` (tub's `batch`/`flavor`/`location`/`use`/`slot`/`closeout`, all single-value) and `scoop_bulk_inventory_change_relationships()` (`inventory_change`'s `tubs`/`flavors`, both multi-value). Both replace their entity's per-row `$pod->field()` calls with one bulk `wp_podsrel` query per entity fetch. Field IDs (`wp_podsrel.field_id`) are resolved dynamically per environment via `scoop_tub_relationship_field_ids()`/`scoop_inventory_change_relationship_field_ids()` (querying `_pods_field` posts, cached in a transient) — **never hardcoded**, since they're auto-increment IDs specific to each database and will differ between local/TEST/OPS.
+
+**Critical correctness gap found and fixed before trusting this:** `$pod->field()` silently excludes relationship targets whose own `post_status` isn't `publish` — confirmed as an *explicit* per-field Pods setting (`pick_post_status = publish`, found in each field's own postmeta), not a hidden framework default. This shop's practice of unpublishing (`draft`) tubs once `Emptied` means **86% of all `tub` posts locally are `draft`** — so this isn't an edge case, it's the majority state. The bulk read now joins `wp_posts` and requires `post_status = 'publish'` on the related item, exactly reproducing `$pod->field()`'s existing behavior (not a new rule). Without that join: 18 real mismatches on `tub`'s fields (all `draft`-status batch/closeout targets), and item 13028 on `inventory_change.tubs` alone dropped from 23 raw `podsrel` rows to 2 once the same filter was verified.
+
+**Equivalence verification (full, not sampled):**
+- `tub`'s six fields: 14,562 (row, field) checks across all 2,427 real local tub rows — 0 mismatches, once the `publish` join was added.
+- `inventory_change`'s two fields: 3,092 (row, field) checks across all 1,546 real local rows — 0 set mismatches AND 0 order mismatches (weight-ordered bulk read exactly matches `$pod->field()`'s array order too).
+
+**Real before/after, `DateActivity` bundle, 30-day activity window (461 tubs, 207 inventory_change rows):**
+
+```
+                    BEFORE (tub fix only)              AFTER (both fixes)
+tub:                needs_field=24.8ms  TOTAL=840.2ms   needs_field=31.9ms  TOTAL=962.1ms
+inventory_change:    needs_field=1168.7ms TOTAL=1481.4ms  needs_field=0.0ms   TOTAL=509.4ms
+slot:               needs_field=243.9ms TOTAL=315.9ms    needs_field=464.0ms TOTAL=568.4ms  (unrelated variance, not yet optimized)
+                                        GRAND=2692.4ms                        GRAND=2130.4ms
+```
+
+(For reference, before *either* fix `tub`'s own `needs_field` alone measured 2266.2ms on a smaller 333-row sample — see the original numbers above.)
+
+**Not yet done:** `slot`'s own `needs_field` (its `cabinet` relationship) is now visibly the largest remaining per-entity cost in a `DateActivity` bundle. Same N+1 shape, different pod — would need its own from-scratch equivalence pass before bypassing, same as both fixes above. Not attempted yet.
+
+**Separate, non-performance finding surfaced by this investigation:** the "unpublish tubs once Emptied" habit is worth reconsidering independent of this fix — `state = 'Emptied'` already achieves "out of the way" via every existing app-level filter (`NON_PROMOTABLE_STATES`, `DISPLAY_EXCLUDED_STATES`, etc.), and unpublishing on top of that silently degrades relationship resolution anywhere a field points at that tub (confirmed concretely on `inventory_change.tubs`). This bypass reproduces that behavior faithfully rather than fixing it — republishing affected tubs is a separate, deliberately deferred task.
 
 ### 12. `flavor.tubs`/`current_slots` resolved but unused by the grid causing the slow save
 
@@ -246,7 +270,7 @@ The 12 Dad Bod tubs from batch 8368 (IDs 8369-8380) have been backfilled via `UP
 
 1. **#12** — *Done, verified locally.* Stop resolving `flavor.tubs`/`current_slots` unless `InstockFlavor` is requesting them. Zero Pods-API risk. Measured impact was more modest than first estimated: ~656ms off flavor's ~1928ms `needs_field` cost (~11% off the whole `FlavorTub` bundle's ~6s total), not the majority share originally assumed — see #12's corrected "Why it's slow."
 2. **#13** — Still the bigger remaining lever for `flavor`: give it (and other slow-changing entities) their own cache-invalidation scope, separate from `tub`, so its *whole* fetch — including the `menu_board`/`photo`/`allergens`/`web_id` fields #12 didn't touch — can be served warm on nearly every `FlavorTub`-triggered request instead of just the two fields #12 removed. Also zero Pods-API risk. Not yet sized with real numbers; do that before estimating further.
-3. `tub`'s own remaining `$pod->field()` cost: the `get_post_meta()` bypass was investigated and disqualified (see #11's 2026-08-07 update) — `wp_postmeta` doesn't reliably mirror `tub`'s relationship fields. A `wp_podsrel`-direct bulk read is the next candidate if this cost needs attacking again, but it needs its own equivalence pass first.
+3. `tub`'s own remaining `$pod->field()` cost: *Done (2026-08-10).* The `get_post_meta()` bypass was investigated and disqualified (see #11's 2026-08-07 update); a `wp_podsrel`-direct bulk read was implemented instead, with a full equivalence pass first (not a sample) — see #11's 2026-08-10 update for the verification and real before/after numbers. Also extended to `inventory_change.tubs`/`.flavors` (same pattern, multi-value) once that turned out to be the next-dominant cost on `DateActivity` specifically. `slot`'s own `cabinet` relationship is now the largest remaining per-entity `needs_field` cost seen — same shape, not yet attempted, would need its own equivalence pass first.
 
 Tackle in this sequence for the rest — each step makes the next easier to measure:
 
