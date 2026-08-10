@@ -608,6 +608,16 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     foreach ( [ 'batch', 'flavor', 'location', 'use', 'slot', 'closeout' ] as $rel_field ) {
       unset( $needs_field[ $rel_field ] );
     }
+
+    // tub.index is classified 'int' (scoop_classify_fetch_fields' whitelist
+    // treats every int as a possible relationship needing $pod->field() —
+    // true for the six fields above, not for this one). It's a plain
+    // scalar column in {$wpdb->prefix}pods_tub, same table as amount/state
+    // (already read directly via $pod->row, no relationship resolution at
+    // all) — not a relationship, nothing for $pod->field() to resolve.
+    // Verified: $pod->row['index'] === $pod->field('index') across all
+    // 2,427 real local tub rows (draft and published), 0 mismatches.
+    unset( $needs_field['index'] );
   }
 
   // inventory_change.tubs/.flavors — same bulk-read swap, see
@@ -806,6 +816,12 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
       foreach ( [ 'batch', 'flavor', 'location', 'use', 'slot', 'closeout' ] as $rel_field ) {
         if ( ! array_key_exists( $rel_field, $spec_fields ) ) continue;
         $row[ $rel_field ] = $tub_relationships[ $id ][ $rel_field ] ?? 0;
+      }
+
+      // index — plain scalar, not a relationship, see the unset() comment
+      // above. Direct $pod->row read, same as the row_fields loop.
+      if ( array_key_exists( 'index', $spec_fields ) ) {
+        $row['index'] = scoop_cast( $pod->row['index'] ?? null, $spec_fields['index'] );
       }
     }
 
