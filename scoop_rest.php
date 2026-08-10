@@ -51,6 +51,7 @@ scoop_require('includes/_routes.php');
 scoop_require('includes/analytics.php');
 scoop_require('includes/audit.php');
 scoop_require('includes/audit-ui.php');
+scoop_require('includes/republish-tubs-ui.php');
 /**
  * UI glue (shortcode/admin/enqueue) last
  */

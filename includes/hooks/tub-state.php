@@ -230,13 +230,6 @@ function scoop_enforce_tub_rules( $pieces, $is_new_item, $id = 0 ) {
         $pieces['fields']['emptied_at']['value'] = '0000-00-00 00:00:00';
         $activate('emptied_at');
         $new_emptied_at = '0000-00-00 00:00:00';
-
-        // Restore the post_status demotion from when it emptied (see the
-        // 'Emptied' auto-set-timestamps block below) — an un-emptied tub
-        // is active again and belongs back in 'publish', symmetric with
-        // how it was demoted to 'draft' on the way in.
-        $pieces['object_fields']['post_status']['value'] = 'publish';
-        $activate('post_status');
       }
 
     } elseif ($old_state === 'Opened' && !in_array($new_state, ['Opened', 'Emptied'], true)) {
@@ -258,8 +251,15 @@ function scoop_enforce_tub_rules( $pieces, $is_new_item, $id = 0 ) {
   if ($new_state === 'Emptied' && scoop_nodate($old_emptied_at) && scoop_nodate($new_emptied_at)) {
     $pieces['fields']['emptied_at']['value'] = $now;
     $activate('emptied_at');
-    $pieces['object_fields']['post_status']['value'] = 'draft';
-    $activate('post_status');
+    // Was demoted to post_status='draft' here — removed (see
+    // includes/republish-tubs-ui.php's header comment and the
+    // CabinetWorkflow QA conversation): most relationship fields across
+    // this plugin's Pods schema are pick_post_status=publish, so a draft
+    // tub silently drops out of any OTHER record's relationship to it
+    // (confirmed concretely on inventory_change.tubs). state='Emptied'
+    // already keeps a tub out of the way everywhere this app looks; the
+    // extra draft demotion wasn't needed and was actively breaking data
+    // elsewhere.
   }
 
   // A tub leaving service is unlinked from whatever slot claimed it —

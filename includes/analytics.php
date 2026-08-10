@@ -397,8 +397,10 @@ function scoop_analytics_aggregate_tubs(
   // location is a Pods relationship — never pushed into SQL here — resolved
   // in PHP below.
   //
-  // NB: emptied tubs get post_status='draft' via hooks/tub-state.php:202 so
-  // the only statuses we need to exclude are 'trash' and 'auto-draft'.
+  // NB: emptied tubs stay post_status='publish' (the old auto-demote-to-
+  // 'draft' behavior was removed — see includes/republish-tubs-ui.php's
+  // header comment) — the only statuses to exclude are 'trash' and
+  // 'auto-draft', same as everywhere else this pod is queried.
   $where = [
     "t.post_status NOT IN ('trash', 'auto-draft')",
     "state = 'Emptied'",
