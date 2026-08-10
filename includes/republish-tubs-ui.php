@@ -59,41 +59,49 @@ function scoop_render_republish_tubs_page(): void {
     }
 
     global $wpdb;
-    $draft_ids = $wpdb->get_col(
-      "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'tub' AND post_status = 'draft'"
+
+    // A single bulk SQL UPDATE, not a per-row wp_update_post() loop —
+    // switched 2026-08-10 after a real run on ~2,090 rows timed out at the
+    // web-server level (Apache's mod_fcgid gave up mid-request, "read
+    // timeout from pipe") even though the loop itself completed
+    // successfully server-side (confirmed after the fact: 0 drafts
+    // remained). post_status is the ONLY column this write ever touches —
+    // verified against wp_update_post() on a single real tub beforehand
+    // (state/amount/emptied_at all confirmed unchanged, then reverted) —
+    // so a raw UPDATE is exactly equivalent, just without per-row WP
+    // object-lifecycle overhead. One query regardless of row count, no
+    // timeout risk at any scale. Fires no hooks at all (bypasses
+    // wp_update_post()/the Pods API entirely) — appropriate here, since
+    // this is a bulk infrastructure correction, not a real per-tub edit;
+    // scoop_enforce_tub_rules/scoop_bump_flavor_modified_date_on_tub_save
+    // are bound to pods_api_pre/post_save_pod_item_tub either way, so
+    // wouldn't have fired regardless.
+    $updated = $wpdb->query(
+      "UPDATE {$wpdb->posts} SET post_status = 'publish' WHERE post_type = 'tub' AND post_status = 'draft'"
     );
 
-    $updated = 0;
-    $failed  = [];
+    if ( $updated === false ) {
+      $result = [ 'updated' => 0, 'error' => $wpdb->last_error ];
+    } else {
+      if ( $updated > 0 ) {
+        // A raw SQL write bypasses wp_update_post()'s clean_post_cache()
+        // call, so WordPress's post object cache can still hold the old
+        // post_status for these IDs — confirmed directly: get_post_status()
+        // on a just-updated ID returned stale 'draft' later in the same
+        // request. wp_cache_flush() is blunt (clears the whole object
+        // cache, not just these posts) but this runs rarely, manually, and
+        // correctness matters more than the cost here. A no-op cost-wise
+        // under the default non-persistent object cache (fresh per
+        // request anyway) — this only matters if a persistent cache
+        // backend (Redis/Memcached) is ever added.
+        wp_cache_flush();
 
-    // Bulk write — suppress the per-post cache-version bump (same
-    // $GLOBALS['scoop_suppress_cache_bust'] pattern batch-tub.php's
-    // tub-creation loop already established) and fire it once at the end
-    // instead of once per tub. wp_update_post(), not a Pods-API save, so
-    // this doesn't retrigger scoop_enforce_tub_rules /
-    // scoop_bump_flavor_modified_date_on_tub_save — both bound to
-    // pods_api_pre/post_save_pod_item_tub, not save_post_tub — appropriate
-    // here since this write only ever touches post_status, nothing either
-    // of those hooks cares about.
-    $GLOBALS['scoop_suppress_cache_bust'] = true;
-    try {
-      foreach ( $draft_ids as $id ) {
-        $r = wp_update_post( [ 'ID' => (int) $id, 'post_status' => 'publish' ], true );
-        if ( is_wp_error( $r ) ) {
-          $failed[] = (int) $id;
-        } else {
-          $updated++;
+        if ( function_exists( 'scoop_cache_bust' ) ) {
+          scoop_cache_bust();
         }
       }
-    } finally {
-      unset( $GLOBALS['scoop_suppress_cache_bust'] );
+      $result = [ 'updated' => (int) $updated ];
     }
-
-    if ( $updated > 0 && function_exists( 'scoop_cache_bust' ) ) {
-      scoop_cache_bust();
-    }
-
-    $result = [ 'updated' => $updated, 'failed' => $failed, 'attempted' => count( $draft_ids ) ];
   }
 
   $draft_count = scoop_republish_tubs_draft_count();
@@ -114,13 +122,12 @@ function scoop_render_republish_tubs_page(): void {
     </p>
 
     <?php if ( $result !== null ): ?>
-      <div class="notice notice-<?php echo $result['failed'] ? 'warning' : 'success'; ?>">
+      <div class="notice notice-<?php echo isset( $result['error'] ) ? 'error' : 'success'; ?>">
         <p>
-          Republished <strong><?php echo (int) $result['updated']; ?></strong> of
-          <strong><?php echo (int) $result['attempted']; ?></strong> draft tubs.
-          <?php if ( $result['failed'] ): ?>
-            <?php echo count( $result['failed'] ); ?> failed:
-            <?php echo esc_html( implode( ', ', $result['failed'] ) ); ?>
+          <?php if ( isset( $result['error'] ) ): ?>
+            Republish failed: <?php echo esc_html( $result['error'] ); ?>
+          <?php else: ?>
+            Republished <strong><?php echo (int) $result['updated']; ?></strong> draft tub<?php echo $result['updated'] === 1 ? '' : 's'; ?>.
           <?php endif; ?>
         </p>
       </div>
