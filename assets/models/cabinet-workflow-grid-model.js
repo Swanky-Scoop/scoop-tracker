@@ -26,6 +26,19 @@ const TEMPERING_STATE = 'Tempering';
 // state is.
 const NON_PROMOTABLE_STATES = new Set(['Emptied', OPEN_TUB_STATE, '!Lost']);
 
+// A tub's `use` relationship field being unset (0) is treated the same as
+// an explicit Front-of-House id everywhere this model looks for FOH stock
+// — every tub is expected to end up with SOME use assigned, and the
+// business default for an unset one is Front-of-House (confirmed against a
+// real tub found with use=0 despite being open, linked, and shown as
+// Front-of-House in WP admin). Matches the precedent already established
+// in flavor-tub-grid-model.js's _isFrontOfHouseUse, which treats a falsy
+// use the same way for its own "non-front" filter.
+function isFrontOfHouseUse(useId) {
+  const id = Number(useId ?? 0);
+  return !id || id === FRONT_OF_HOUSE_USE_ID;
+}
+
 // pickableFlavors' exclusions — deliberately narrower than
 // NON_PROMOTABLE_STATES: an Opened tub DOES make its flavor "available" to
 // pick (see CabinetWorkflow QA conversation), it's only excluded from
@@ -133,15 +146,20 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     row.tubCountTotal = this.pickableTubCount(flavorId, null);
     row.canAddNext    = this.promotablePool(flavorId).length > 0;
 
-    // slot.tub (renamed from slot.tubs) is a bidirectional Pods sister
-    // field with tub.slot (see change-tub.md) — always read here, never
-    // written from the slot side; Pods keeps it in sync from whatever
-    // wrote tub.slot. 'Opened' tubs with no slot link are a valid,
-    // separate state (other GUIs can open a tub unrelated to any cabinet
-    // slot) — irrelevant here, we only care about *this* slot's own link.
-    row.currentTubId = Number(slot.tub ?? 0) || 0;
+    // Deliberately NOT read from slot.tub. slot.tub/tub.slot are meant to
+    // be a bidirectional Pods sister field (see change-tub.md), but that
+    // pairing has to be joined by hand in Pods admin on every environment
+    // (never propagated by Schema Sync — see project memory on the
+    // sister_id gap) and was found unjoined here: a genuinely-linked tub
+    // (tub.slot correct) still read slot.tub === 0. tub.slot is the side
+    // every write actually goes through (ConfirmSwapModal, Confirm
+    // Cabinet — slot.tub is never written from the slot side), so it's
+    // searched directly here instead, sidestepping the sister-field
+    // dependency entirely rather than just papering over its current gap.
+    const linkedTub = (Array.isArray(this.domain.tub) ? this.domain.tub : [])
+      .find(t => Number(t.slot ?? 0) === Number(slot.id)) ?? null;
+    row.currentTubId = linkedTub ? Number(linkedTub.id) : 0;
 
-    const linkedTub = row.currentTubId ? (this._tubsById.get(row.currentTubId) ?? null) : null;
     const linkedIsValid = !!(linkedTub && linkedTub.state === OPEN_TUB_STATE && Number(linkedTub.flavor) === flavorId);
     row.openTub = linkedIsValid ? linkedTub : null;
 
@@ -192,7 +210,7 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     const tubs = Array.isArray(this.domain.tub) ? this.domain.tub : [];
     return tubs.filter(t =>
       Number(t.flavor) === Number(flavorId) &&
-      Number(t.use) === FRONT_OF_HOUSE_USE_ID &&
+      isFrontOfHouseUse(t.use) &&
       t.state === OPEN_TUB_STATE &&
       Number(t.location) === Number(locationId) &&
       (Number(t.slot ?? 0) === 0 || Number(t.slot) === Number(thisSlotId)) &&
@@ -219,7 +237,7 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     const tubs = Array.isArray(this.domain.tub) ? this.domain.tub : [];
     return tubs.filter(t =>
       Number(t.flavor) === flavorId &&
-      Number(t.use) === FRONT_OF_HOUSE_USE_ID &&
+      isFrontOfHouseUse(t.use) &&
       !excludeStates.has(t.state) &&
       (locationId == null || Number(t.location) === Number(locationId))
     );
@@ -318,7 +336,7 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     const tubs = Array.isArray(this.domain.tub) ? this.domain.tub : [];
     return tubs.filter(t =>
       Number(t.flavor) === Number(flavorId) &&
-      Number(t.use) === FRONT_OF_HOUSE_USE_ID &&
+      isFrontOfHouseUse(t.use) &&
       !NON_PROMOTABLE_STATES.has(t.state) &&
       (!excludeIds || !excludeIds.has(Number(t.id)))
     );
@@ -340,7 +358,7 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     const tubs = Array.isArray(this.domain.tub) ? this.domain.tub : [];
     return tubs.filter(t =>
       Number(t.flavor) === Number(flavorId) &&
-      Number(t.use) === FRONT_OF_HOUSE_USE_ID &&
+      isFrontOfHouseUse(t.use) &&
       !NON_PICKABLE_STATES.has(t.state) &&
       (locationId == null || Number(t.location) === Number(locationId))
     ).length;
@@ -375,7 +393,7 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     const excludeTubId = Number(row?.currentTubId ?? 0) || 0;
     const counts = new Map();
     for (const t of tubs) {
-      if (Number(t.use) !== FRONT_OF_HOUSE_USE_ID) continue;
+      if (!isFrontOfHouseUse(t.use)) continue;
       if (NON_PICKABLE_STATES.has(t.state)) continue;
       if (excludeTubId && Number(t.id) === excludeTubId) continue;
       const flavorId = Number(t.flavor);
@@ -494,7 +512,7 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     const tubs = Array.isArray(this.domain.tub) ? this.domain.tub : [];
     return tubs.filter(t =>
       Number(t.flavor) === Number(flavorId) &&
-      Number(t.use) === FRONT_OF_HOUSE_USE_ID &&
+      isFrontOfHouseUse(t.use) &&
       t.state === OPEN_TUB_STATE &&
       Number(t.slot ?? 0) === 0 &&
       Number(t.id) !== Number(excludeTubId || 0)

@@ -337,7 +337,7 @@ export default class CabinetWorkflowTile extends Tile {
       }
 
       if (Object.keys(tubCells).length) {
-        const r = await this.api.postJson({ cells: tubCells }, 'FlavorTub');
+        const r = await this.api.postJson({ cells: tubCells, source: 'workflow' }, 'FlavorTub');
         if (!r.ok || !r.data?.ok) {
           alert(`Confirm Cabinet: saving failed.\n${r?.data?.error ?? `HTTP ${r?.status}`}`);
           return;
@@ -345,7 +345,7 @@ export default class CabinetWorkflowTile extends Tile {
       }
 
       if (Object.keys(slotCells).length) {
-        const rSlots = await this.api.postJson({ cells: slotCells }, 'Cabinet');
+        const rSlots = await this.api.postJson({ cells: slotCells, source: 'workflow' }, 'Cabinet');
         if (!rSlots.ok || !rSlots.data?.ok) {
           alert(`Confirm Cabinet: tubs updated, but recording slot status failed.\n${rSlots?.data?.error ?? `HTTP ${rSlots?.status}`}`);
           return;

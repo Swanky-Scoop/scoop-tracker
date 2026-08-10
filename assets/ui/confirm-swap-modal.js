@@ -282,7 +282,7 @@ export default class ConfirmSwapModal extends El {
   // getRow() re-fetches the current one for the reopen (row itself is
   // still a safe fallback — same slotId either way).
   async _pickScheduled(row, field, flavorId, resumeFlavorId) {
-    const rSlot = await this.api.postJson({ cells: { [row.slotId]: { [field]: flavorId } } }, 'Cabinet');
+    const rSlot = await this.api.postJson({ cells: { [row.slotId]: { [field]: flavorId } }, source: 'workflow' }, 'Cabinet');
     if (!rSlot.ok || !rSlot.data?.ok) {
       alert(`Scheduling the flavor failed.\n${rSlot?.data?.error ?? `HTTP ${rSlot?.status}`}`);
       return;
@@ -320,14 +320,14 @@ export default class ConfirmSwapModal extends El {
       tubCells[plan.outgoingTub.id] = emptying ? { state: 'Emptied', slot: 0 } : { slot: 0 };
     }
 
-    const rTubs = await this.api.postJson({ cells: tubCells }, 'FlavorTub');
+    const rTubs = await this.api.postJson({ cells: tubCells, source: 'workflow' }, 'FlavorTub');
     if (!rTubs.ok || !rTubs.data?.ok) {
       alert(`Tub swap failed.\n${rTubs?.data?.error ?? `HTTP ${rTubs?.status}`}`);
       return;
     }
 
     const rSlot = await this.api.postJson(
-      { cells: { [row.slotId]: { current_flavor: this._selectedFlavorId } } },
+      { cells: { [row.slotId]: { current_flavor: this._selectedFlavorId } }, source: 'workflow' },
       'Cabinet',
     );
     if (!rSlot.ok || !rSlot.data?.ok) {
@@ -402,7 +402,7 @@ export default class ConfirmSwapModal extends El {
       // slot: 0 clears the bidirectional link from the tub side — slot.tub
       // is never written directly (see change-tub.md).
       const cells = outgoingTub.state === 'Opened' ? { state: 'Emptied', slot: 0 } : { slot: 0 };
-      const rTub = await this.api.postJson({ cells: { [outgoingTub.id]: cells } }, 'FlavorTub');
+      const rTub = await this.api.postJson({ cells: { [outgoingTub.id]: cells }, source: 'workflow' }, 'FlavorTub');
       if (!rTub.ok || !rTub.data?.ok) {
         alert(`Emptying the tub failed.\n${rTub?.data?.error ?? `HTTP ${rTub?.status}`}`);
         return;
@@ -418,7 +418,13 @@ export default class ConfirmSwapModal extends El {
       // of this slot's plan entirely, nothing forced in.
     }
 
-    const rSlot = await this.api.postJson({ cells: { [row.slotId]: slotCells } }, 'Cabinet');
+    // { cells: { [row.slotId]: slotCells } } — not the bare
+    // { cells: slotCells } this line previously had (a real, pre-existing
+    // bug found while adding the source hint below: scoop_handle_cells_post
+    // expects `cells` keyed by post ID, so the unwrapped shape meant this
+    // write silently touched nothing every time "leave slot empty" ran —
+    // current_flavor never actually cleared).
+    const rSlot = await this.api.postJson({ cells: { [row.slotId]: slotCells }, source: 'workflow' }, 'Cabinet');
     if (!rSlot.ok || !rSlot.data?.ok) {
       alert(`Tub emptied, but clearing the slot failed.\n${rSlot?.data?.error ?? `HTTP ${rSlot?.status}`}`);
       return;

@@ -767,6 +767,86 @@ here" lines, not in scope here.
   where before the two used different eligibility rules (the card
   excluded `Opened` tubs from its count, the picker didn't).
 
+### CabinetWorkflow writes get their own immediate `inventory_change` record
+
+Every CabinetWorkflow write (Confirm Swap, Leave Empty, Confirm Cabinet,
+schedule immediate/next) is a plain UPDATE-mode write to `tub`/`slot` —
+before this, indistinguishable server-side from any *other* grid editing
+the same routes, so it was silently folded into the generic per-user,
+per-session batch (`scoop_stage_inventory_change()`, flushed on an idle
+timer) with `entity: 'session'`, `source: 'session'` hardcoded. No trace
+of "this came from CabinetWorkflow" survived.
+
+Fixed by having the client send an explicit hint alongside `cells` in
+every CabinetWorkflow write — `{ cells: {...}, source: 'workflow' }` —
+which `scoop_handle_cells_post()` (`includes/rest.php`) reads, validates
+against a whitelist (`['workflow']` — untrusted client input landing
+directly in a Pods field, not passed through freely), and when present,
+routes to **immediate** logging via `scoop_log_post()` (a new optional
+`$source_override` param) instead of staging — same treatment Batch/
+Closeout creates already get, on the same reasoning: each of these actions
+is already its own meaningful, infrequent event, not rapid autosave
+keystrokes. Confirmed end-to-end against real local data (a real REST
+POST through `scoop_handle_request`) — the new record appears immediately,
+correctly tagged `source: 'workflow'`, not staged.
+
+**Found and fixed in passing**: `ConfirmSwapModal._confirmEmpty()`'s slot
+write was `{ cells: slotCells }` — missing the `{ [row.slotId]: slotCells }`
+wrapper every other write in the file uses. Since `scoop_handle_cells_post`
+expects `cells` keyed by post ID, this meant "leave slot empty" never
+actually cleared `current_flavor` — a real, pre-existing bug, unrelated to
+today's change, caught only because this exact line needed touching for
+the source hint.
+
+### `row.openTub` stopped trusting `slot.tub` — sister-field pairing gap
+
+A slot with a genuinely valid, already-linked tub (`tub.slot` correctly
+pointing at it) still showed `impossible` on load. Root cause: `slot.tub`
+(the *reverse* direction of the `slot.tub`/`tub.slot` bidirectional Pods
+sister-field pair — see the top of this doc) was returning `0` on the
+environment being tested, even though `tub.slot` (the *forward* direction,
+the side every write actually goes through — Confirm Cabinet/
+ConfirmSwapModal never write `slot.tub` directly) was correct. Confirmed via
+a real bundle response: slot `1242`'s `tub` field was `0` while tub `10992`'s
+`slot` field was `1242`.
+
+Two theories were checked and ruled out before landing on the real one:
+
+- **Draft `post_status`** — Pods pick fields across this schema default to
+  `pick_post_status=publish` (see `includes/republish-tubs-ui.php`), so a
+  draft *target* silently drops out of a relationship read. Tempting given
+  the same-week `removing unpublished hack`/`speeding up republish to avoid
+  timeout` commits, but doesn't fit: the tub's `opened_on` was set for the
+  first time on this exact promotion (never previously `Emptied`, the only
+  thing that ever demoted a tub to draft — and that logic is gone now
+  anyway), and the republish sweep had already run site-wide (0 drafts
+  remaining) before this bug was even reported.
+- **Broken `sister_id` pairing in Pods admin** — checked directly in Pods
+  Admin: the `slot`↔`tub` bidirectional pairing *was* correctly configured,
+  both sides showing each other. So not a config gap either, at least not
+  a persistent one.
+
+The practical fix doesn't depend on knowing exactly why the reverse lookup
+failed: `_fillSlotRow` (`cabinet-workflow-grid-model.js`) now finds the
+linked tub by searching `domain.tub` for `t.slot === slot.id` (the forward
+field) instead of reading `slot.tub` at all. Same data Pods would eventually
+resolve either way, but sourced from the side that's actually written and
+whose target (a slot) is effectively always `publish` — structurally
+immune to whatever class of relationship-read hiccup this was, not just a
+one-off patch for this one slot.
+
+**Also fixed in passing**: `FRONT_OF_HOUSE_USE_ID` (`1863`) matching was
+exact-only across every FOH-stock check in this model
+(`openUnclaimedPool`/`promotablePool`/`pickableTubCount`/`pickableFlavors`/
+`_fohTubsExcluding`/`_openUnclaimedAnywhere`). A real tub (`10992`) had
+`use: 0` (unset) despite being open, linked, and shown as Front-of-House in
+WP admin — invisible to all of the above regardless of the `slot.tub` bug,
+which is what turned a "should be `ready-to-link`" row into `impossible`.
+Added `isFrontOfHouseUse()`, treating an unset `use` the same as an
+explicit Front-of-House id everywhere this model checks for FOH stock —
+matches the precedent already in `flavor-tub-grid-model.js`'s
+`_isFrontOfHouseUse`, which does the same for its own "non-front" filter.
+
 ## Decisions log
 
 1. `add next` tie-break: always take the oldest **whole** tub if one

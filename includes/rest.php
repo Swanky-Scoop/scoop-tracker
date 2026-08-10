@@ -572,7 +572,7 @@
     return $change_id ?: 0;
   }
 
-  function scoop_log_post(\WP_REST_Request $req, array $cfg, array $updated = [], array $errors = [], int $created_id = 0):void
+  function scoop_log_post(\WP_REST_Request $req, array $cfg, array $updated = [], array $errors = [], int $created_id = 0, ?string $source_override = null):void
   {
     $user       = wp_get_current_user()->user_login;
     $payload    = $req->get_param($cfg['envelope_key'] ?? '') ?: [];
@@ -639,7 +639,13 @@
         'envelope'    => $envelope,
         'mode'        => $mode,
         'phase'       => scoop_inventory_change_phase($cfg, $updated),
-        'source'      => scoop_inventory_change_source($cfg),
+        // $source_override lets a specific client feature (e.g.
+        // CabinetWorkflow — see scoop_handle_cells_post's source-hint
+        // handling below) identify itself distinctly from
+        // scoop_inventory_change_source($cfg)'s generic pod-based default
+        // ('tub'/'cabinet'), which can't tell CabinetWorkflow's writes
+        // apart from any other grid writing to the same tub/slot routes.
+        'source'      => $source_override ?? scoop_inventory_change_source($cfg),
         'problem'     => empty($errors) ? 'none' : 'error',
         'tubs'        => $refs['tubs'],
         'flavors'     => $refs['flavors'],
@@ -681,6 +687,21 @@
       error_log("🔍 TRACE: ERROR - Missing cells in payload");
       return new \WP_REST_Response(['ok'=>false,'error'=>"Missing {$envelope_key}[cells]."], 400);
     }
+
+    // Optional client-supplied hint identifying which feature made this
+    // write, for inventory_change's 'source' field — see
+    // scoop_inventory_change_source()'s own doc: it only knows which POD
+    // was written (tub/slot), not which client feature wrote it, so
+    // CabinetWorkflow's actions were otherwise indistinguishable from any
+    // other grid editing the same tub/slot routes (folded anonymously into
+    // the generic per-session 'source'=>'session' batch — see
+    // scoop_stage_inventory_change()). Whitelisted, not passed through
+    // freely — untrusted client input landing directly in a Pods field.
+    $source_hint = $payload['source'] ?? null;
+    $allowed_source_hints = [ 'workflow' ];
+    $source_hint = ( is_string( $source_hint ) && in_array( $source_hint, $allowed_source_hints, true ) )
+      ? $source_hint
+      : null;
 
     $allowed = array_flip($allowed_fields);
     
@@ -751,8 +772,18 @@
     // scoop_should_log_inventory_change(). Batch/Closeout creation goes
     // through scoop_handle_create_post(), not here, and still logs
     // immediately — each create is its own meaningful, infrequent event.
+    //
+    // A recognized $source_hint (CabinetWorkflow — see above) gets the
+    // same immediate-logging treatment as a create, on success or failure:
+    // each Confirm Swap/Leave Empty/Confirm Cabinet/schedule action is
+    // already its own meaningful, infrequent event (not rapid autosave
+    // keystrokes), so it earns its own inventory_change record right away
+    // instead of being folded anonymously into the generic per-session
+    // batch.
     if (!$ok) {
-      scoop_log_post($req, $cfg, $updated, $errors);
+      scoop_log_post($req, $cfg, $updated, $errors, 0, $source_hint);
+    } elseif ($source_hint !== null) {
+      scoop_log_post($req, $cfg, $updated, [], 0, $source_hint);
     } elseif (scoop_should_log_inventory_change($cfg, $updated)) {
       scoop_stage_inventory_change($cfg, $updated);
     }

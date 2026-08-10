@@ -11,6 +11,14 @@ scoop-deploy-key.pub
 *_ed25519
 id_*
 
+# DB dumps (WP Migrate exports, import-script backups) — contain live
+# customer/business data, never commit. data-exports/ already carries one
+# committed .sql.gz from before this rule existed (2026-07-24); leave that
+# tracked file alone unless asked to scrub history, just stop new ones.
+data-exports/backups/
+data-exports/*.sql.gz
+data-exports/*.sql
+
 # Scratch / debug artifacts
 _domain.json
 response.json
