@@ -1,29 +1,53 @@
 ///////////////////////////////////
-// ConfirmSwapModal — the "add next" confirmation dialog for CabinetWorkflow
-// (see change-tub.md's "Add next confirmation modal" section; DOM shape
-// modeled on assets/emptyAdd.html). One instance per CabinetWorkflowTile,
-// built once in buildCoreDom() and reused/repopulated on every 'add-next'
-// click — not a page-wide singleton like Details.js, since only this one
-// view needs it.
+// ConfirmSwapModal — the "resolve a tub for this slot" confirmation dialog
+// for CabinetWorkflow (see change-tub.md's "Add next confirmation modal"
+// section; DOM shape modeled on assets/emptyAdd.html). One instance per
+// CabinetWorkflowTile, built once in buildCoreDom() and reused/repopulated
+// on every open() — not a page-wide singleton like Details.js, since only
+// this one view needs it.
+//
+// Two entry points, same dialog: open(row) from an already-paired slot's
+// 'add-next' (defaults to the slot's own current_flavor, switchable to
+// immediate_flavor/next_flavor via their links) — or open(row, flavorId)
+// from FlavorPickerModal, handing off a freshly-picked flavor with no tub
+// behind it yet. Either way, this dialog owns the actual tub search/write;
+// FlavorPickerModal itself writes nothing (see its own header comment).
+//
+// A third, smaller use of the picker lives here too: when immediate_flavor
+// or next_flavor is unset, its line reads "none planned" as a link — click
+// it and the SAME FlavorPickerModal instance opens again (via
+// openPickerFor), but this time picking a flavor writes straight to that
+// slot field (_pickScheduled) instead of proposing a tub-swap target. No
+// tub gets touched; once the write lands, this dialog reopens itself
+// (via getRow, since the row object captured at open() time goes stale the
+// moment refreshPageDomain rebuilds the tile's rows) with the same
+// tub-swap target it had before the detour.
 //
 // State it tracks between open() and a button click: which flavor is
-// currently proposed as the replacement (starts at the slot's own
-// current_flavor, can switch to immediate_flavor/next_flavor via their
-// links) and the whole-vs-partial preference (the checkbox). Both feed
-// CabinetWorkflowGridModel.pickPromotableTub() to decide the one tub any
-// of the three action buttons would actually act on.
+// currently proposed (this._selectedFlavorId) and the whole-vs-partial
+// preference (the checkbox, this._preferWhole — user-dictated, the only
+// place amount still factors into tub selection). Both feed
+// CabinetWorkflowGridModel.planTubChange() to decide the one tub any of the
+// three action buttons would actually act on; the result is cached as
+// this._plan for _confirm()/_confirmEmpty() to reuse without recomputing.
 //////////////////////////////////
 import El from "./_el.js";
 
 export default class ConfirmSwapModal extends El {
-  constructor({ api, model }) {
+  constructor({ api, model, onChangePlan, openPickerFor, getRow, paintOptimistic, confirmOptimistic }) {
     super();
     this.api = api;
     this.model = model;
+    this.onChangePlan = onChangePlan;
+    this.openPickerFor = openPickerFor;
+    this.getRow = getRow;
+    this.paintOptimistic = paintOptimistic;
+    this.confirmOptimistic = confirmOptimistic;
 
     this._row = null;
     this._selectedFlavorId = 0;
     this._preferWhole = true;
+    this._plan = null;
 
     this._buildDom();
 
@@ -76,7 +100,9 @@ export default class ConfirmSwapModal extends El {
 
     this.OTHER_BTN = el('button', { text: 'Change Plan', classes: ['other'], attrs: { type: 'button' } });
     this.OTHER_BTN.addEventListener('click', () => {
-      alert("Change Plan isn't built yet — pick from the options above, or close and use Add Special.");
+      const row = this._row;
+      this.close();
+      if (row && this.onChangePlan) this.onChangePlan(row);
     });
 
     this.BTN_GROUP = el('p', { classes: ['btn_group'] });
@@ -107,9 +133,12 @@ export default class ConfirmSwapModal extends El {
     document.body.append(this.ROOT);
   }
 
-  open(row) {
+  // flavorId: explicit target from FlavorPickerModal. Omitted (the classic
+  // 'add-next' entry) falls back to _defaultFlavorId's current/immediate/
+  // next chain.
+  open(row, flavorId = null) {
     this._row = row;
-    this._selectedFlavorId = this._defaultFlavorId(row);
+    this._selectedFlavorId = flavorId || this._defaultFlavorId(row);
     this._preferWhole = true;
     this.PARTIAL_CHECK.checked = true;
     this.NOT_EMPTY_CHECK.checked = false;
@@ -144,7 +173,8 @@ export default class ConfirmSwapModal extends El {
     this.REMOVE_TITLE.textContent = row.empty ? '(slot is empty)' : row.flavorTitle;
 
     const target = this.model.flavorInfo(this._selectedFlavorId);
-    const tub = this.model.pickPromotableTub(this._selectedFlavorId, this._preferWhole);
+    this._plan = this.model.planTubChange(row, this._selectedFlavorId, this._preferWhole);
+    const tub = this._plan.tub;
 
     // target.photo can be '' (no photo set) — assigning that to img.src
     // resolves to the *current page's own URL*, which makes the browser
@@ -159,9 +189,15 @@ export default class ConfirmSwapModal extends El {
 
     this.CONFIRM_BTN.disabled = !tub;
 
-    this._renderFlavorLine(this.CURRENT_P, '', row.flavorId, row.flavorTitle, row.location, false);
-    this._renderFlavorLine(this.IMMEDIATE_P, 'Next-up,', row.immediateFlavorId, row.immediateFlavorTitle, row.location, true);
-    this._renderFlavorLine(this.NEXT_P, 'After that,', row.nextFlavorId, row.nextFlavorTitle, row.location, true);
+    // The currently PROPOSED target (this._selectedFlavorId/target), not
+    // row.flavorId — this line sits right under the photo/title box, which
+    // already shows the target, not the slot's old flavor (that's
+    // REMOVE_TITLE's job, above). Was previously hardcoded to row.flavorId,
+    // which only looked right by coincidence when the target happened to
+    // equal the slot's own current flavor.
+    this._renderFlavorLine(this.CURRENT_P, '', this._selectedFlavorId, target.title, row.location, false);
+    this._renderFlavorLine(this.IMMEDIATE_P, 'Next-up,', row.immediateFlavorId, row.immediateFlavorTitle, row.location, true, 'immediate_flavor');
+    this._renderFlavorLine(this.NEXT_P, 'After that,', row.nextFlavorId, row.nextFlavorTitle, row.location, true, 'next_flavor');
 
     // reload === false: planned rotation takes priority over current_flavor
     // in both the default target (_defaultFlavorId) and here, the display
@@ -183,12 +219,24 @@ export default class ConfirmSwapModal extends El {
 
   // linkable flavors (immediate_flavor/next_flavor) switch the proposed
   // target on click; the current flavor's own line is plain text — it's
-  // already what's shown unless one of the links has been clicked.
-  _renderFlavorLine(P, label, flavorId, flavorTitle, locationId, linkable) {
+  // already what's shown unless one of the links has been clicked. field
+  // ('immediate_flavor'/'next_flavor', undefined for the current-target
+  // line) makes an empty slot's "none planned" itself a link too — opens
+  // the picker to schedule that field directly (see _openPickerForField).
+  _renderFlavorLine(P, label, flavorId, flavorTitle, locationId, linkable, field) {
     P.replaceChildren();
 
     if (!flavorId) {
-      P.append(`${label} none planned.`);
+      if (field) {
+        const LINK = this.el('a', { text: 'none planned.', attrs: { href: '#schedule_flavor' } });
+        LINK.addEventListener('click', (e) => {
+          e.preventDefault();
+          this._openPickerForField(field);
+        });
+        P.append(`${label} `, LINK);
+      } else {
+        P.append(`${label} none planned.`);
+      }
       return;
     }
 
@@ -212,28 +260,64 @@ export default class ConfirmSwapModal extends El {
     P.append(' has ', this.el('b', { text: String(total) }), ' and ', this.el('b', { text: String(here) }), ' here.');
   }
 
+  // "none planned" clicked for immediate_flavor/next_flavor — closes this
+  // dialog and reopens the shared FlavorPickerModal, but overrides its
+  // onPick for this one visit: picking a flavor there schedules it onto
+  // `field` (see _pickScheduled) instead of proposing a tub-swap target.
+  // this._selectedFlavorId is preserved across the detour (captured here,
+  // threaded through) so the dialog looks the same when it reopens, just
+  // with the scheduled field now filled in.
+  _openPickerForField(field) {
+    const row = this._row;
+    if (!row || !this.openPickerFor) return;
+
+    const resumeFlavorId = this._selectedFlavorId;
+    this.close();
+    this.openPickerFor(row, (_row, flavorId) => this._pickScheduled(row, field, flavorId, resumeFlavorId));
+  }
+
+  // No tub involved — just writes `field` on the slot directly, then
+  // reopens this dialog. row is the one captured at _openPickerForField
+  // time; it's stale after refreshPageDomain rebuilds the tile's rows, so
+  // getRow() re-fetches the current one for the reopen (row itself is
+  // still a safe fallback — same slotId either way).
+  async _pickScheduled(row, field, flavorId, resumeFlavorId) {
+    const rSlot = await this.api.postJson({ cells: { [row.slotId]: { [field]: flavorId } } }, 'Cabinet');
+    if (!rSlot.ok || !rSlot.data?.ok) {
+      alert(`Scheduling the flavor failed.\n${rSlot?.data?.error ?? `HTTP ${rSlot?.status}`}`);
+      return;
+    }
+
+    await this.api.refreshPageDomain({ force: true });
+
+    const freshRow = this.getRow?.(row.slotId) ?? row;
+    this.open(freshRow, resumeFlavorId);
+  }
+
   async _confirm() {
     const row = this._row;
-    const tub = this.model.pickPromotableTub(this._selectedFlavorId, this._preferWhole);
-    if (!row || !tub) return;
+    const plan = this._plan;
+    if (!row || !plan?.tub) return;
 
     // tub.slot is the bidirectional sister field to slot.tub (see
     // change-tub.md) — writing it here is what links the new tub to this
     // slot; slot.tub is never written directly, Pods syncs it. location is
     // corrected to this cabinet's regardless of where the tub came from —
-    // location doesn't restrict eligibility (same rule as Confirm Cabinet/
-    // Add Flavor), so a cross-location tub can get picked here.
-    const tubCells = { [tub.id]: { state: 'Opened', slot: row.slotId, location: row.location } };
+    // location doesn't restrict eligibility, so a cross-location tub can
+    // get picked here (see the location-mismatch alert below).
+    const tubCells = { [plan.tub.id]: { state: 'Opened', slot: row.slotId, location: row.location } };
 
-    if (row.openTub?.id) {
-      // Checked "This box is not empty": the old tub still has product in
-      // it — this isn't a stock event, just unlink it and leave it Opened.
-      // Unchecked (default): mark it Emptied+stamped as usual. Either way
-      // slot: 0 clears the bidirectional link from the tub side — slot.tub
-      // is never written directly (see change-tub.md).
-      tubCells[row.openTub.id] = this.NOT_EMPTY_CHECK.checked
-        ? { slot: 0 }
-        : { state: 'Emptied', slot: 0 };
+    // outgoingTub is row.currentTubId resolved regardless of its state —
+    // "any existing tub should be removed" (uniform logic, no same-flavor
+    // special case; see CabinetWorkflow QA conversation). Only actually
+    // marked Emptied+stamped if it was genuinely Opened AND "This box is
+    // not empty" isn't checked (product still in it — not a stock event,
+    // just unlink it, stays Opened) — a stale link to a tub that was never
+    // actually opened here (e.g. still Hardening) just gets unlinked, not
+    // misrepresented as emptied.
+    const emptying = plan.outgoingTub?.state === 'Opened' && !this.NOT_EMPTY_CHECK.checked;
+    if (plan.outgoingTub) {
+      tubCells[plan.outgoingTub.id] = emptying ? { state: 'Emptied', slot: 0 } : { slot: 0 };
     }
 
     const rTubs = await this.api.postJson({ cells: tubCells }, 'FlavorTub');
@@ -256,7 +340,48 @@ export default class ConfirmSwapModal extends El {
     // "unresponsive") for however long the bundle refetch took, and stuck
     // open for good if that refetch ever threw.
     this.close();
+
+    // Optimistic repaint (see CabinetWorkflowTile._paintOptimistic) — shows
+    // the outcome on the card immediately, marked 'confirming', rather than
+    // waiting out the confirmation refetch below (can take 10+ seconds).
+    const target = this.model.flavorInfo(this._selectedFlavorId);
+    this.paintOptimistic?.(row.slotId, {
+      empty: false,
+      flavorId: this._selectedFlavorId,
+      flavorTitle: target.title,
+      flavorPhoto: target.photo,
+      allergens: target.allergens,
+      openTub: { ...plan.tub, state: 'Opened', slot: row.slotId, location: row.location },
+      currentTubId: plan.tub.id,
+      discrepancy: false,
+      impossible: false,
+    });
+
+    // Debug alert cascade (see CabinetWorkflow QA conversation) — native +
+    // sequential is deliberate for now, for manual/visual verification,
+    // not final UX. "Back out of after it happens" and a proper reviewable
+    // log are explicitly deferred, not built here.
+    if (emptying) alert(`${plan.outgoingTub._title} was emptied`);
+    if (Number(plan.tub.location) !== Number(row.location)) alert(`${plan.tub._title} is at a different location.`);
+    if (Number(plan.tub.amount ?? 1) < 1) alert('Using a partial');
+    if (plan.rule === 'a') {
+      if (plan.pool.length === 1) {
+        alert('perfect!');
+      } else {
+        const skipped = plan.pool.filter(t => Number(t.id) !== Number(plan.tub.id)).map(t => t._title).join(', ');
+        alert(`Found tub ${plan.tub._title}. Not selected: ${skipped}`);
+      }
+    } else {
+      alert(`Found match: ${plan.tub._title}`);
+    }
+
+    // The "confirmation fetch" — refreshPageDomain's broadcast also repaints
+    // every other grid on the page (e.g. a plain Cabinet view control, if
+    // one's mounted) via the existing ts:domain:updated mechanism (see
+    // PARTIAL-REFRESH.md), with no extra code needed here. confirmOptimistic
+    // then diffs the real result against what was just painted above.
     await this.api.refreshPageDomain({ force: true });
+    this.confirmOptimistic?.(row.slotId, { current_flavor: this._selectedFlavorId, tub: plan.tub.id });
   }
 
   // Clears the slot, but leftover stock of the flavor being removed isn't
@@ -268,10 +393,16 @@ export default class ConfirmSwapModal extends El {
     const row = this._row;
     if (!row) return;
 
-    if (row.openTub?.id) {
+    // this._plan.outgoingTub (not row.openTub) — same "any existing tub
+    // should be removed" uniform handling as _confirm(): a stale link to a
+    // tub that was never actually Opened here just gets unlinked, not
+    // misrepresented as emptied.
+    const outgoingTub = this._plan?.outgoingTub ?? null;
+    if (outgoingTub) {
       // slot: 0 clears the bidirectional link from the tub side — slot.tub
       // is never written directly (see change-tub.md).
-      const rTub = await this.api.postJson({ cells: { [row.openTub.id]: { state: 'Emptied', slot: 0 } } }, 'FlavorTub');
+      const cells = outgoingTub.state === 'Opened' ? { state: 'Emptied', slot: 0 } : { slot: 0 };
+      const rTub = await this.api.postJson({ cells: { [outgoingTub.id]: cells } }, 'FlavorTub');
       if (!rTub.ok || !rTub.data?.ok) {
         alert(`Emptying the tub failed.\n${rTub?.data?.error ?? `HTTP ${rTub?.status}`}`);
         return;
@@ -294,6 +425,18 @@ export default class ConfirmSwapModal extends El {
     }
 
     this.close();
+
+    this.paintOptimistic?.(row.slotId, {
+      empty: true,
+      flavorId: 0,
+      flavorTitle: '',
+      flavorPhoto: '',
+      allergens: [],
+      openTub: null,
+      currentTubId: 0,
+    });
+
     await this.api.refreshPageDomain({ force: true });
+    this.confirmOptimistic?.(row.slotId, { current_flavor: 0, tub: 0 });
   }
 }

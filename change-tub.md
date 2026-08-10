@@ -477,13 +477,295 @@ one browser tab. Built:
   `confirm_state` and doing something loud with it is a separate,
   not-yet-specced piece.
 
-## Stubbed for later (no-op now)
+### `needs-tub`/`impossible`/empty QA indicators + `FlavorPickerModal`
 
-- `add special` — click handler attached, does nothing (or opens an empty
-  placeholder modal shell) until the follow-up spec for its prompts
-  arrives.
-- `add flavor` — same; on an empty slot, clicking neither sets
-  `current_flavor` nor creates a tub yet.
+Crude dev-only status glyphs added first (`CabinetWorkflowTile
+._applyConformanceStatus`, `css.css`'s `.needs-tub`/`.impossible` `::after`
+rules): a filled slot with no `openTub` yet (auto-resolvable, Confirm
+Cabinet just hasn't paired it) gets `needs-tub` (red X on the `<li>`);
+`row.impossible` gets a black `I`; a FRAME-level `mismatch`/`conforms`/
+`all-paired` class cross-checks `slot.tub` against the tub's own `.slot`
+back-reference (Pods relationship fields are only reliably canonical from
+one side — see project memory on postmeta drift) and whether every
+pairable slot is actually paired.
+
+Then the free-form picker: `flavor-picker-modal.js` (`FlavorPickerModal`),
+opened from `add-next` (needs-tub/impossible slots) or `add-flavor` (empty
+slots) instead of `ConfirmSwapModal` whenever there's no already-linked tub
+to propose swapping — `add-next` on a `discrepancy` slot still stays
+disabled (must run Confirm Cabinet first, ambiguous which open tub belongs
+there).
+
+**`pickableFlavors(row)`** (`cabinet-workflow-grid-model.js`) is the
+candidate list, all four required:
+
+1. At least one front-of-house tub of that flavor, anywhere, not `Emptied`
+   and not `!Lost` — `NON_PICKABLE_STATES`, deliberately narrower than
+   `promotablePool`'s `NON_PROMOTABLE_STATES`: an already-`Opened` tub DOES
+   make its flavor pickable here (different question from "what should get
+   newly promoted").
+2. No `_allergenConflict` with the slot's cabinet — two rules, both must
+   clear: (a) none of the flavor's allergens are on the cabinet's own
+   `prohibited_allergens`, and (b) if the cabinet does **not** prohibit
+   `dairy`, it's a dairy cabinet by convention and only dairy-base flavors
+   qualify (`'dairy'` isn't its own field — a flavor is dairy-base iff
+   `'dairy'` is among `flavor.allergens`), regardless of what else that
+   cabinet does/doesn't prohibit. A cabinet that DOES prohibit dairy (oat/
+   coconut/pea) skips the extra requirement — rule (a) already excludes
+   dairy-base flavors there on its own. This same method backs both the
+   picker and `row.impossible`, so the dairy-cabinet rule also changes
+   which existing slots Confirm Cabinet flags `impossible`, not just what
+   the picker offers.
+3. Not already `current_flavor` on a *different* slot in the same cabinet —
+   no duplicate flavors per cabinet (`_siblingFlavorIds`), not enforced
+   anywhere else (not server-side, not retroactively against existing
+   data).
+4. Excludes the row's own `currentTubId` from counting as that flavor's
+   stock — it's about to be evicted by the very action being previewed (see
+   "uniform tub-selection" below), so it can't count as its own
+   replacement.
+
+### Flavor pick hands off to `ConfirmSwapModal` — no separate write path
+
+Reworked once already (briefly: picking only wrote `current_flavor`,
+deferred all tub resolution to the next Confirm Cabinet pass) before
+landing here. **`FlavorPickerModal` writes nothing.** Clicking a tile just
+hands `{ row, flavorId }` to `ConfirmSwapModal.open(row, flavorId)` — the
+same dialog `add-next` already used for an already-paired slot, now
+handling a second entry point. `ConfirmSwapModal` owns the actual tub
+search/preview/write either way; a real Confirm Swap / Change Plan / Leave
+Empty dialog is the "reject before it happens" gate, so no separate native
+`confirm()` was needed after all. The two modals wire together via
+constructor callbacks (`onPick`/`onChangePlan`), not direct references, to
+avoid a construction-order circular dependency — "Change Plan" now reopens
+`FlavorPickerModal` instead of alerting "isn't built yet."
+
+**Uniform tub-selection**, `CabinetWorkflowGridModel.planTubChange(row,
+flavorId, preferWhole)` — same logic for both entry points, no
+same-flavor special case (deliberately: re-picking the slot's own current
+flavor to cycle to the next tub, cited as the *most common* use of this
+GUI, must behave identically to picking a brand-new flavor):
+
+- **`outgoingTub`** — `row.currentTubId` resolved regardless of its
+  state/validity (a `needs-tub`/`impossible` slot can still have a stale
+  `slot.tub` link — e.g. pointing at a tub whose flavor didn't match the
+  *old* `current_flavor`, or one still `Hardening`). Always evicted. Only
+  actually marked `Emptied`+stamped if it was genuinely `Opened` and "This
+  box is not empty" isn't checked — a stale non-`Opened` link just gets
+  unlinked (`slot: 0`), not misrepresented as emptied.
+- **`pickNextTub(flavorId, locationId, excludeTubId, preferWhole)`** —
+  separate from `pickPromotableTub`/`pickClosestToOne`, which still serve
+  Confirm Cabinet's own automatic reconciliation unchanged. Two rules:
+  - (a) an `Opened`, front-of-house, unclaimed tub of this flavor —
+    nothing to promote, just adopt. Global, not location-scoped (location
+    is a sort preference, not a filter). Ignores `preferWhole` entirely.
+  - (b) falls back to `promotablePool` (`Emptied`/`Opened`/`!Lost`
+    excluded) when (a) finds nothing. `preferWhole` applies here, same
+    meaning as `pickPromotableTub`'s checkbox.
+  - Both pools sort same-location-first, then (b only) whole/partial per
+    `preferWhole`, then oldest `created_on`. `amount` is otherwise not a
+    factor — a broader reconsideration of amount-based selection is out of
+    scope for this feature; `preferWhole` remains the one user-dictated
+    exception.
+  - `excludeTubId` = the row's own `outgoingTub` id, so it can never count
+    as its own replacement (the QA conversation's "problem case 2": an
+    about-to-be-evicted tub shouldn't inflate its own flavor's apparent
+    availability, in `pickableFlavors` *or* here).
+
+**Debug alert cascade** (`ConfirmSwapModal._confirm()`, after a successful
+write) — native, sequential `alert()` calls, deliberately crude for
+now (manual/visual verification), not final UX:
+
+- `"[tub] was emptied"` — only if the outgoing tub was actually marked
+  `Emptied` (not just unlinked).
+- `"[tub] is at a different location."` — if the selected tub's location
+  differs from the slot's (tub gets promoted in from cross-location
+  regardless, same as Confirm Cabinet always has — this only adds the
+  alert).
+- `"Using a partial"` — if the selected tub's `amount < 1`.
+- Then exactly one of: `"perfect!"` (rule (a), exactly one candidate),
+  `"Found tub [x]. Not selected: [y], [z]"` (rule (a), multiple
+  candidates), or `"Found match: [x]"` (rule (b)).
+- No-match (`plan.tub` null) doesn't get a separate alert — `CONFIRM_BTN`
+  is simply disabled and `IMG_META` already reads "No tub available for
+  this flavor," which the dialog shows before any commit is possible.
+
+**Explicitly deferred**: "back out of after it happens" (a real undo, once
+Pods/WordPress writes have already landed — there's no transaction layer
+here) and a reviewable change log through another GUI element. Both were
+raised as requirements but scoped out of this pass, same pattern as prior
+stubbed work in this doc.
+
+### "none planned" schedules immediate_flavor/next_flavor via the same picker
+
+`ConfirmSwapModal`'s `IMMEDIATE_P`/`NEXT_P` lines already went through
+`_renderFlavorLine`; when empty they read plain-text "none planned." Made
+clickable: opens the same `FlavorPickerModal` instance, but with a one-off
+`onPick` override (passed through `open(row, onPick)`, which now takes an
+optional per-call override instead of always using the constructor
+default) — picking a flavor there writes straight to `immediate_flavor` or
+`next_flavor` (`_pickScheduled`), no tub involved. `openPickerFor`/`getRow`
+are two more constructor callbacks threaded from `CabinetWorkflowTile`
+(same circular-dependency-avoidance pattern as `onChangePlan`): the former
+opens the shared picker with an override, the latter re-fetches the row by
+`slotId` after `refreshPageDomain` rebuilds `this.items` — the row object
+captured when "none planned" was clicked is stale by the time the write
+lands, so the dialog needs a fresh one to reopen with (same tub-swap
+target it had before the detour, since `this._selectedFlavorId` is
+captured and threaded through independent of which row instance it's
+rendered against).
+
+### Optimistic repaint + confirmation diff, `confirming` marker
+
+`ConfirmSwapModal._confirm()`/`_confirmEmpty()` no longer just sit through
+`refreshPageDomain`'s round-trip (can take 10+ seconds — every write
+invalidates the server's bundle cache, guaranteeing a cold miss) with the
+card showing stale data the whole time. Two new `CabinetWorkflowTile`
+methods, wired in as constructor callbacks (`paintOptimistic`/
+`confirmOptimistic`, same pattern as `onChangePlan`/`getRow`):
+
+- **`_paintOptimistic(slotId, patch)`** — called right after the write's
+  own POST(s) succeed (before the confirmation refetch even starts).
+  Shallow-overlays the known outcome (flavor identity, the newly linked
+  tub — only what the caller can already predict, not derived fields like
+  `tubCountLocal/Total`) onto the slot's current row, renders it through
+  `buildItemDom()` (same path every row uses — no second rendering
+  implementation), marks the `<li>` `confirming` (CSS: dashed yellow
+  outline + pulse, `css.css`), and swaps it in for the real node.
+- **`_confirmOptimistic(slotId, expected)`** — called after
+  `refreshPageDomain` resolves. Reads `api.getDomainSnapshot()` directly
+  and compares the slot's raw `current_flavor`/`tub` fields against
+  `expected`, rather than relying on `this.items`/the generic
+  `_onDomainUpdated` listener having already run — that listener's async
+  body isn't guaranteed to have completed by the time this await resolves,
+  since `ts:domain:updated` dispatch doesn't wait for its own handlers.
+  Match: drop `confirming`, nothing else repaints. Mismatch: alert, then a
+  genuine `this.refresh()` (full rebuild) — the additive `_patchRefresh`
+  every other grid gets on a background refresh (see PARTIAL-REFRESH.md)
+  has no field-level mechanism for this tile's hand-built cards (it ships
+  no columns — see this file's header comment), so it can't be trusted to
+  correct a wrong optimistic node either.
+
+**No new code needed for other grids on the page**: `refreshPageDomain`'s
+`ts:domain:updated` broadcast already reaches every mounted List/Tile,
+including a plain `Cabinet` grid if one's on the same page — it patch-
+refreshes itself via the existing PARTIAL-REFRESH.md mechanism regardless
+of what this tile does with its own `confirming` state.
+
+### Confirm Cabinet gets the same optimistic preview, batched
+
+Extended to `_reconcileCabinet()`, which can resolve many slots in one
+pass (unlike `ConfirmSwapModal`'s writes, always exactly one). Every row
+that gets a NEW tub linked this pass (adopted via `openUnclaimedPool`,
+a discrepancy pick, or freshly promoted via `pickPromotableTub`) is
+collected into `pendingPatches` as `{ row, tub }` while the existing
+resolution loop runs — nothing added for already-`filled` or
+`impossible` rows, since those aren't changing.
+
+After the writes succeed: `_paintOptimistic()` runs once per pending
+patch (so every resolved slot shows its new tub immediately, marked
+`confirming`), then the summary alert fires (moved earlier than before —
+previously it waited out the confirmation refetch too), then the
+confirmation refetch runs, then `_confirmOptimisticBatch()` — a new
+batched sibling of `_confirmOptimistic` — diffs every pending patch
+against the fresh domain in one pass: any match just drops `confirming`;
+if any mismatch, ONE consolidated alert + ONE full rebuild, not one of
+each per slot. `_confirmOptimistic(slotId, expected)` (used by
+`ConfirmSwapModal`'s single-slot writes) is now a thin wrapper calling
+`_confirmOptimisticBatch([{ slotId, ...expected }])` — no duplicated
+comparison logic between the two call shapes.
+
+The GUI-blocking behavior (`FRAME.style.pointerEvents = 'none'` for the
+whole pass, per the original "grid isn't usable until reconciliation
+completes" requirement) is unchanged — optimistic painting happens
+*inside* that same blocked window, it doesn't shorten it. What changes is
+what the user sees *during* that window: the resolved cards update (and
+the summary alert fires) right after the writes land, rather than the
+whole cabinet sitting visually frozen until the confirmation refetch
+(10+ seconds) also completes.
+
+### `ready-to-link` (P) splits `needs-tub` into its two real outcomes
+
+`needs-tub` (X) never distinguished *which* of Confirm Cabinet's two
+resolution paths a given slot would take — link an already-`Opened`
+unclaimed tub (no state write) vs. promote a fresh one (`state: 'Opened'`
+write). `row.readyToLink` (`cabinet-workflow-grid-model.js`, computed
+right next to `row.discrepancy` since both reuse the same already-computed
+`unclaimedOpen` list) is `true` exactly when that pool has one match —
+mutually exclusive with `discrepancy` (>1 match) and `impossible`
+(0 matches AND nothing promotable either) by construction, so no extra
+guard was needed. `needs-tub` now means specifically "0 unclaimed-open
+matches, but something promotable exists" — the case that actually
+requires opening a new tub. Glyph: `P`, `var(--color-status-info)` (blue),
+same `::after` pattern as `needs-tub`/`impossible`.
+
+### Tempering outranks every other non-Opened state when promoting a tub
+
+A physical-correctness rule, not a per-flow preference — applied to both
+`pickPromotableTub` (Confirm Cabinet) and `pickNextTub`'s rule (b)
+(`ConfirmSwapModal`), via a shared `_temperingRank(t)` helper
+(`cabinet-workflow-grid-model.js`). A tub already `Tempering` beats any
+`Hardening`/`Freezing`/`__override__` tub outright — the *top* sort key,
+not a tie-break applied only among candidates already equal on whole/
+partial or age. Order became:
+
+- `pickPromotableTub`: Tempering, then whole/partial (`preferWhole`), then
+  oldest `created_on`.
+- `pickNextTub` rule (b): Tempering, then location match, then whole/
+  partial, then oldest `created_on` — Tempering ranks even above location,
+  reflecting the QA conversation's "outranks all non-opened" as
+  unconditional, stronger language than location's earlier "one of the
+  earliest rules, but not enough to disqualify."
+
+Confirmed scope before implementing: Tempering only outranks other
+non-`Opened` candidates within the promotable pool — an already-`Opened`,
+unclaimed tub (rule (a)/`openUnclaimedPool`) is still always tried and
+adopted first, unaffected by this change.
+
+### Diagnosed a real-flavor bug via the local mirror's PHP CLI, not speculation
+
+A slot flipped to "Raspberry Rose Truffle" (an `impossible` slot) even
+though its only tub was believed already `Emptied`. Verified against the
+actual `local` DB (`wp-load.php` bootstrap + Pods API, via the site's own
+`php.exe`/`php.ini` under `AppData\Roaming\Local\...` — see project memory
+on the local PHP CLI how-to) rather than guessing: `_temperingRank`,
+`NON_PICKABLE_STATES`, `NON_PROMOTABLE_STATES` are all correct as shipped
+(no inverted condition, no case-sensitivity bug) — the flavor's one tub
+(`id=12850`) really was `Emptied` by the time it was queried, but that
+doesn't prove it was already `Emptied` at pick time. Most likely
+explanation: **client-side domain staleness** — `pickableFlavors`/
+`pickNextTub` check `this.domain.tub`, a snapshot from this tab's last
+fetch, not a live query; if the tub was emptied via a different tab/
+action after that snapshot but before the picker opened, the picker
+would correctly-per-its-stale-view show it as available. No pre-write
+freshness re-check exists today (only the post-write
+`_confirmOptimisticBatch` diff, which catches it *after* the fact, not
+before) — flagged, not yet built.
+
+### Tub counts, made visible where they matter
+
+Two additions, both reusing the same new `pickableTubCount(flavorId,
+locationId)` rule (front-of-house, not `Emptied`, not `!Lost` —
+`NON_PICKABLE_STATES`, so `Opened` tubs DO count) — a deliberately
+different figure from `remainingSummary`'s `DISPLAY_EXCLUDED_STATES`
+(which additionally excludes `Opened`, answering "how much is still in
+the pipeline" rather than "is this pickable right now"). `remainingSummary`
+itself is untouched — still used by `ConfirmSwapModal`'s "X has A and B
+here" lines, not in scope here.
+
+- **`FlavorPickerModal` tiles** now show a small count badge (top-right)
+  — the same tub tally that qualified each flavor for the list in the
+  first place, via `pickableFlavors()`'s `count` (computed inline, one
+  pass over `domain.tub`, alongside the flavor-id set it already built —
+  not a second pass calling `pickableTubCount` per flavor). Directly
+  motivated by the Raspberry Rose Truffle bug above: a visible count is
+  at least a chance to notice "this says 1, but I thought that one was
+  already emptied" before committing to a pick.
+- **Cabinet card counts** (`tub-count-local`/`tub-count-total`,
+  `_fillSlotRow`) switched from `remainingSummary` to `pickableTubCount`
+  — now consistent with what the flavor picker itself considers pickable,
+  where before the two used different eligibility rules (the card
+  excluded `Opened` tubs from its count, the picker didn't).
 
 ## Decisions log
 

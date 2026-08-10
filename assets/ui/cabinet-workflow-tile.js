@@ -9,6 +9,7 @@
 //////////////////////////////////
 import Tile from "./tile.js";
 import ConfirmSwapModal from "./confirm-swap-modal.js";
+import FlavorPickerModal from "./flavor-picker-modal.js";
 
 export default class CabinetWorkflowTile extends Tile {
 
@@ -31,23 +32,50 @@ export default class CabinetWorkflowTile extends Tile {
 
     this.FRAME.append(this.CONFIRM_CABINET);
 
-    // One modal instance per Tile, reused/repopulated per 'add-next' click
-    // (see confirm-swap-modal.js) — not built per-slot, and not wiped by
-    // group-container rebuilds since it isn't inside FRAME.
-    this.SWAP_MODAL = new ConfirmSwapModal({ api: this.api, model: this.modelInstance });
+    // Two modal instances per Tile, reused/repopulated per open() call —
+    // not built per-slot, and not wiped by group-container rebuilds since
+    // neither is inside FRAME. FlavorPickerModal picks a flavor and writes
+    // nothing itself; ConfirmSwapModal owns the actual tub search/preview/
+    // write for both entry points (see each file's header comment). The
+    // two wire into each other via callbacks (not direct references) to
+    // avoid a construction-order circular dependency:
+    //   onPick        — tile grid pick -> propose it as a tub-swap target.
+    //   onChangePlan  — "Change Plan" button -> back to the tile grid.
+    //   openPickerFor — "none planned" links -> reopen the SAME picker
+    //                   instance with a one-off onPick override (schedule
+    //                   immediate_flavor/next_flavor instead).
+    //   getRow        — re-fetch a slot's current row by id after a write;
+    //                   the row object captured at open() time goes stale
+    //                   the moment refreshPageDomain rebuilds this.items.
+    //   paintOptimistic/confirmOptimistic — see their own definitions below.
+    this.SWAP_MODAL = new ConfirmSwapModal({
+      api: this.api,
+      model: this.modelInstance,
+      onChangePlan: (row) => this.PICKER_MODAL.open(row),
+      openPickerFor: (row, onPicked) => this.PICKER_MODAL.open(row, onPicked),
+      getRow: (slotId) => (this.items ?? []).find(r => r.slotId === slotId),
+      paintOptimistic: (slotId, patch) => this._paintOptimistic(slotId, patch),
+      confirmOptimistic: (slotId, expected) => this._confirmOptimistic(slotId, expected),
+    });
+    this.PICKER_MODAL = new FlavorPickerModal({
+      model: this.modelInstance,
+      onPick: (row, flavorId) => this.SWAP_MODAL.open(row, flavorId),
+    });
 
     this.FRAME.addEventListener('click', (e) => {
       const nextBtn = e.target.closest('.add-next');
       if (nextBtn && !nextBtn.disabled) {
         const slotId = Number(nextBtn.dataset.slotId);
         const row = (this.items ?? []).find(r => r.slotId === slotId);
-        // row.openTub is the slot's confirmed, linked tub (see
-        // CabinetWorkflowGridModel._fillSlotRow) — without it there's
-        // nothing for the swap modal to swap out yet. Confirm Cabinet must
-        // run first to adopt/open a tub for this slot; buildItemDom()
-        // disables the button for the same reason, this is the defensive
-        // backstop.
-        if (row && row.openTub) this.SWAP_MODAL.open(row);
+        if (!row) return;
+        // row.openTub: a confirmed, linked tub already exists — swap it for
+        // another (current/immediate/next). No openTub but not a
+        // discrepancy (needs-tub or impossible): nothing to swap, offer the
+        // free-form picker instead. Discrepancy stays out of both — run
+        // Confirm Cabinet first to resolve which open tub belongs here
+        // (buildItemDom() disables the button in that case).
+        if (row.openTub) this.SWAP_MODAL.open(row);
+        else this.PICKER_MODAL.open(row);
         return;
       }
 
@@ -55,13 +83,7 @@ export default class CabinetWorkflowTile extends Tile {
       if (addBtn && !addBtn.disabled) {
         const slotId = Number(addBtn.dataset.slotId);
         const row = (this.items ?? []).find(r => r.slotId === slotId);
-        // Narrow scope for now: only opens when this empty slot already has
-        // a scheduled flavor (immediate_flavor/next_flavor, e.g. left there
-        // by a prior "leave slot empty"). Free-form flavor choice for a
-        // slot with no schedule at all is a later fallback, not built yet
-        // — buildItemDom() disables the button in that case for the same
-        // reason.
-        if (row && (row.immediateFlavorId || row.nextFlavorId)) this.SWAP_MODAL.open(row);
+        if (row) this.PICKER_MODAL.open(row);
       }
     });
 
@@ -74,6 +96,140 @@ export default class CabinetWorkflowTile extends Tile {
     this.FORM.addEventListener('ts:list:init', () => {
       this._reconcileCabinet({ alertResult: false });
     }, { once: true });
+  }
+
+  // Immediate, optimistic repaint of one slot — see the CabinetWorkflow QA
+  // conversation. Used by ConfirmSwapModal right after a write's POST(s)
+  // succeed, so the card shows the outcome before the confirmation refetch
+  // (refreshPageDomain, which can take 10+ seconds) resolves. patch is a
+  // shallow overlay on the slot's current row — only the fields the caller
+  // already knows the write will produce (flavor identity, the newly
+  // linked tub); everything else (tubCountLocal/Total, allergen icons for
+  // an unchanged flavor, etc.) carries over from the pre-write row as-is
+  // and self-corrects once the real refresh lands.
+  //
+  // Rendered through buildItemDom() — the same path every row uses, so
+  // there's no second rendering implementation to keep in sync — then
+  // marked 'confirming' and swapped in for the real DOM node. Does NOT
+  // touch this.items itself: the model's own domain (and therefore the
+  // next real refresh) is untouched until the server actually confirms it,
+  // this is purely a DOM-level preview.
+  _paintOptimistic(slotId, patch) {
+    const row = (this.items ?? []).find(r => r.slotId === slotId);
+    if (!row) return;
+
+    const optimisticRow = { ...row, ...patch };
+    const newLi = this.buildItemDom(optimisticRow);
+    newLi.classList.add('confirming');
+
+    const oldLi = this.FRAME.querySelector(`li[data-slot-id="${slotId}"]`);
+    if (oldLi) oldLi.replaceWith(newLi);
+  }
+
+  // Single-slot convenience wrapper around _confirmOptimisticBatch — see
+  // its own header comment. Used by ConfirmSwapModal's writes, which only
+  // ever touch one slot at a time.
+  _confirmOptimistic(slotId, expected) {
+    this._confirmOptimisticBatch([{ slotId, ...expected }]);
+  }
+
+  // Called once the write's confirmation refetch (refreshPageDomain) has
+  // resolved. expectedList = [{ slotId, current_flavor, tub }, ...] — the
+  // raw slot fields each write was supposed to produce (same raw-field
+  // comparison the FRAME-level mismatch QA indicator uses — see
+  // _applyConformanceStatus — deliberately checking Pods' own fields
+  // directly via api.getDomainSnapshot(), not this.items/
+  // _onDomainUpdated's eventual patch, since that generic listener's
+  // timing relative to this call isn't guaranteed — see change-tub.md).
+  // Batched (rather than one call per slot) so Confirm Cabinet's
+  // potentially-many resolved slots get ONE consolidated alert and ONE
+  // rebuild on mismatch, not one of each per slot.
+  //
+  // Match: the optimistic paint was correct, just drop the 'confirming'
+  // mark — no further repaint. Mismatch (any slot in the batch): this
+  // tile's hand-built cards have no field-level patch mechanism (see this
+  // file's header comment), so the generic additive _patchRefresh can't be
+  // trusted to correct a wrong optimistic node either — alert once, then
+  // force a genuine full rebuild (this.refresh, not the additive patch) so
+  // the user is never looking at confidently-wrong data.
+  _confirmOptimisticBatch(expectedList) {
+    if (!expectedList.length) return;
+
+    const freshDomain = this.api.getDomainSnapshot();
+    const freshSlotsById = new Map((freshDomain.slot ?? []).map(s => [Number(s.id), s]));
+
+    const mismatchedSlotIds = [];
+    for (const expected of expectedList) {
+      const freshSlot = freshSlotsById.get(Number(expected.slotId));
+      const matches = !!freshSlot
+        && Number(freshSlot.current_flavor ?? 0) === Number(expected.current_flavor ?? 0)
+        && Number(freshSlot.tub ?? 0) === Number(expected.tub ?? 0);
+
+      if (matches) {
+        this.FRAME.querySelector(`li[data-slot-id="${expected.slotId}"]`)?.classList.remove('confirming');
+      } else {
+        mismatchedSlotIds.push(expected.slotId);
+      }
+    }
+
+    if (!mismatchedSlotIds.length) return;
+
+    alert(mismatchedSlotIds.length === 1
+      ? "This slot's change didn't match what the server confirmed — repainting with its actual state."
+      : `${mismatchedSlotIds.length} slots' changes didn't match what the server confirmed — repainting with its actual state.`);
+    this.modelInstance.setDomain(freshDomain);
+    this.refresh(this.modelInstance);
+  }
+
+  // Crude dev-only QA indicator, not real UI — see cabinet-workflow QA
+  // conversation. Recomputed on every render (init AND refresh, since both
+  // call _reportFresh() at the end — see _list.js) so it stays live across
+  // domain updates. State class goes on FRAME (.zTILE, the component's
+  // root div); css.css reads it off an ::after on .tileTools, a fixed,
+  // always-present child (see tile.js buildCoreDom), so the class itself
+  // stays easy to find in devtools while the visible glyph lives somewhere
+  // stable on screen.
+  //
+  //   mismatch   (X)  — a slot's linked tub disagrees with reality: either
+  //                      the tub the raw Cabinet view would show
+  //                      (slot.tub) doesn't point back at this slot via
+  //                      tub.slot, or the tub can't be found at all. Pods
+  //                      relationship fields are only reliably canonical
+  //                      from one side (see project memory on postmeta
+  //                      mirroring) — this exists to catch exactly that
+  //                      class of drift.
+  //   all-paired (**) — no mismatch, AND every slot that Confirm Cabinet
+  //                      could ever pair (not empty, not impossible) is
+  //                      already paired.
+  //   conforms   (+)  — no mismatch, but at least one pairable slot is
+  //                      still waiting (i.e. some row is 'needs-tub').
+  _reportFresh() {
+    super._reportFresh();
+    this._applyConformanceStatus();
+  }
+
+  _applyConformanceStatus() {
+    if (!this.FRAME) return;
+
+    const rows = this.items ?? [];
+    const tubs = Array.isArray(this.modelInstance?.domain?.tub) ? this.modelInstance.domain.tub : [];
+    const tubsById = new Map(tubs.map(t => [Number(t.id), t]));
+
+    let mismatch = false;
+    for (const row of rows) {
+      if (row.empty || !row.openTub) continue;
+      const tub = tubsById.get(Number(row.currentTubId));
+      if (!tub || Number(tub.slot ?? 0) !== Number(row.slotId)) {
+        mismatch = true;
+        break;
+      }
+    }
+
+    const resolvable = rows.filter(r => !r.empty && !r.impossible);
+    const allPaired = resolvable.length > 0 && resolvable.every(r => !!r.openTub);
+
+    this.FRAME.classList.remove('mismatch', 'conforms', 'all-paired');
+    this.FRAME.classList.add(mismatch ? 'mismatch' : allPaired ? 'all-paired' : 'conforms');
   }
 
   // Confirm Cabinet: makes sure every slot with a current_flavor has
@@ -126,6 +282,11 @@ export default class CabinetWorkflowTile extends Tile {
       const assigned = [];
       const discrepancies = [];
       const impossible = [];
+      // Every row that gets a NEW tub linked this pass (adopted or freshly
+      // promoted) — optimistic-repaint candidates (see paintOptimistic
+      // below). Not populated for already-filled or impossible rows —
+      // nothing changed on those, nothing to preview.
+      const pendingPatches = [];
 
       for (const row of allRows) {
         if (row.empty) {
@@ -149,6 +310,7 @@ export default class CabinetWorkflowTile extends Tile {
           const picked = unclaimedOpen.length === 1 ? unclaimedOpen[0] : this.modelInstance.pickClosestToOne(unclaimedOpen);
           unclaimedOpen.forEach(t => claimed.add(Number(t.id))); // claim all candidates, not just the pick
           tubCells[picked.id] = { slot: row.slotId }; // already Opened — link only
+          pendingPatches.push({ row, tub: picked });
 
           if (unclaimedOpen.length > 1) {
             discrepancies.push(row);
@@ -169,6 +331,7 @@ export default class CabinetWorkflowTile extends Tile {
 
         claimed.add(Number(candidate.id));
         tubCells[candidate.id] = { state: 'Opened', slot: row.slotId, location: row.location };
+        pendingPatches.push({ row, tub: candidate });
         assigned.push(row);
         slotCells[row.slotId] = { confirm_state: 'filled' };
       }
@@ -189,11 +352,30 @@ export default class CabinetWorkflowTile extends Tile {
         }
       }
 
+      // Optimistic repaint for every slot that got a new tub link this pass
+      // — same mechanism/reasoning as ConfirmSwapModal's writes (see
+      // paintOptimistic's own header comment): show the outcome now, don't
+      // make the whole cabinet wait out the confirmation refetch below.
+      for (const { row, tub } of pendingPatches) {
+        this._paintOptimistic(row.slotId, {
+          openTub: { ...tub, state: 'Opened', slot: row.slotId, location: row.location },
+          currentTubId: tub.id,
+          discrepancy: false,
+          impossible: false,
+        });
+      }
+
+      if (alertResult) alert(this._confirmCabinetMessage(assigned, discrepancies, impossible));
+
       if (Object.keys(tubCells).length || Object.keys(slotCells).length) {
         await this.api.refreshPageDomain({ force: true });
       }
 
-      if (alertResult) alert(this._confirmCabinetMessage(assigned, discrepancies, impossible));
+      this._confirmOptimisticBatch(pendingPatches.map(({ row, tub }) => ({
+        slotId: row.slotId,
+        current_flavor: row.flavorId,
+        tub: tub.id,
+      })));
 
     } finally {
       this.FRAME.classList.remove('reconciling');
@@ -224,7 +406,19 @@ export default class CabinetWorkflowTile extends Tile {
   buildItemDom(row) {
     const el = this.el;
 
-    const statusClass = row.impossible ? 'impossible' : row.discrepancy ? 'discrepancy' : null;
+    // needs-tub/ready-to-link are mutually exclusive by construction (see
+    // row.readyToLink's own comment in the model) — both are the common,
+    // auto-resolvable case, split by what Confirm Cabinet would actually
+    // do: ready-to-link means an already-Opened unclaimed tub is just
+    // waiting to be linked (no state write); needs-tub means resolving it
+    // requires promoting a fresh tub. Kept distinct from impossible/
+    // discrepancy, which flag cases Confirm Cabinet can't (or can only
+    // ambiguously) resolve on its own.
+    const statusClass = row.impossible ? 'impossible'
+      : row.discrepancy ? 'discrepancy'
+      : row.readyToLink ? 'ready-to-link'
+      : (!row.empty && !row.openTub) ? 'needs-tub'
+      : null;
 
     const LI = el('li', {
       classes: ['slot', row.empty ? 'empty' : this._slug(row.flavorTitle), statusClass],
@@ -238,18 +432,13 @@ export default class CabinetWorkflowTile extends Tile {
     }
     
     if (row.empty) {
-      // Narrow scope for now: only opens the swap modal (reused) when this
-      // slot already has a scheduled flavor (immediate_flavor/next_flavor)
-      // — e.g. left there by a prior "leave slot empty". A free-form
-      // flavor picker for a slot with no schedule at all is a later
-      // fallback, not built yet.
-      const hasSchedule = !!(row.immediateFlavorId || row.nextFlavorId);
+      // Opens the free-form flavor picker (see flavor-picker-modal.js) —
+      // no scheduled-flavor gate needed, the picker covers any eligible
+      // flavor including immediate_flavor/next_flavor.
       LI.append(el('button', {
         text: 'Add Flavor',
         classes: ['add-flavor'],
-        attrs: hasSchedule
-          ? { type: 'button' }
-          : { type: 'button', disabled: true, title: 'No flavor scheduled for this slot yet.' },
+        attrs: { type: 'button' },
         data: { slotId: row.slotId },
       }));
       return LI;
@@ -271,23 +460,18 @@ export default class CabinetWorkflowTile extends Tile {
     // gate this button (superseded change-tub.md decision — was omitted
     // entirely before).
     //
-    // Disabled when row.openTub is null: there's no confirmed tub linked to
-    // this slot yet to swap out or empty, so nothing here has a valid
-    // target until Confirm Cabinet resolves it (adopts/opens one, or flags
-    // the slot impossible/discrepancy).
+    // Disabled only for discrepancy: multiple open tubs already match, and
+    // which one belongs here needs Confirm Cabinet to resolve, not a manual
+    // pick. openTub present -> opens SWAP_MODAL; absent but not a
+    // discrepancy (needs-tub/impossible) -> opens the free-form picker
+    // instead (see the FRAME click handler above) — both cases are
+    // clickable here.
     LI.append(el('button', {
       text: 'add next',
       classes: ['add-next'],
-      attrs: row.openTub
-        ? { type: 'button' }
-        : { type: 'button', disabled: true, title: 'Run Confirm Cabinet first to link a tub to this slot.' },
-      data: { slotId: row.slotId },
-    }));
-
-    LI.append(el('button', {
-      text: 'add special',
-      classes: ['add-special'],
-      attrs: { type: 'button' },
+      attrs: row.discrepancy
+        ? { type: 'button', disabled: true, title: 'Run Confirm Cabinet first to resolve which tub belongs here.' }
+        : { type: 'button' },
       data: { slotId: row.slotId },
     }));
 

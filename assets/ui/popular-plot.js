@@ -13,7 +13,7 @@ const DECO_MAX_WIDTH_RATIO = 0.05;
 // trend -> center-mark shape, so direction reads even without color (the
 // existing trend-based fill on the center mark stays too, as a second,
 // reinforcing cue rather than being replaced).
-const CENTER_SHAPE_BY_TREND = { rising: "triangle", falling: "cross", steady: "circle" };
+const CENTER_SHAPE_BY_TREND = { rising: "triangle-up", falling: "triangle-down", steady: "circle" };
 
 // dairy/non-dairy -> halo hue. Table-driven (not an if/else) so a future
 // category (e.g. per-allergen) is a one-line addition, not a new branch.
@@ -377,10 +377,9 @@ export default class PopularPlot {
 
     // Flavor IDs are numeric strings, safe to inline as attribute values.
     // No tag restriction on the second selector — halos are always
-    // <circle>, but center marks can be <circle>, <polygon> (triangle), or
-    // a 12-point <polygon> (cross) depending on trend (see
-    // _buildCenterShape); a tag-scoped selector would miss the polygon
-    // shapes entirely.
+    // <circle>, but center marks can be <circle> (steady) or <polygon>
+    // (triangle-up/triangle-down — rising/falling, see _buildCenterShape);
+    // a tag-scoped selector would miss the polygon shapes entirely.
     const selectors = hideIds.flatMap(id => [
       `.popularView tr.row[data-row-id="${id}"]`,
       `.popularView [data-popular-id="${id}"]`,
@@ -765,20 +764,16 @@ export default class PopularPlot {
     if (shape === "circle") {
       return this._svg("circle", { attrs: { cx, cy, r } });
     }
-    if (shape === "triangle") {
-      const h = r * 1.7, w = r * 1.5;
-      return this._svg("polygon", {
-        attrs: { points: `${cx},${cy - h} ${cx + w},${cy + h * 0.65} ${cx - w},${cy + h * 0.65}` },
-      });
-    }
-    // cross
-    const t = r * 0.42, b = r * 1.3;
-    const pts = [
-      [cx - t, cy - b], [cx + t, cy - b], [cx + t, cy - t], [cx + b, cy - t],
-      [cx + b, cy + t], [cx + t, cy + t], [cx + t, cy + b], [cx - t, cy + b],
-      [cx - t, cy + t], [cx - b, cy + t], [cx - b, cy - t], [cx - t, cy - t],
-    ].map(([px, py]) => `${px},${py}`).join(" ");
-    return this._svg("polygon", { attrs: { points: pts } });
+    // triangle-up (rising) or triangle-down (falling) — same geometry,
+    // mirrored vertically: "up" points its apex toward -y (up the screen),
+    // "down" flips that sign so the apex points toward +y instead.
+    const dir = shape === "triangle-up" ? -1 : 1;
+    const h = r * 1.7, w = r * 1.5;
+    const apex = cy + dir * h;
+    const base = cy - dir * h * 0.65;
+    return this._svg("polygon", {
+      attrs: { points: `${cx},${apex} ${cx + w},${base} ${cx - w},${base}` },
+    });
   }
 
   _ticks(max, count = 5) {
