@@ -305,6 +305,132 @@ function scoop_classify_fetch_fields( array $spec_fields ): array {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// tub relationship bulk read (performance.md #11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * tub's six relationship ('pick') fields — batch, flavor, location, use,
+ * slot, closeout — each resolved via a per-row $pod->field() call today,
+ * confirmed (performance.md #11) as ~83% of a cold bundle fetch's total
+ * time. Below is a bulk wp_podsrel read replacing all six per-row calls
+ * with one query for the whole result set.
+ *
+ * Verified equivalent to $pod->field() across all 2,427 real local tub rows
+ * (14,562 (row, field) checks, 0 mismatches) — see the CabinetWorkflow QA
+ * conversation — PROVIDED the read joins wp_posts and requires
+ * post_status = 'publish' on the related item. Without that join there were
+ * 18 real mismatches, all explained: $pod->field() silently excludes
+ * relationship targets that aren't published (confirmed via 3 real
+ * draft-status batch/closeout posts) — wp_podsrel still carries the row
+ * regardless of the target's status, so a naive read doesn't know to
+ * exclude it. This matters here specifically because a large share of
+ * `tub` posts in this shop's data are `draft` (Emptied tubs manually
+ * unpublished) — this bypass reproduces $pod->field()'s existing exclusion
+ * behavior exactly, not a new rule.
+ */
+
+/**
+ * Resolves the tub pod's field_id for each relationship field slug, from
+ * wp_posts (_pods_field posts, child of the _pods_pod 'tub' post) — NEVER
+ * hardcode these: they're per-environment auto-increment IDs and will
+ * differ between local/TEST/OPS. Cached in a transient since Pods field
+ * definitions essentially never change; DAY_IN_SECONDS is generous, not
+ * load-bearing (a stale/missing cache just means one extra cheap query,
+ * not wrong data).
+ */
+function scoop_tub_relationship_field_ids(): array {
+  static $cache = null;
+  if ( $cache !== null ) return $cache;
+
+  $transient_key = 'scoop_tub_rel_field_ids';
+  $cached = get_transient( $transient_key );
+  if ( is_array( $cached ) && count( $cached ) === 6 ) {
+    $cache = $cached;
+    return $cache;
+  }
+
+  global $wpdb;
+  $slugs = [ 'batch', 'flavor', 'location', 'use', 'slot', 'closeout' ];
+
+  $pod_post_id = $wpdb->get_var( $wpdb->prepare(
+    "SELECT ID FROM {$wpdb->posts} WHERE post_type = '_pods_pod' AND post_name = %s LIMIT 1",
+    'tub'
+  ) );
+
+  $out = [];
+  if ( $pod_post_id ) {
+    $placeholders = implode( ',', array_fill( 0, count( $slugs ), '%s' ) );
+    $rows = $wpdb->get_results( $wpdb->prepare(
+      "SELECT ID, post_name FROM {$wpdb->posts} WHERE post_type = '_pods_field' AND post_parent = %d AND post_name IN ({$placeholders})",
+      array_merge( [ $pod_post_id ], $slugs )
+    ) );
+    foreach ( $rows as $r ) {
+      $out[ $r->post_name ] = (int) $r->ID;
+    }
+  }
+
+  $cache = $out;
+  set_transient( $transient_key, $out, DAY_IN_SECONDS );
+  return $out;
+}
+
+/**
+ * Bulk-reads tub's six relationship fields from wp_podsrel in ONE query,
+ * scoped to the same tub rows the caller's own find() WHERE clause would
+ * select ($tub_where_sql — pass the exact same $where_clauses string
+ * scoop_fetch_entities builds for 'tub', so the two selections can never
+ * drift apart). Returns [ tub_id => [ field_slug => related_post_id ], ... ]
+ * — a field/tub with no eligible relationship is simply absent (caller
+ * treats that as 0, same as $pod->field() returning empty). All six fields
+ * are pick_format_type 'single' (confirmed: 0 multi-row cases in the
+ * verification pass), so only the first matching row per (item, field) is
+ * kept — 'ORDER BY r.id ASC' makes that deterministic.
+ *
+ * The subquery joins {$wpdb->prefix}pods_tub AS d (Pods' own table storage
+ * for tub's scalar fields — state/amount/emptied_at/etc., see project
+ * memory on Pods storage) alongside wp_posts AS t, with the SAME aliases
+ * Pods' own internal find() query uses. $tub_where_sql routinely contains
+ * bare column references like `state`/`emptied_at`/`location` (the
+ * Emptied-exclusion clause, the location filter) that only resolve against
+ * `d`, not `t` — without this join those references would error as
+ * unknown columns.
+ */
+function scoop_bulk_tub_relationships( string $tub_where_sql ): array {
+  $field_ids = scoop_tub_relationship_field_ids();
+  if ( empty( $field_ids ) ) return [];
+
+  global $wpdb;
+  $id_to_slug    = array_flip( $field_ids );
+  $field_id_list = implode( ',', array_map( 'intval', array_values( $field_ids ) ) );
+
+  $rows = $wpdb->get_results(
+    "SELECT r.item_id, r.field_id, r.related_item_id
+     FROM {$wpdb->prefix}podsrel r
+     INNER JOIN {$wpdb->posts} p ON p.ID = r.related_item_id
+     WHERE r.field_id IN ({$field_id_list})
+       AND p.post_status = 'publish'
+       AND r.item_id IN (
+         SELECT t.ID
+         FROM {$wpdb->posts} t
+         LEFT JOIN {$wpdb->prefix}pods_tub d ON d.id = t.ID
+         WHERE t.post_type = 'tub' AND ({$tub_where_sql})
+       )
+     ORDER BY r.id ASC"
+  );
+
+  $out = [];
+  foreach ( $rows as $r ) {
+    $slug = $id_to_slug[ (int) $r->field_id ] ?? null;
+    if ( ! $slug ) continue;
+    $item_id = (int) $r->item_id;
+    if ( isset( $out[ $item_id ][ $slug ] ) ) continue; // first match wins — pick_format_type=single
+    $out[ $item_id ][ $slug ] = (int) $r->related_item_id;
+  }
+
+  return $out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Core fetch
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -365,6 +491,19 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
   // resolving it per-row via $pod->field() here first is pure waste.
   if ( $key === 'slot' ) {
     unset( $needs_field['location'] );
+  }
+
+  // tub's six relationship fields are resolved via one bulk wp_podsrel read
+  // instead of six $pod->field() calls per row — see
+  // scoop_bulk_tub_relationships()'s own header comment for the
+  // equivalence verification this relies on. Populated into $row directly
+  // in the fetch loop below, from $tub_relationships (computed after
+  // $where_clauses is finalized, since it reuses that exact WHERE so the
+  // two selections can never drift apart).
+  if ( $key === 'tub' ) {
+    foreach ( [ 'batch', 'flavor', 'location', 'use', 'slot', 'closeout' ] as $rel_field ) {
+      unset( $needs_field[ $rel_field ] );
+    }
   }
 
   $loc_id = ! empty( $ctx['location'] ) ? (int) $ctx['location'] : 0;
@@ -469,11 +608,13 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     }
   }
 
+  $find_where = implode( ' AND ', $where_clauses );
+
   $find_params = [
     'limit'   => -1,
     'orderby' => 'post_date',
     'order'   => 'ASC',
-    'where'   => implode( ' AND ', $where_clauses ),
+    'where'   => $find_where,
   ];
 
   // Timing diagnostic for the "why does a cold-cache bundle fetch take
@@ -487,12 +628,25 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
   $t_request_start  = microtime( true );
   $t_needs_field_ms = 0.0;
   $t_post_fields_ms = 0.0;
+  $t_rel_bulk_ms    = 0.0;
+
+  // See scoop_bulk_tub_relationships()'s header comment. $find_where is the
+  // exact same WHERE this fetch's own find() uses, so the bulk relationship
+  // read can never select a different set of tubs than the row loop below
+  // actually iterates.
+  $tub_relationships = [];
+  if ( $key === 'tub' ) {
+    $t0 = microtime( true );
+    $tub_relationships = scoop_bulk_tub_relationships( $find_where );
+    $t_rel_bulk_ms = ( microtime( true ) - $t0 ) * 1000;
+  }
 
   $pod = pods( $pod_name );
   if ( ! $pod ) return [];
 
+  $t0 = microtime( true );
   $pod->find( $find_params );
-  $t_find_ms = ( microtime( true ) - $t_request_start ) * 1000;
+  $t_find_ms = ( microtime( true ) - $t0 ) * 1000;
 
   $out = [];
 
@@ -525,6 +679,16 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
       $row[ $field ] = scoop_cast( $pod->field( $field ), $desc );
     }
     $t_needs_field_ms += ( microtime( true ) - $t0 ) * 1000;
+
+    // tub's six relationship fields, from the bulk podsrel read above —
+    // already plain resolved post IDs (or 0), no $pod->field()/scoop_cast()
+    // needed. See scoop_bulk_tub_relationships().
+    if ( $key === 'tub' ) {
+      foreach ( [ 'batch', 'flavor', 'location', 'use', 'slot', 'closeout' ] as $rel_field ) {
+        if ( ! array_key_exists( $rel_field, $spec_fields ) ) continue;
+        $row[ $rel_field ] = $tub_relationships[ $id ][ $rel_field ] ?? 0;
+      }
+    }
 
     // Post fields from wp_posts columns already in $pod->row.
     // post_modified and post_date are omitted when zero, same as spec datetime fields.
@@ -591,8 +755,8 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
   $t_total_ms = ( microtime( true ) - $t_request_start ) * 1000;
 
   scoop_debug_log( sprintf(
-    "scoop_fetch_entities('%s'): %d rows | find=%.1fms | needs_field=%.1fms | post_fields=%.1fms | slot_enrich=%.1fms | TOTAL=%.1fms (%.2fms/row)",
-    $key, $row_count, $t_find_ms, $t_needs_field_ms, $t_post_fields_ms, $t_enrich_ms, $t_total_ms,
+    "scoop_fetch_entities('%s'): %d rows | find=%.1fms | rel_bulk=%.1fms | needs_field=%.1fms | post_fields=%.1fms | slot_enrich=%.1fms | TOTAL=%.1fms (%.2fms/row)",
+    $key, $row_count, $t_find_ms, $t_rel_bulk_ms, $t_needs_field_ms, $t_post_fields_ms, $t_enrich_ms, $t_total_ms,
     $row_count ? $t_total_ms / $row_count : 0.0
   ) );
 
