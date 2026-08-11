@@ -91,31 +91,31 @@ Add to `assets/css.css`:
 
 ```css
 /* Days of Supply color coding */
-.zGRID td.days_of_supply.supply-critical {
+table.zList td.days_of_supply.supply-critical {
   color: #d32f2f;
   font-weight: 600;
 }
-.zGRID td.days_of_supply.supply-warning {
+table.zList td.days_of_supply.supply-warning {
   color: #f9a825;
   font-weight: 600;
 }
-.zGRID td.days_of_supply.supply-ok {
+table.zList td.days_of_supply.supply-ok {
   color: #2e7d32;
 }
 
 /* Trend direction indicators */
-.zGRID td.trend.trend-rising {
+table.zList td.trend.trend-rising {
   color: #2e7d32;
 }
-.zGRID td.trend.trend-falling {
+table.zList td.trend.trend-falling {
   color: #d32f2f;
 }
-.zGRID td.trend.trend-steady {
+table.zList td.trend.trend-steady {
   color: #757575;
 }
 
 /* Analytics grid: hide the save button (read-only) */
-.scoop-grid.Analytics .zGRID-form > button.save {
+.scoop-grid.Analytics .zList-form > button.save {
   display: none;
 }
 ```

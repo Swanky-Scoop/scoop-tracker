@@ -127,11 +127,15 @@ override — more moving parts for a subtle gain).
 ## GRID CONTAINER
 
 <a id="scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id"></a>
-### `.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zGRID-form, .scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zTILE-form`
+### `.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zList-form`
 
 Sizes the loading card itself (not just the shimmer overlay) to fit 6
-skeleton rows, so form.zGRID-form's own box-shadow wraps the full
-placeholder instead of just the (still-short) real header content.
+skeleton rows, so form.zList-form's own box-shadow wraps the full
+placeholder instead of just the (still-short) real header content. One
+selector now covers both Grid and Tile — zGRID-form/zTILE-form used to be
+two separate classes needing two selectors here; both are zList-form now
+(see "TILE VIEW" section below on how table vs. div.zList still
+differentiates the two where a real difference is needed).
 .scoop-grid is unsized and just grows to contain this. Scoped to the same
 "no rows yet" condition as the shimmer below, so a populated grid with
 only a few real rows isn't forced to this height too.
@@ -142,7 +146,7 @@ only a few real rows isn't forced to this height too.
 Shimmering skeleton placeholder — shown while a grid has no rows yet
 (before the bundle fetch resolves and List/Grid appends the first
 <tbody> row or, for the card view, the first <li>). Mostly gated on DOM
-shape (table.zGRID holds only its <thead>, .zTILE's group <ul> stays
+shape (table.zList holds only its <thead>, .zList's group <ul> stays
 empty, until real data lands) — but a resolved-and-genuinely-empty grid
 has the same empty shape, so List.buildEmptyDom() appends a real
 .empty-state node ("No matching items") to tell the two apart. Grid's
@@ -343,7 +347,7 @@ further up).
 <a id="in-dock-canvas-button-save"></a>
 ### `.in-dock .canvas button.save`
 
-Same fix, opposite edge: form.zGRID-form's save button (see "FORM"
+Same fix, opposite edge: form.zList-form's save button (see "FORM"
 further down) sticks with `bottom: 0`, which is measured from .canvas's
 PADDING-bottom edge — --dimension-canvas-gutter above the real visible
 bottom of .canvas. Uncompensated, the button stops that far short of the
@@ -460,7 +464,7 @@ Compact density for whatever's docked in <aside> — a narrow sidebar has
 much less room than a full-width .canvas panel. font-size:0.67rem sets
 the baseline (inherited by anything that doesn't set its own), which
 covers most of a grid's text on its own; the one place within a grid
-that's KNOWN to render bigger is a group-header row's <th> (table.zGRID
+that's KNOWN to render bigger is a group-header row's <th> (table.zList
 tbody tr th, normally 0.75rem — see "TABLE - CELLS (td)" below — sized up
 deliberately for a full-width grid, wrong in a narrow sidebar), capped
 here explicitly. Not a blanket `* { font-size }` override — that would
@@ -606,6 +610,30 @@ bottom-up entrance instead.
 
 ## TABLE - ROW GROUPS
 
+<a id="groupcell"></a>
+### `.groupCell`
+
+Shared between Grid's `<th class="groupCell">` (inside table.zList's
+tr.group) and Tile's `<div class="groupCell">` (inside .group's header) —
+one rule set for both instead of a parallel Tile-only copy, so a group
+header looks and behaves the same regardless of which control renders it
+(see tile.js/grid.js's own buildGroupDom). Not scoped to table.zList:
+background/padding/border are given here directly rather than inherited
+from the generic `table.zList th` rule, since Tile's div never gets that
+for free.
+
+<a id="collapsible-closed-groupcell"></a>
+### `.collapsible.closed .groupCell`
+
+Closed-state chevron swap + border cleanup — shared by both controls'
+`.groupCell` (see above). The actual item-hiding declarations below it
+still differ per control (`.row td`/`.row th` vs `.groupBody`'s own `> ul >
+li` rule further down) since a table row and a flex/block card need
+different techniques to collapse — but both are driven by the same
+`.collapsible.opened`/`.collapsible.closed` classes on the same
+`.groupBody` container (`tbody`/`section` — see tile.js/grid.js's
+buildGroupDom).
+
 <a id="and-row-td-and-row-th"></a>
 ### `& .row td, & .row th`
 
@@ -615,6 +643,26 @@ ItemPivot section) — without this, collapsing a group hid every td's
 content but left that leading label fully visible. Its text is a bare
 text node (no wrapper element), so it's collapsed directly here rather
 than via the '& > *' trick below, which only td's square buttons need.
+
+<a id="groupbody-collapsible-closed-ul-li"></a>
+### `.groupBody.collapsible.closed > ul > li`
+
+Tile's counterpart to the Grid `.row td`/`.row th` rule above — same
+`.collapsible.closed` hook, different technique because the DOM shape
+differs: a `<tr>` can't be height-collapsed directly in table layout (a
+row's height is driven by its tallest cell, so Grid zeroes each cell's own
+`line-height`/`max-height` instead — see above), but a Tile `<li>` is a
+normal flex box and can just be collapsed itself directly — `height`,
+`max-height`, `padding`, and `border` all zeroed on the `<li>` rather than
+threaded through each cell. `pointer-events: none` stands in for Grid's
+`& button, & input { display: none }` (Tile's cards don't reliably have
+their own interactive children at a fixed nesting depth the way a `<td>`
+does) — nothing inside a closed card should be clickable either way. The
+`.collapsible.opened > ul > li { max-height: 20rem }` counterpart (just
+above, alongside Grid's own opened-state rule) exists for the same reason
+Grid's does: `max-height: 0` and `max-height: none`/`auto` can't be
+transitioned between smoothly, so both states need a concrete number for
+the `* { transition: all 0.3s ease 0.05s }` base rule to animate against.
 
 ## GRID FILTER INPUT
 
@@ -630,7 +678,7 @@ instead of underneath it.
 ## ROW STATE — loading / autosave / dirty-edit / emptied-opened
 
 <a id="zgrid-form-autosave-not-autosave-partial-button-save"></a>
-### `.zGRID-form.autosave:not(.autosave-partial) > button.save`
+### `.zList-form.autosave:has(> table):not(.autosave-partial) > button.save`
 
 ── Autosave grids ──────────────────────────────────────────────────────────
 Grids whose model sets `autosave = true` persist each change immediately and
@@ -640,6 +688,14 @@ A model may still opt some fields into autosave and leave the rest manual
 (`autosaveFields` — no grid currently does this; autosave has turned out to
 need to be all-or-nothing per grid, see flavor-tub-grid-model.js) — that
 gets the extra `autosave-partial` class and keeps the button.
+
+`:has(> table)` is new since the zGRID/zTILE → zList rename: this was
+`.zGRID-form...`, implicitly Grid-only because only Grid's form carried
+that class. Now that Grid and Tile share `zList-form`, the `:has(> table)`
+guard preserves that same Grid-only scoping explicitly — no CabinetWorkflow
+(Tile) grid currently has a visible save button to hide this way regardless
+(it's hidden unconditionally, see "ANALYTICS" section), so this is a
+same-behavior rename, not a scope change.
 
 <a id="state-emptied"></a>
 ### `.state-Emptied`
@@ -732,7 +788,7 @@ canvas-control-min (30rem) up to 40rem, or below 30rem via .canvas's
 own gutter-collapse/scroll fallback (further up) — so both thresholds
 are comfortably crossable in both directions.
 
-## CABINET VIEW - Cabinet Workflow grid
+## CABINET WORKFLOW - state indicators
 
 <a id="and-confirming"></a>
 ### `&.confirming`
@@ -743,10 +799,12 @@ confirmation refetch is still in flight. Crude/dev-visible on
 purpose, same as needs-tub/impossible above.
 
 <a id="ztile-mismatch-tiletools-after-ztile-conforms-tiletools"></a>
-### `.zTILE.mismatch > .tileTools::after, .zTILE.conforms > .tileTools::after, .zTILE.all-paired > .tileTools::after`
+### `.zList.mismatch > .tileTools::after, .zList.conforms > .tileTools::after, .zList.all-paired > .tileTools::after`
 
 Crude dev-only QA indicator — see CabinetWorkflowTile._applyConformanceStatus.
-State class lives on .zTILE (component root); glyph renders on the
+State class lives on .zList (component root, was .zTILE before the zGRID/
+zTILE → zList rename — unambiguous either way since a Grid's table never
+carries a .tileTools child); glyph renders on the
 always-present .tileTools child so it's visible without digging into
 the group/list markup. Remove once the feature's confirmed working.
 
@@ -812,7 +870,7 @@ shrink instead of overflowing its cell.
 ### `.popularPlotArea`
 
 Same translucent-over-page-background tone as the key table's own cells
-(table.zGRID's background) — scoped to the plot rect only (fills the
+(table.zList's background) — scoped to the plot rect only (fills the
 whole SVG now — margins are .popularChart's grid tracks, not part of
 this SVG at all anymore), not .popularPlotShell's own more-transparent
 background that the surrounding label cells still sit on.

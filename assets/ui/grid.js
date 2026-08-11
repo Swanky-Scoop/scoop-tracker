@@ -16,11 +16,11 @@ export default class Grid extends List {
   buildCoreDom() {
     const el = this.el;
 
-    this.FORM    = el('form',   { classes: ['zGRID-form'] });
+    this.FORM    = el('form',   { classes: ['zList-form'] });
     this.TOGGLE  = this._buildToggleButton();
     this.FILTERS = el('div',    { classes: ['gridFilters', 'empty'] });
     this.SUBMIT  = this._buildSubmitButton();
-    this.TABLE   = el('table',  { classes: ['zGRID'] });
+    this.TABLE   = el('table',  { classes: ['zList'] });
     this.THEAD   = el('thead');
     this.TRH     = el('tr');
 

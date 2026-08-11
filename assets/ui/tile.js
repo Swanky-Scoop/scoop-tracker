@@ -30,11 +30,11 @@ export default class Tile extends List {
   buildCoreDom() {
     const el = this.el;
 
-    this.FORM    = el('form',   { classes: ['zTILE-form'] });
+    this.FORM    = el('form',   { classes: ['zList-form'] });
     this.TOGGLE  = this._buildToggleButton();
     this.FILTERS = el('div',    { classes: ['gridFilters', 'empty'] });
     this.SUBMIT  = this._buildSubmitButton();
-    this.FRAME   = el('div',    { classes: ['zTILE'] });
+    this.FRAME   = el('div',    { classes: ['zList'] });
     this.TOOLS   = el('div',    { classes: ['tileTools'] });
 
     this.FRAME.append(this.TOOLS);
@@ -54,31 +54,50 @@ export default class Tile extends List {
 
   // group.label falsy => the synthetic ungrouped container: a bare <ul>
   // wrapper, no header.
+  //
+  // Same three-level shape as Grid's tbody.groupBody > tr.group >
+  // th.groupCell (see grid.js's buildGroupDom) — section/div/div instead of
+  // tbody/tr/th, but identical class hooks throughout ('groupBody' state
+  // container, 'group' header row, 'groupCell'/'groupLabel'/'oc' inside it)
+  // so css.css styles and collapses both from one rule set, not a parallel
+  // Tile-only copy. Items go into <ul>, a sibling of the header div, rather
+  // than Grid's item <tr>s, which are siblings of tr.group directly inside
+  // tbody — <li> needs a real <ul>/<ol> parent to stay valid HTML, table
+  // rows don't have an equivalent constraint.
   buildGroupDom(group, fields, opened) {
     const el = this.el;
 
-    const WRAPPER = el('div', {
-      classes: ['group', this._groupTypeClass(group), (group.collapsible ? 'collapsible' : 'static'), (opened ? 'opened' : 'closed')],
+    const SECTION = el('section', {
+      classes: ['groupBody', this._groupTypeClass(group), (group.collapsible ? 'collapsible' : 'static'), (opened ? 'opened' : 'closed')],
       data: { groupType: group.groupType, rowType: group.rowType, groupContainer: '', groupId: group.groupId },
     });
 
     const UL = el('ul');
-    WRAPPER._itemsHost = UL; // List._buildItems() appends items here, not into WRAPPER directly
+    SECTION._itemsHost = UL; // List._buildItems() appends items here, not into SECTION directly
 
     if (!group.label) {
-      WRAPPER.append(UL);
-      return WRAPPER;
+      SECTION.append(UL);
+      return SECTION;
     }
 
-    WRAPPER.classList.add(this._slug(group.label));
+    const GR = el('div', {
+      classes: ['group', this._slug(group.label)],
+      data: { rowId: group.groupId, groupLabel: group.label },
+    });
+    const GD = el('div', { classes: ['groupCell'] });
+    const SP = el('b');
+    const OC = group.collapsible ? el('button', { classes: ['oc'], attrs: { type: 'button' } }) : null;
+    const LB = el('h2', { text: group.label, classes: ['groupLabel'] });
 
-    const HEADER = el('div', { classes: ['group-header'] });
-    if (group.collapsible) HEADER.append(el('button', { classes: ['oc'], attrs: { type: 'button' } }));
-    HEADER.append(el('h2', { text: group.label }));
-    if (group.badges && group.badges[0]) HEADER.append(this._getBadgeDom(group.badges));
+    if (group.collapsible) SP.append(OC);
+    if (group.badges && group.badges[0]) GD.append(this._getBadgeDom(group.badges));
 
-    WRAPPER.append(HEADER, UL);
-    return WRAPPER;
+    SP.append(LB);
+    GD.append(SP);
+    GR.append(GD);
+
+    SECTION.append(GR, UL);
+    return SECTION;
   }
 
   buildItemDom(row) {

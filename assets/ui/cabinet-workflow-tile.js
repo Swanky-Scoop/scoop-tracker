@@ -184,7 +184,7 @@ export default class CabinetWorkflowTile extends Tile {
   // Crude dev-only QA indicator, not real UI — see cabinet-workflow QA
   // conversation. Recomputed on every render (init AND refresh, since both
   // call _reportFresh() at the end — see _list.js) so it stays live across
-  // domain updates. State class goes on FRAME (.zTILE, the component's
+  // domain updates. State class goes on FRAME (.zList, the component's
   // root div); css.css reads it off an ::after on .tileTools, a fixed,
   // always-present child (see tile.js buildCoreDom), so the class itself
   // stays easy to find in devtools while the visible glyph lives somewhere

@@ -275,7 +275,7 @@ html body {
           margin: 0;
           min-height: 100vh;
           & button {display: none;}
-          & .zGRID-form{
+          & .zList-form{
             width: 100%;
           }
 
@@ -568,8 +568,7 @@ html > body.TS_GRID-UPDATING .scoop-grid {
 }
 
 /* see css.md#scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id */
-.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zGRID-form,
-.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zTILE-form {
+.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zList-form {
   min-height: 13.5rem;
 }
 
@@ -615,7 +614,7 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   color: var(--color-text-base);
   font-style: italic;
 }
-.popularKey .zGRID-form .zGRID{
+.popularKey .zList-form .zList{
   & td, th{
     font-size:.67rem;
     padding:.25em .5em;
@@ -696,7 +695,7 @@ html > body.TS_GRID-UPDATING .scoop-grid {
       text-align: center;
     }
 
-    & .zGRID {
+    & .zList {
       margin: 0;
 
       & th {
@@ -735,11 +734,11 @@ html > body.TS_GRID-UPDATING .scoop-grid {
     transform: scaleY(0);
     opacity: 0;
 
-    & table.zGRID {
+    & table.zList {
       width: 100% !important;
     }
 
-    & .zGRID th {
+    & .zList th {
       height: auto;
     }
 
@@ -1037,7 +1036,7 @@ body.dock-resizing {
 .in-dock aside {
   font-size: 0.67rem;
 
-  & table.zGRID tbody tr th {
+  & table.zList tbody tr th {
     font-size: 0.67rem;
   }
 }
@@ -1255,7 +1254,10 @@ body.dock-resizing {
    FORM
    ============================================ */
 
-form.zGRID-form {
+/* :has(> table) — was form.zGRID-form; Grid's FORM directly wraps its
+   table, Tile's wraps a div.zList instead, so this is how a Grid-only rule
+   still targets only Grid now that both share the zList-form class. */
+form.zList-form:has(> table) {
   display: inline-flex;
   flex-direction: column;
   gap: 0;
@@ -1333,7 +1335,7 @@ form.zGRID-form {
    TABLE - CORE STRUCTURE
    ============================================ */
 
-table.zGRID {
+.zList {
   width: auto;
   border-spacing: 0;
   border-collapse: separate;
@@ -1353,8 +1355,8 @@ table.zGRID {
     }
   }
 
-  & tbody {
-    & tr th {
+  & .groupBody  {
+    & .group .groupCell {
       font-size: 0.75rem;
       color: var(--color-text-white);
       background-color: var(--color-green-medium);
@@ -1381,7 +1383,7 @@ table.zGRID {
    TABLE - HEADERS (th)
    ============================================ */
 
-table.zGRID th {
+table.zList th {
   background-color: var(--color-green-pale);
   padding: 0.5rem;
   border: 1px solid var(--color-border-green);
@@ -1422,10 +1424,10 @@ table.zGRID th {
    TABLE - CELLS (td)
    ============================================ */
 
-table.zGRID tr:focus-within{
+table.zList tr:focus-within{
     z-index: 9;
 }
-table.zGRID td {
+table.zList td {
   border: 1px solid var(--color-border-green);
   text-align: left;
 
@@ -1461,7 +1463,7 @@ table.zGRID td {
   }
 }
 
-table.zGRID th:focus-within {
+table.zList th:focus-within {
   z-index: 9;
 }
 
@@ -1469,7 +1471,7 @@ table.zGRID th:focus-within {
    TABLE - ALERT STATES
    ============================================ */
 
-table.zGRID {
+table.zList {
   & th.none-left,
   & td.none-left {
     background-color: var(--color-alert-none);
@@ -1515,14 +1517,25 @@ table.zGRID {
    TABLE - ROW GROUPS
    ============================================ */
 
-table.zGRID .groupCell {
+/* see css.md#groupcell */
+.groupCell {
+  background-color: var(--color-green-pale);
   padding: 0.5rem;
+  border: 1px solid var(--color-border-green);
 
   & b {
     display: flex;
     gap: 0.25rem;
     vertical-align: middle;
     align-items: center;
+  }
+
+  /* h2 in Tile, span in Grid — reset to look like plain inline label text
+     either way; the tag choice is Tile's own heading semantics, not a
+     visual one. */
+  & .groupLabel {
+    margin: 0;
+    font: inherit;
   }
 
   & button.oc {
@@ -1553,28 +1566,34 @@ table.zGRID .groupCell {
   }
 }
 
-/* Collapsible Groups - Opened State */
-table.zGRID .collapsible.opened .row td > * {
+/* Collapsible Groups - Opened State (Grid) */
+table.zList .collapsible.opened .row td > * {
   max-height: 20rem;
 }
 
-/* Collapsible Groups - Closed State */
-table.zGRID .collapsible.closed {
-  & .group th {
-    border-bottom: none;
+/* Collapsible Groups - Opened State (Tile) */
+.groupBody.collapsible.opened > ul > li {
+  max-height: 20rem;
+}
 
-    & button.oc {
-      &:after {
-        content: '⏵';
-        display: block;
-      }
+/* see css.md#collapsible-closed-groupcell */
+.collapsible.closed .groupCell {
+  border-bottom: none;
 
-      &:before {
-        display: none;
-      }
+  & button.oc {
+    &:after {
+      content: '⏵';
+      display: block;
+    }
+
+    &:before {
+      display: none;
     }
   }
+}
 
+/* Collapsible Groups - Closed State (Grid) — hides row content */
+table.zList .collapsible.closed {
   /* see css.md#and-row-td-and-row-th */
   & .row td,
   & .row th {
@@ -1602,11 +1621,37 @@ table.zGRID .collapsible.closed {
   }
 }
 
+/* see css.md#groupbody-collapsible-closed-ul-li */
+.groupBody.collapsible.closed > ul {
+  gap:0;
+  padding:0;
+
+  & > li {
+    aspect-ratio:0;
+    height: 0;
+    max-height: 0;
+    padding: 0;
+    border: none;
+    overflow: hidden;
+    pointer-events: none;
+
+    & * {
+      max-height: 0;
+      overflow: hidden;
+    }
+
+    & button,
+    & input {
+      display: none;
+    }
+  }
+}
+
 /* ============================================
    TABLE - BADGES
    ============================================ */
 
-table.zGRID tr .badges {
+table.zList tr .badges {
   font-size: 0.6rem;
   position: absolute;
   display: flex;
@@ -1628,7 +1673,7 @@ table.zGRID tr .badges {
     font-weight: bold;
   }
 }
-.Cabinet table.zGRID tr .badges{
+.Cabinet table.zList tr .badges{
   & .badge {
     min-width: 1rem;
   }
@@ -1638,7 +1683,7 @@ table.zGRID tr .badges {
    TABLE - SPECIAL COLUMNS
    ============================================ */
 
-table.zGRID tr {
+table.zList tr {
   & .id {
     display: none;
   }
@@ -1693,11 +1738,11 @@ table.zGRID tr {
 /* ============================================
    TABLE - CELLS (Editable & Read-only)
    ============================================ */
-aside table.zGRID thead {
+aside table.zList thead {
   position: sticky;
   top: 0;
 }
-aside table.zGRID tr .cell {
+aside table.zList tr .cell {
   padding: 1rem 3rem;
   border-width: 0.5px;
 
@@ -1710,7 +1755,7 @@ aside table.zGRID tr .cell {
     font-size: 0.67rem;
   }
 }
-table.zGRID tr {
+table.zList tr {
   & button,
   & input,
   & td,
@@ -1887,10 +1932,10 @@ form table {
 }
 
 /* see css.md#zgrid-form-autosave-not-autosave-partial-button-save */
-.zGRID-form.autosave:not(.autosave-partial) > button.save { display: none; }
+.zList-form.autosave:has(> table):not(.autosave-partial) > button.save { display: none; }
 
-.zGRID td.cell-saved { animation: scoopCellSaved 0.8s ease-out; }
-.zGRID td.cell-error { animation: scoopCellError 0.8s ease-out; }
+table.zList td.cell-saved { animation: scoopCellSaved 0.8s ease-out; }
+table.zList td.cell-error { animation: scoopCellError 0.8s ease-out; }
 
 /* see css.md#state-emptied */
 .state-Emptied {
@@ -2006,7 +2051,7 @@ body > .modal{
   overflow: hidden;
 
   &.show{
-    z-index: 99;
+    z-index: 999999;
     bottom:0;
     left:0;
     right:0;
@@ -2031,10 +2076,11 @@ body > .modal{
     max-height: 90vh;
     max-width: 95vw;
     width: 40rem;
-    background-color: var(--color-green-dark);
+    background-color: var(--color-green-light);
     flex-direction: column;
     opacity: 0;
     transition-delay: 300ms;
+    box-shadow: inset rgba(255,255,255,.125) 0 0 0 99rem, rgba(0,0,0,.25) 0 0 2rem;
 
     & > button.close {
       position: absolute;
@@ -2111,15 +2157,18 @@ body > .modal.flavor_picker {
 }
 
 /* ============================================
-   CABINET VIEW - Cabinet Workflow grid
+   TILE VIEW - generic .scoop-tile card grid
    ============================================ */
-  .zTILE .group.cabinet > ul{
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 1rem;
+  .scoop-tile .groupBody > ul{
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+    padding:.8rem;
+    background-color:var(--color-green-darkest);
 
     & > li {
-      height: 12rem;
+      aspect-ratio: 1 / 1;
+      width: 9rem;
       border: 1px solid var(--color-border-light);
       text-align: center;
       display: flex;
@@ -2192,75 +2241,24 @@ body > .modal.flavor_picker {
         border: none;
         box-shadow: inset 0 10rem 10rem -5rem var(--shadow-dark);
       }
-      &.needs-tub::after {
-        content: '\2715';
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 5rem;
-        font-weight: 700;
-        line-height: 1;
-        color: var(--color-status-critical);
-        text-shadow: 0 2px 0.25rem var(--shadow-dark), 0 2px 0.25rem var(--shadow-dark);
-        z-index: 3;
-        pointer-events: none;
-      }
-      &.impossible::after {
-        content: 'I';
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 5rem;
-        font-weight: 700;
-        line-height: 1;
-        color: black;
-        text-shadow: 0 2px 0.25rem var(--shadow-dark), 0 2px 0.25rem var(--shadow-dark);
-        z-index: 3;
-        pointer-events: none;
-      }
-      &.ready-to-link::after {
-        content: 'P';
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 5rem;
-        font-weight: 700;
-        line-height: 1;
-        color: var(--color-status-info);
-        text-shadow: 0 2px 0.25rem var(--shadow-dark), 0 2px 0.25rem var(--shadow-dark);
-        z-index: 3;
-        pointer-events: none;
-      }
-      /* see css.md#and-confirming */
-      &.confirming {
-        outline: .25rem dashed yellow;
-        outline-offset: -.25rem;
-        animation: cabinet-confirming-pulse 1s ease-in-out infinite alternate;
-        z-index: 4;
-      }
     }
     & h3 {
-      font-size: 1rem;
+      font-size: .75rem;
       font-weight: 600;
-      line-height: 1.33em;
+      line-height: 1.25em;
       margin: .125rem;
       padding: 0;
-      opacity: .75;
+      opacity: 1;
+      text-shadow: black 0 1px 2px, black 0 0 2px, black 0 1px 2px;
     }
     & .multiple.allergens ul{
       display: flex;
-      margin:.125rem;
+      margin: .125rem;
+      gap: .125rem;
       & li{
         font-size: 0;
-        height: 1.5rem; width: 1.5rem;
+        height: 1.25rem; width: 1.25rem;
         border-radius: 50%;
-        margin:3px;
         box-shadow: 0 0 0 2px var(--color-border-light);
       }
     }
@@ -2272,50 +2270,109 @@ body > .modal.flavor_picker {
     }
   }
 
+/* ============================================
+   CABINET WORKFLOW - state indicators (Confirm Cabinet reconciliation
+   outcomes on the generic .scoop-tile card grid above)
+   ============================================ */
+  .scoop-grid[data-grid-type="CabinetWorkflow"] .groupBody > ul > li {
+    &.needs-tub::after {
+      content: '\2715';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 5rem;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--color-status-critical);
+      text-shadow: 0 2px 0.25rem var(--shadow-dark), 0 2px 0.25rem var(--shadow-dark);
+      z-index: 3;
+      pointer-events: none;
+    }
+    &.impossible::after {
+      content: 'I';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 5rem;
+      font-weight: 700;
+      line-height: 1;
+      color: black;
+      text-shadow: 0 2px 0.25rem var(--shadow-dark), 0 2px 0.25rem var(--shadow-dark);
+      z-index: 3;
+      pointer-events: none;
+    }
+    &.ready-to-link::after {
+      content: 'P';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 5rem;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--color-status-info);
+      text-shadow: 0 2px 0.25rem var(--shadow-dark), 0 2px 0.25rem var(--shadow-dark);
+      z-index: 3;
+      pointer-events: none;
+    }
+    /* see css.md#and-confirming */
+    &.confirming {
+      outline: .25rem dashed yellow;
+      outline-offset: -.25rem;
+      animation: cabinet-confirming-pulse 1s ease-in-out infinite alternate;
+      z-index: 4;
+    }
+  }
+
   @keyframes cabinet-confirming-pulse {
     from { opacity: 1; }
     to   { opacity: .55; }
   }
 
   /* see css.md#ztile-mismatch-tiletools-after-ztile-conforms-tiletools */
-  .zTILE.mismatch > .tileTools::after,
-  .zTILE.conforms > .tileTools::after,
-  .zTILE.all-paired > .tileTools::after {
+  .zList.mismatch > .tileTools::after,
+  .zList.conforms > .tileTools::after,
+  .zList.all-paired > .tileTools::after {
     display: block;
     font-size: 2rem;
     font-weight: 700;
     line-height: 1;
     padding: .25rem .5rem;
   }
-  .zTILE.mismatch > .tileTools::after   { content: 'X';  color: var(--color-status-critical); }
-  .zTILE.conforms > .tileTools::after   { content: '+';  color: var(--color-green-dark); }
-  .zTILE.all-paired > .tileTools::after { content: '**'; color: var(--color-green-dark); }
+  .zList.mismatch > .tileTools::after   { content: 'X';  color: var(--color-status-critical); }
+  .zList.conforms > .tileTools::after   { content: '+';  color: var(--color-green-dark); }
+  .zList.all-paired > .tileTools::after { content: '**'; color: var(--color-green-dark); }
 
 /* ============================================
    ANALYTICS
    ============================================ */
 
 /* ── Days of Supply color coding ── */
-.zGRID td.supply-critical {
+table.zList td.supply-critical {
   color: var(--color-status-critical);
   font-weight: 600;
 }
-.zGRID td.supply-warning {
+table.zList td.supply-warning {
   color: #b8860b;
   font-weight: 600;
 }
-.zGRID td.supply-ok {
+table.zList td.supply-ok {
   color: var(--color-green-dark);
 }
 
 /* ── Trend direction indicators ── */
-.zGRID td.trend-rising {
+table.zList td.trend-rising {
   color: var(--color-green-dark);
 }
-.zGRID td.trend-falling {
+table.zList td.trend-falling {
   color: var(--color-status-critical);
 }
-.zGRID td.trend-steady {
+table.zList td.trend-steady {
   color: var(--color-status-neutral);
 }
 
@@ -2332,7 +2389,7 @@ body > .modal.flavor_picker {
    ============================================ */
 
 .scoop-grid[data-grid-type="ItemPivot"] {
-  & form.zGRID-form {
+  & form.zList-form {
     max-width: 100%;
     overflow-x: auto;
   }
@@ -2640,15 +2697,15 @@ body > .modal.flavor_picker {
 
 /* The key is the existing Grid widget; this isn't a savable form so hide the
    default save button, and use sortable headers as the sort affordance. */
-.popularKey .zGRID-form > button.save { display: none; }
-.popularKey .zGRID-form { margin: 0; }
-.popularKey .zGRID th.sortable { cursor: pointer; }
-.popularKey .zGRID tr.row.is-active td {
+.popularKey .zList-form > button.save { display: none; }
+.popularKey .zList-form { margin: 0; }
+.popularKey table.zList th.sortable { cursor: pointer; }
+.popularKey table.zList tr.row.is-active td {
   background: rgba(255, 255, 255, 0.7);
   outline: 1px solid var(--color-border-light);
 }
-.popularKey .zGRID td.avg_sellthrough_days.trend-rising  { color: var(--color-green-dark); }
-.popularKey .zGRID td.avg_sellthrough_days.trend-falling { color: var(--color-trend-falling); }
+.popularKey table.zList td.avg_sellthrough_days.trend-rising  { color: var(--color-green-dark); }
+.popularKey table.zList td.avg_sellthrough_days.trend-falling { color: var(--color-trend-falling); }
 
 .popularEmpty {
   padding: 1rem;
@@ -2668,27 +2725,27 @@ body > .modal.flavor_picker {
    DATE ACTIVITY - flow/problem indicators
    ============================================ */
 
-.zGRID td.problem-warning,
-.zGRID td.problem-error,
-table.zGRID tr .badges .badge.warning {
+table.zList td.problem-warning,
+table.zList td.problem-error,
+table.zList tr .badges .badge.warning {
   color: var(--color-status-critical);
   font-weight: 700;
 }
 
-.zGRID td.problem-info {
+table.zList td.problem-info {
   color: var(--color-status-neutral);
   font-weight: 600;
 }
 
-.zGRID td.phase-created,
-.zGRID td.source-batch {
+table.zList td.phase-created,
+table.zList td.source-batch {
   color: var(--color-green-dark);
 }
 
-.zGRID td.phase-opened {
+table.zList td.phase-opened {
   color: var(--color-status-info);
 }
 
-.zGRID td.phase-emptied {
+table.zList td.phase-emptied {
   color: #7a4f01;
 }
