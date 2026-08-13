@@ -69,7 +69,7 @@ function scoop_entity_specs(string $key = ''): array {
           'post_modified' => ['data_type' => 'datetime', 'control' => 'find', 'label' => 'Updated'],
           'opened_on'     => ['data_type' => 'string'],
           'emptied_at'    => ['data_type' => 'string'],
-          'location'      => ['data_type' => 'int',      'control' => 'find', 'titleMap' => 'location', 'hidden' => true],
+          'location'      => ['data_type' => 'int',      'control' => 'find', 'titleMap' => 'location'],
           'batch'         => ['data_type' => 'int',      'control' => 'find', 'hidden' => true],
           'closeout'      => ['data_type' => 'int',      'control' => 'find', 'hidden' => true],
           'index'         => ['data_type' => 'int'],

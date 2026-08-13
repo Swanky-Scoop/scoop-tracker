@@ -71,7 +71,7 @@ export default class FlavorTubGridModel extends BaseGridModel{
     // this grid is full autosave, post_modified changes on nearly every
     // edit, so freshness-at-a-glance is more useful here than a calendar date.
     this.relativeTimeFields = ['post_modified'];
-    this.setShowList(['index', 'state', 'use', 'amount', 'editor_name', 'post_modified']);
+    this.setShowList(['index', 'state', 'use', 'amount', 'location', 'editor_name', 'post_modified']);
   }
 
   getFilterDefs() {

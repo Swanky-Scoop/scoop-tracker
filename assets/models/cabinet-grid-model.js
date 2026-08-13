@@ -13,12 +13,12 @@ export default class CabinetGridModel extends BaseGridModel{
     // Access the primary entity from domain
     const primary = this.metaData?.primary || 'cabinet';
     const items = this.domain[primary] || [];
-    
-    const cabinetIds = this.filterByLocation(items);
+
+    const cabinetIds = new Set(this.filterByLocation(items).map(c => c.id));
 
     const rtn = this.buildGroupedRows({
       groupsMap     : this._slotsByCabinetId,
-      includeGroupId: (id)   => Number(id) > 0,    
+      includeGroupId: (id)   => Number(id) > 0 && cabinetIds.has(Number(id)),
       getGroupLabel : (id) => this.labelFromMap(id, this._cabinetsById),
       fillRow       : (row, item, i) => { this.fillRowFromColumns(row, item, i); },
       groupType     : 'cabinet',
