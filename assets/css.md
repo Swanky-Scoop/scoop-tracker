@@ -127,7 +127,7 @@ override — more moving parts for a subtle gain).
 ## GRID CONTAINER
 
 <a id="scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id"></a>
-### `.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zList-form`
+### `.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zList-form`
 
 Sizes the loading card itself (not just the shimmer overlay) to fit 6
 skeleton rows, so form.zList-form's own box-shadow wraps the full
@@ -141,7 +141,7 @@ differentiates the two where a real difference is needed).
 only a few real rows isn't forced to this height too.
 
 <a id="scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id-2"></a>
-### `.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state))::after`
+### `.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state))::after`
 
 Shimmering skeleton placeholder — shown while a grid has no rows yet
 (before the bundle fetch resolves and List/Grid appends the first
@@ -154,6 +154,14 @@ has the same empty shape, so List.buildEmptyDom() appends a real
 :has(tbody tr) on its own; Tile's (List's plain-div default, no
 [data-row-id]) needs the explicit :not(:has(.empty-state)) below to stop
 the shimmer.
+
+`[data-grid-type="ShiftReport"]` is excluded the same way `.Batch` is —
+ShiftReportForm (see shift-report-form.js) is a standalone view, not a
+List/Tile subclass, so its rendered markup (a plain `<form
+class="shift-report-form">`) can never contain a `tbody tr` or
+`li[data-row-id]` regardless of load state. Without this exclusion the
+shimmer selector matches permanently — DOM-shape detection has no signal
+to key off for a view that isn't row-shaped in the first place.
 
 <a id="scoop-grid-batch"></a>
 ### `.scoop-grid.Batch`

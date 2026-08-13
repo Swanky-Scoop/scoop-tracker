@@ -568,12 +568,12 @@ html > body.TS_GRID-UPDATING .scoop-grid {
 }
 
 /* see css.md#scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id */
-.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zList-form {
+.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zList-form {
   min-height: 13.5rem;
 }
 
 /* see css.md#scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id-2 */
-.scoop-grid:not(.Batch):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state))::after {
+.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state))::after {
   content: '';
   position: absolute;
   top: 0;
@@ -2748,4 +2748,96 @@ table.zList td.phase-opened {
 
 table.zList td.phase-emptied {
   color: #7a4f01;
+}
+
+/* ============================================
+   SHIFT REPORT - end-of-shift form (see
+   WHITEBOARD-INGESTION.md). Standalone form, not
+   a List/Tile/Grid — no .zList markup involved.
+   ============================================ */
+
+.shift-report-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 48rem;
+}
+
+.shift-report-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.shift-report-form select[multiple] {
+  width: 100%;
+  max-width: 24rem;
+}
+
+.shift-report-form textarea {
+  min-height: 4rem;
+}
+
+.shift-report-form .photo-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.shift-report-form .photo-preview img {
+  max-width: 6rem;
+  max-height: 6rem;
+  object-fit: cover;
+  border-radius: 0.25rem;
+}
+
+.shift-report-form .photo-uploading {
+  color: var(--color-status-info);
+}
+
+.shift-report-form .photo-error {
+  color: var(--color-status-critical);
+}
+
+.shift-report-form .change-low-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.15rem 1rem;
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+
+/* Shared by both cabinet-grouped (flavors_changed) and category-grouped
+   (supplies_low) checklists — same h4-group + grid-of-checkboxes shape. */
+.shift-report-form .flavors-changed-checklist h4,
+.shift-report-form .supplies-low-checklist h4 {
+  margin-bottom: 0.25rem;
+}
+
+.shift-report-form .flavors-changed-checklist .flavor-group,
+.shift-report-form .supplies-low-checklist .supply-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.15rem 1rem;
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+
+.shift-report-form .flavors-changed-checklist .empty-note,
+.shift-report-form .supplies-low-checklist .empty-note {
+  color: var(--color-status-neutral);
+  font-style: italic;
+}
+
+.shift-report-form .cake-order-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+  border: 1px solid var(--color-border, #ccc);
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
 }

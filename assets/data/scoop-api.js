@@ -1,6 +1,7 @@
 import Grid               from "../ui/grid.js";
 import Tile                from "../ui/tile.js";
 import PageStatus          from "../ui/page-status.js";
+import Toast               from "../ui/toast.js";
 import ColumnsProvider    from "../models/_column-provider.js";
 import FormCodec          from "./form-codec.js";
 import CabinetGridModel      from "../models/cabinet-grid-model.js";
@@ -18,6 +19,8 @@ import CabinetWorkflowGridModel from "../models/cabinet-workflow-grid-model.js";
 import CabinetWorkflowTile      from "../ui/cabinet-workflow-tile.js";
 import ItemPivotGridModel       from "../models/item-pivot-grid-model.js";
 import ItemPivotGrid            from "../ui/item-pivot-grid.js";
+import ShiftReportGridModel     from "../models/shift-report-grid-model.js";
+import ShiftReportForm          from "../ui/shift-report-form.js";
 
 // Some grid types run visibly heavier cold-cache queries than the rest of
 // the bundle (see bundle-fetch.php's date-filter/inventory_change handling
@@ -116,6 +119,7 @@ export default class ScoopAPI {
       "InstockFlavor": InstockFlavorGridModel,
       "CabinetWorkflow": CabinetWorkflowGridModel,
       "ItemPivot"      : ItemPivotGridModel,
+      "ShiftReport"    : ShiftReportGridModel,
     };
   }
 
@@ -128,6 +132,7 @@ export default class ScoopAPI {
     return {
       "CabinetWorkflow": CabinetWorkflowTile,
       "ItemPivot"      : ItemPivotGrid,
+      "ShiftReport"    : ShiftReportForm,
     };
   }
 
@@ -372,23 +377,43 @@ export default class ScoopAPI {
     PageStatus.beginLoadTiming(`${window.location.pathname}::${this.typesKey}`, this._defaultBustMsForPage());
 
     this._domainInflight = (async () => {
-      const bundle = await this.getBundleForTypes(this._pageTypes);
-      this._domain = bundle?.data ?? {};
-      this._lastBundleCacheStatus = bundle?._cache ?? null;
-      this._domainInflight = null;
-      PageStatus.completeLoadTiming(this._lastBundleCacheStatus);
+      try {
+        const bundle = await this.getBundleForTypes(this._pageTypes);
+        this._domain = bundle?.data ?? {};
+        this._lastBundleCacheStatus = bundle?._cache ?? null;
+        PageStatus.completeLoadTiming(this._lastBundleCacheStatus);
 
-      document.dispatchEvent(new CustomEvent("ts:domain:updated", {
-        detail: { types: this._pageTypes, ts: Date.now() }
-      }));
-      /*
-      if(toast) toast.update(toast, {
-        title:"Data Reloaded", 
-        message:(info)? 'Triggered by ' + info.name : ''
-      });*/
-      document.body.classList.remove('TS_GRID-UPDATING');
+        document.dispatchEvent(new CustomEvent("ts:domain:updated", {
+          detail: { types: this._pageTypes, ts: Date.now() }
+        }));
+        /*
+        if(toast) toast.update(toast, {
+          title:"Data Reloaded",
+          message:(info)? 'Triggered by ' + info.name : ''
+        });*/
+        document.body.classList.remove('TS_GRID-UPDATING');
 
-      return this._domain;
+        return this._domain;
+      } catch (err) {
+        // Without this catch, a fetch that rejects (dropped connection,
+        // server-side timeout on a heavy bundle) leaves _domainInflight
+        // holding a rejected promise forever — every later refreshPageDomain
+        // call (line ~351 above) just returns that same dead promise instead
+        // of ever trying again, silently, for the rest of the page's life.
+        // Falling back to 'stale' (not leaving grids stuck on 'fetching')
+        // lets the next save/filter-change/manual-refresh retry normally.
+        this._bundleGrids.forEach(g => {
+          if (g.pageStatusId) PageStatus.setState(g.pageStatusId, 'stale');
+        });
+        document.body.classList.remove('TS_GRID-UPDATING');
+        Toast.addMessage({
+          title: 'Data load failed',
+          message: `Couldn't refresh ${this.typesKey || 'this page'} — ${err?.message ?? err}. Try again or reload the page.`,
+        });
+        throw err;
+      } finally {
+        this._domainInflight = null;
+      }
     })();
 
     return this._domainInflight;

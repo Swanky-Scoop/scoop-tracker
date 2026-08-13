@@ -66,10 +66,13 @@ function scoop_access_policy(): array {
         'DateActivity'  => ['GET' => true, 'POST' => true],
         'InstockFlavor' => ['GET' => true, 'POST' => true],
         'Analytics'     => ['GET' => true],
+        'ShiftReport'   => ['POST' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
+        'shift_report'         => ['tempering_cabinet_photo','flavors_changed','supplies_low','cash_discrepancy','change_low','cake_orders','final_tasks','positive_feedback','customer_issues','notes_for_tomorrow','staffing_level','location'],
+        'cake_order'           => ['order_name','cake_pie_flavor','pickup_date','details'],
       ],
     ],
 
@@ -124,10 +127,13 @@ function scoop_access_policy(): array {
         'InstockFlavor' => ['GET' => true, 'POST' => true],
         'Closeout'      => ['GET' => false, 'POST' => false],
         'Analytics'     => ['GET' => false],
+        'ShiftReport'   => ['POST' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
+        'shift_report'         => ['tempering_cabinet_photo','flavors_changed','supplies_low','cash_discrepancy','change_low','cake_orders','final_tasks','positive_feedback','customer_issues','notes_for_tomorrow','staffing_level','location'],
+        'cake_order'           => ['order_name','cake_pie_flavor','pickup_date','details'],
       ],
     ],
 
@@ -144,10 +150,15 @@ function scoop_access_policy(): array {
         'InstockFlavor' => ['GET' => true, 'POST' => false],
         'Closeout'      => ['GET' => false, 'POST' => false],
         'Analytics'     => ['GET' => false],
+        // Filing the end-of-shift report is this role's job in practice —
+        // see WHITEBOARD-INGESTION.md.
+        'ShiftReport'   => ['POST' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
+        'shift_report'         => ['tempering_cabinet_photo','flavors_changed','supplies_low','cash_discrepancy','change_low','cake_orders','final_tasks','positive_feedback','customer_issues','notes_for_tomorrow','staffing_level','location'],
+        'cake_order'           => ['order_name','cake_pie_flavor','pickup_date','details'],
       ],
     ],
 

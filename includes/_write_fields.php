@@ -23,7 +23,17 @@ function scoop_tubs_allowed_fields(\WP_User $u): array {
 }
 
 function scoop_closeouts_allowed_fields(\WP_User $u): array {
-  return [ 'tubs_emptied', 'flavor', 'use', 'location', 'order']; //'amount' 
+  return [ 'tubs_emptied', 'flavor', 'use', 'location', 'order']; //'amount'
+}
+
+function scoop_shift_reports_allowed_fields(\WP_User $u): array {
+  $route_fields = scoop_entity_specs('shift_report')['writeable'];
+  return scoop_allowed_fields_for_entity($u, 'shift_report', $route_fields);
+}
+
+function scoop_cake_orders_allowed_fields(\WP_User $u): array {
+  $route_fields = scoop_entity_specs('cake_order')['writeable'];
+  return scoop_allowed_fields_for_entity($u, 'cake_order', $route_fields);
 }
 
 function scoop_save_pod_field( string $pod_name, int $id, string $field, $value ) {

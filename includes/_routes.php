@@ -104,4 +104,18 @@ add_action('rest_api_init', function () {
     },
     'permission_callback' => scoop_write_permission('Batch'),
   ]);
+
+  // End-of-shift report create — see scoop_handle_shift_report_create() in
+  // rest.php for why this is a dedicated route rather than a
+  // scoop_routes_config() entry. 'ShiftReport' is a route key ONLY known to
+  // _policy.php (no _config.php entry — same reasoning as CabinetWorkflow),
+  // so scoop_write_permission() still resolves it the same way it does for
+  // every _config.php-driven route.
+  register_rest_route('scoop/v1', '/shift-reports', [
+    'methods'  => ['POST'],
+    'callback' => function(\WP_REST_Request $req) {
+      return scoop_handle_shift_report_create($req);
+    },
+    'permission_callback' => scoop_write_permission('ShiftReport'),
+  ]);
 });

@@ -9,6 +9,23 @@ function scoop_parse_types_param($raw): array {
 }
 
 function scoop_bundle_get( \WP_REST_Request $req ) {
+  // A dock page combining many grid types (e.g. every [scoop_grid] type on
+  // one page) unions all their entity 'needs' into one request — heavier
+  // than any single grid, and slow enough on a real (larger) dataset to hit
+  // PHP's default max_execution_time (often 30s) even though the same
+  // request finishes comfortably on a small local dataset. 120s, not 0/
+  // unlimited: this endpoint is hit on every page load (not a one-off admin
+  // action like the importer's @set_time_limit(0) calls), so an unbounded
+  // limit risks a genuinely broken query hanging a PHP-FPM worker forever
+  // instead of failing. @-suppressed because hosts that disable
+  // set_time_limit() via disable_functions raise a warning, not a fatal —
+  // harmless to ignore, this just becomes a no-op there. Does NOT override
+  // any reverse-proxy/CDN gateway timeout (nginx, Cloudflare, etc.) sitting
+  // in front of the site — that's a host-level setting, out of this
+  // codebase's reach; if the bundle still cuts off before this, that's
+  // where to look next.
+  @set_time_limit( 120 );
+
   // Timing diagnostic — see the matching comment in bundle-fetch.php's
   // scoop_fetch_entities(). This wraps the WHOLE request so a cache hit's
   // near-zero time and a cold miss's real cost are both visible, and so the

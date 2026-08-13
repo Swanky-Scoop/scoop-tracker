@@ -194,7 +194,76 @@
     ], 200);
   }
 
+  /**
+   * POST /scoop/v1/shift-reports — end-of-shift report create. Custom route
+   * (see includes/_routes.php), not the generic per-type create dispatch
+   * (scoop_handle_create_post): cake_orders on shift_report means the
+   * staffer creates brand-new cake_order records as part of this submission
+   * (never picks from existing ones — cake_order has no shift_report
+   * back-reference field, the link is one-directional via
+   * shift_report.cake_orders), and the generic dispatch only ever creates
+   * exactly one row of one pod per call. Body shape:
+   *   { "ShiftReport": { ...shift_report fields..., "new_cake_orders": [
+   *       { "order_name": "...", "cake_pie_flavor": "...",
+   *         "pickup_date": "...", "details": "..." }, ... ] } }
+   *
+   * MyISAM, no transactions (see CLAUDE.md's data-repair policy) — cake_order
+   * posts are created FIRST, then shift_report is created with their ids
+   * already embedded in its own cake_orders field. This order avoids ever
+   * needing a follow-up UPDATE to shift_report: a failed cake_order row is
+   * simply left out of shift_report.cake_orders and reported back, while the
+   * report itself still saves cleanly either way.
+   */
+  function scoop_handle_shift_report_create(\WP_REST_Request $req) {
+    $payload = $req->get_param('ShiftReport');
+    if (!is_array($payload)) {
+      return new \WP_REST_Response(['ok' => false, 'error' => 'Missing or invalid ShiftReport payload.'], 400);
+    }
 
+    $new_cake_orders = $payload['new_cake_orders'] ?? [];
+    if (!is_array($new_cake_orders)) $new_cake_orders = [];
+    unset($payload['new_cake_orders']);
+
+    $user = wp_get_current_user();
+    $report_fields = function_exists('scoop_shift_reports_allowed_fields')
+      ? scoop_shift_reports_allowed_fields($user) : [];
+    $cake_order_fields = function_exists('scoop_cake_orders_allowed_fields')
+      ? scoop_cake_orders_allowed_fields($user) : [];
+
+    $cake_order_ids = [];
+    $cake_order_errors = [];
+    foreach ($new_cake_orders as $order) {
+      if (!is_array($order)) continue;
+
+      $order_id = scoop_create_pod_item('cake_order', $cake_order_fields, $order);
+      if (is_wp_error($order_id)) {
+        $cake_order_errors[] = $order_id->get_error_message();
+        error_log('scoop_handle_shift_report_create: cake_order create failed: ' . $order_id->get_error_message());
+        continue;
+      }
+      $cake_order_ids[] = (int)$order_id;
+    }
+
+    $payload['cake_orders'] = $cake_order_ids;
+
+    $report_id = scoop_create_pod_item('shift_report', $report_fields, $payload);
+    if (is_wp_error($report_id)) {
+      error_log('scoop_handle_shift_report_create: report create failed: ' . $report_id->get_error_message());
+      return new \WP_REST_Response([
+        'ok' => false,
+        'errors' => [['field' => null, 'error' => $report_id->get_error_message()]],
+        // Cake orders already saved even though the report failed —
+        // reported so they aren't silently lost/duplicated on retry.
+        'created' => ['cake_order_ids' => $cake_order_ids],
+      ], 400);
+    }
+
+    return new \WP_REST_Response([
+      'ok' => true,
+      'created' => ['id' => (int)$report_id, 'cake_order_ids' => $cake_order_ids],
+      'cake_order_errors' => $cake_order_errors,
+    ], 200);
+  }
 
   /**
    * Slot writes are only a real inventory event when they change the tub
