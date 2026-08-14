@@ -1684,7 +1684,14 @@ export default class List extends El{
   _scheduleBackgroundDomainRefresh() {
     clearTimeout(this._domainRefreshTimer);
     this._domainRefreshTimer = setTimeout(() => {
-      this.api?.refreshPageDomain({ force: true, info: { name: this.name } }).catch(err =>
+      // Scope to just the on-page types this grid's write could plausibly
+      // affect (see ScoopAPI.scopedRefreshTypes) instead of always
+      // refetching every bundle type on the page — this is the 800ms
+      // full-page refetch PERFORMANCE-REFACTOR.md #2 flagged as the worst
+      // offender. Falls back to the full page union on its own for any
+      // type not covered by SCOOP.refreshScope.
+      const types = this.api?.scopedRefreshTypes?.(this.name) ?? null;
+      this.api?.refreshPageDomain({ force: true, info: { name: this.name }, types }).catch(err =>
         console.error('Background domain refresh failed:', err)
       );
     }, 800);
@@ -1927,7 +1934,11 @@ export default class List extends El{
           // fires, not once it resolves. It's still kicked off immediately
           // (not awaited later) so every grid on the page starts re-checking
           // its state with the server right away.
-          this.api.refreshPageDomain({ force: true, toast:TOAST, info:{name:this.name, response:r} })
+          // Scope to just the on-page types this save could plausibly
+          // affect (see ScoopAPI.scopedRefreshTypes) — same reasoning as
+          // _scheduleBackgroundDomainRefresh above.
+          const savedTypes = this.api.scopedRefreshTypes?.(this.name) ?? null;
+          this.api.refreshPageDomain({ force: true, toast:TOAST, info:{name:this.name, response:r}, types: savedTypes })
             .then(() => {
               // Usually consumed by the ts:domain:updated listener already;
               // this is a fallback reset if that listener didn't run (e.g.
@@ -1949,7 +1960,20 @@ export default class List extends El{
 
     if (!this._docListenerBound) {
       this._docListenerBound = true;
-      this._onDomainUpdated = async () => {
+      this._onDomainUpdated = async (e) => {
+        // Scoped fetches (ScoopAPI._startDomainFetch) carry which types were
+        // actually part of THIS refresh. If this grid's own type isn't one
+        // of them, nothing about its domain could have changed (the merge
+        // in _startDomainFetch leaves every other entity untouched) — skip
+        // the whole handler: no PageStatus flip, no dirty-guard check, no
+        // rebuild. This must run before every other gate below, since none
+        // of them are meaningful for a grid that isn't part of this fetch.
+        // Missing/empty detail.types (any caller not yet scoped, or the
+        // initial full-page load) always falls through to the full body
+        // below, same as before this change.
+        const fetchTypes = e?.detail?.types;
+        if (Array.isArray(fetchTypes) && fetchTypes.length && !fetchTypes.includes(this.name)) return;
+
         if (this._reloading) return;
 
         // This grid is mid-autosave or has edits not yet flushed — a full

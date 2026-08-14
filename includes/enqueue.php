@@ -218,6 +218,7 @@ function scoop_enqueue_assets() {
         'routes'  => scoop_client_routes(),
         'metaData'=> scoop_client_metadata(), //scoop_fetch_entities
         'entityRelations' => scoop_entity_relations(),
+        'refreshScope'    => scoop_client_refresh_scope(),
         // Baseline for the client-side stale-tab check (assets/version-watch.js).
         // Bumps whenever app.js is re-saved (SFTP-on-save touches mtime).
         'version' => filemtime($base_path . 'assets/app.js'),

@@ -409,3 +409,46 @@ function scoop_entity_relations(): array {
 
   return $out;
 }
+
+/**
+ * Per-type { needs, writesPod } — shipped to the client as SCOOP.refreshScope
+ * so a triggered refresh (autosave, manual Save, filter change) can be
+ * scoped to only the on-page grid types that could plausibly need fresher
+ * data, instead of always refetching the full page-wide type union. See
+ * PERFORMANCE-REFACTOR.md item #2.
+ *
+ * Single-sourced from the two functions that already declare this data —
+ * scoop_bundle_specs() (needs) and scoop_routes_config() (pod_name) — no
+ * hand-maintained duplicate.
+ *
+ * The naive scoping rule ("only refetch other types whose needs overlap the
+ * triggering type's own needs") turns out useless: every bundle type's
+ * needs includes 'flavor', so that overlap always matches everything. The
+ * rule that actually works is which POD the triggering write targets
+ * (writesPod) matched against every other on-page type's needs — e.g.
+ * Cabinet's writes target the 'slot' pod, so a Cabinet autosave should only
+ * refresh other on-page types whose needs include 'slot' (FlavorTub,
+ * CabinetWorkflow, ...), not Batch/BatchHistory (neither needs 'slot').
+ *
+ * writesPod is null for any type with no writeable route in
+ * scoop_routes_config() (BatchHistory, ItemPivot, Popular, Flavors,
+ * Analytics — and CabinetWorkflow, which has no _config.php entry at all:
+ * its writes go through the FlavorTub/Cabinet envelope keys, see
+ * cabinet-workflow-tile.js/confirm-swap-modal.js). The client treats a
+ * missing/null writesPod as "never triggers a scoped refresh of OTHER
+ * types; always fall back to the full page-wide refetch when THIS type is
+ * the trigger" — under-scoping silently would be worse than one extra fetch.
+ */
+function scoop_client_refresh_scope(): array {
+  $specs  = scoop_bundle_specs();
+  $routes = scoop_routes_config();
+
+  $out = [];
+  foreach ( $specs as $type => $spec ) {
+    $out[ $type ] = [
+      'needs'     => $spec['needs'] ?? [],
+      'writesPod' => $routes[ $type ]['pod_name'] ?? null,
+    ];
+  }
+  return $out;
+}
