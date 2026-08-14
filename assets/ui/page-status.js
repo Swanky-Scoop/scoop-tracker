@@ -58,6 +58,13 @@ import El from "./_el.js";
 
 export const STATES = ['unknown', 'fetching', 'stale', 'fresh'];
 
+// Display text only — STATES itself stays the internal class/dataset
+// vocabulary. 'unknown' means "registered, no fetch started yet" (see
+// register()), which reads as a stall to anyone watching the page; "Loading"
+// says the same thing without implying something's wrong.
+const STATE_LABELS = { unknown: 'Loading' };
+const labelFor = (state) => STATE_LABELS[state] ?? state;
+
 const ETA_STORAGE_KEY = 'scoop_page_load_eta_v1';
 const ETA_SAMPLE_LIMIT = 8; // rolling window — adapts to recent conditions rather than all-time
 const ETA_DEFAULT_MS = 15000; // cache-bust countdown start when this page has no 'miss' history yet
@@ -131,7 +138,7 @@ export default class PageStatus {
     LI.dataset.stateIndex = String(index);
 
     const EM = LI.querySelector('em');
-    if (EM) EM.textContent = state;
+    if (EM) EM.textContent = labelFor(state);
 
     PageStatus._recomputeOverallState();
     PageStatus._recomputeEditingState();
@@ -186,7 +193,10 @@ export default class PageStatus {
     }
 
     const state = DIV.dataset.state;
-    if (state) EM.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+    if (state) {
+      const label = labelFor(state);
+      EM.textContent = label.charAt(0).toUpperCase() + label.slice(1);
+    }
   }
 
   // The <DIV> itself carries whichever registered grid's state is furthest
