@@ -393,9 +393,8 @@ html body {
     border-bottom: 1px solid var(--color-border-main);
   }
 }
-/* see css.md#page-status-cache-bust-counting-down */
-.PAGE-STATUS .cache-bust.counting-down {
-  position: relative;
+/* see css.md#page-status-cache-bust-reserved-space */
+.PAGE-STATUS .cache-bust {
   display: inline-block;
   text-align: center;
   width: 2rem;
@@ -404,6 +403,11 @@ html body {
   /* see css.md#page-status-cache-bust-counting-down-letter-spacing-0-05em */
   letter-spacing: -0.05em;
   margin-left: 0.33rem;
+}
+
+/* see css.md#page-status-cache-bust-counting-down */
+.PAGE-STATUS .cache-bust.counting-down {
+  position: relative;
 }
 
 /* Past the estimate — text and ring both key off currentColor, so this one
@@ -919,6 +923,40 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   & .dockTitle {
     text-align: center;
     line-height: 1.1;
+  }
+
+  /* see css.md#gridtoggle-fetching-progress-ring */
+  &.fetching {
+    position: relative;
+  }
+
+  &.fetching::before,
+  &.fetching::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: -1px];
+    width: 2rem;
+    height: 2rem;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    pointer-events: none;
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1px), #000 calc(100% - 1px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 1px), #000 calc(100% - 1px));
+  }
+
+  &.fetching::after {
+    background: currentColor;
+    opacity: 0.2;
+  }
+
+  &.fetching::before {
+    background: conic-gradient(currentColor calc(var(--eta-progress, 0) * 1%), transparent 0);
+    transition: background 0.1s linear;
+  }
+
+  &.fetching.overtime {
+    color: orange;
   }
 }
 
@@ -2786,9 +2824,34 @@ table.zList td.phase-emptied {
   gap: 1rem;
   max-width: 48rem;
   font-size: 0.8rem;
-  & h3{
-    font-size: 1.5rem;
-    
+
+  & .field-group{
+    background-color: var(--color-green-light);
+    padding:1.5rem 2rem 3rem!important;
+    box-shadow: inset 0 0 0 99rem rgba(255,255,255,.5), 0 0 0 1px var(--color-green-darkest), 0.125rem 0.125rem 0.25rem var(--shadow-dark) ;
+    min-height: 24rem;
+    & h3{
+      font-size: 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .field {
+      margin-bottom: 1rem;
+
+      & textarea,
+      & button,
+      & select,
+      & input[type="text"],
+      & input[type="number"]{
+        padding: 0.5rem;
+        border-radius: 0.25rem;
+        border: 1px solid var(--color-green-darkest);
+        font-family: inherit;
+      }
+      & button {
+        background-color: var(--color-green-dark);
+        color: var(--color-text-white);
+      }
+    }
   }
   & label {
     line-height: 1.25rem;

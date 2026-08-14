@@ -104,19 +104,35 @@ alone implies, since .canvas is then narrower than the viewport.
 
 ## STATUS NOTIFICATIONS
 
+<a id="page-status-cache-bust-reserved-space"></a>
+### `.PAGE-STATUS .cache-bust`
+
+Sizing (width, font, margin) lives on the bare .cache-bust rule, not
+scoped to .counting-down, so the widget reserves the same footprint
+whether the countdown is actively ticking, hasn't started yet (state
+'unknown'/"Loading"), or has already finished — previously this box only
+had a width/margin while .counting-down was present, so the whole
+PAGE-STATUS pill visibly resized as a load began/ended (worse once
+loads could run concurrently — see page-status.js's _loads map — since
+_displayKey ownership passing between two in-flight loads could toggle
+.counting-down off and back on before either finished).
+
 <a id="page-status-cache-bust-counting-down"></a>
 ### `.PAGE-STATUS .cache-bust.counting-down`
 
 Circular timer ring around the cache-bust countdown text. Two pseudo-
 elements, no extra DOM: a dim full-circle track (::after) plus a
 conic-gradient fill (::before) driven by the --eta-progress custom
-property (0-100) that page-status.js's _startBustCountdown sets on the
-element every tick. Both are masked from solid circles into a ring via
-radial-gradient. Scoped to .counting-down so the ring only exists while
-the countdown is actually running.
+property (0-100) that page-status.js's _startCountdown sets on the
+element every tick (only while its key is the current _displayKey — see
+_loads in page-status.js, which times each grid's load independently).
+Both are masked from solid circles into a ring via radial-gradient.
+Scoped to .counting-down so the ring only exists while the countdown is
+actually running — sizing/font is on the bare .cache-bust rule above so
+that part stays constant regardless.
 
 <a id="page-status-cache-bust-counting-down-letter-spacing-0-05em"></a>
-### `.PAGE-STATUS .cache-bust.counting-down { letter-spacing: -0.05em }`
+### `.PAGE-STATUS .cache-bust { letter-spacing: -0.05em }`
 
 Monospace gives '.' the same full character cell as every digit, which
 reads as an oversized gap around it. A small negative letter-spacing
@@ -325,6 +341,25 @@ _buildToggleButton() in assets/ui/_list.js) is injected as a real <svg>
 child of .dockIcon, carrying whatever width/height/viewBox the source
 file had — constrain it to match the unicode-glyph/icon-font sizing
 above instead of rendering at its native size.
+
+<a id="gridtoggle-fetching-progress-ring"></a>
+### `.in-dock > .toolbar > .gridToggle.fetching`
+
+Same conic-gradient ring trick as .PAGE-STATUS .cache-bust.counting-down
+above — a dim full-circle track (::after) plus a conic-gradient fill
+(::before), both masked into a ring via radial-gradient — scaled down
+and centered over the icon instead of a number. The pseudo-elements go
+on .gridToggle itself, not .dockIcon: an image-type icon renders as
+`<img class="dockIcon">` (see _buildToggleButton() above), and
+::before/::after don't render on replaced elements like <img> in any
+browser, so anchoring the ring there would silently no-op for any grid
+type that happens to use an image icon. --eta-progress and .overtime are
+set by List._bindPageStatusToggle (assets/ui/_list.js), mirroring
+whichever PageStatus load this button's own grid belongs to — see
+page-status.js's _loads map, which times every grid's fetch
+independently (analytics types self-fetch concurrently with the shared
+bundle fetch, not sequentially before it — see ScoopAPI.mountAllGrids)
+so concurrent buttons never end up sharing one countdown.
 
 <a id="in-dock-canvas-overflow-x-auto"></a>
 ### `.in-dock > .canvas { overflow-x: auto }`

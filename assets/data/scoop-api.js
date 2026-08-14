@@ -315,9 +315,35 @@ export default class ScoopAPI {
   // narrower list so its naturally-faster duration doesn't get averaged
   // into the same ETA history bucket as full-page loads (see
   // scopedRefreshTypes/_startDomainFetch below), which would corrupt the
-  // countdown estimate for both.
+  // countdown estimate for both. `ids` (the pageStatusIds THIS load will
+  // make 'fetching') is derived from the same types list, restricted to
+  // bundle grids actually of one of those types — PageStatus's own
+  // concurrent-load tracking (page-status.js's _loads map) uses ids to know
+  // when THIS load specifically is done, not any other one that happens to
+  // be in flight at the same time (see _list.js's _bindPageStatusToggle,
+  // which relies on this to paint the right grid's own loading ring).
   beginLoadTiming(types = this._pageTypes) {
-    PageStatus.beginLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, this._defaultBustMsForPage(types));
+    const ids = this._idsForTypes(types);
+    PageStatus.beginLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, this._defaultBustMsForPage(types), ids);
+  }
+
+  // Counterpart to beginLoadTiming() above — rebuilds the identical key
+  // string from the SAME types list rather than stashing it on the
+  // instance, since a scoped fetch's types don't change between its own
+  // begin/complete pair. Callers must pass the same `types` they began
+  // with (see _startDomainFetch).
+  completeLoadTiming(types = this._pageTypes, cacheStatus) {
+    PageStatus.completeLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, cacheStatus);
+  }
+
+  // pageStatusIds for every bundle grid whose type is in `types` — shared by
+  // beginLoadTiming/completeLoadTiming above (for PageStatus's per-load
+  // tracking) so both always compute the identical id set for a given fetch.
+  _idsForTypes(types = this._pageTypes) {
+    return (this._bundleGrids ?? [])
+      .filter(g => types.includes(g.name))
+      .map(g => g.pageStatusId)
+      .filter(Boolean);
   }
 
   _defaultBustMsForPage(types = this._pageTypes) {
@@ -520,7 +546,7 @@ export default class ScoopAPI {
         // location/use/batch/closeout/inventory_change exactly as they were.
         this._domain = { ...(this._domain ?? {}), ...incoming };
         this._lastBundleCacheStatus = bundle?._cache ?? null;
-        PageStatus.completeLoadTiming(this._lastBundleCacheStatus);
+        this.completeLoadTiming(fetchTypes, this._lastBundleCacheStatus);
 
         document.dispatchEvent(new CustomEvent("ts:domain:updated", {
           detail: { types: fetchTypes, ts: Date.now() }
@@ -816,9 +842,14 @@ export default class ScoopAPI {
   //     themselves, already in shortcode order via plain DOM order) appear
   //     immediately and in shortcode order, regardless of which type's data
   //     happens to resolve first (see DOCKING.md).
-  //   Phase 2 (async) loads data into what Phase 1 already built: analytics-
-  //     pattern types self-fetch one at a time (unchanged pacing from
-  //     before), bundle types share the one refreshPageDomain() fetch.
+  //   Phase 2 (async) loads data into what Phase 1 already built: every
+  //     analytics-pattern type self-fetches independently, concurrently with
+  //     the one shared refreshPageDomain() fetch every bundle type rides —
+  //     none of these block each other (see the Promise.all below). Each
+  //     grid's own PageStatus load is tracked independently too (see
+  //     page-status.js's _loads map), so nothing here was tuned around the
+  //     old sequential ordering — timing/finish-detection is per grid, not
+  //     per page.
   async mountAllGrids({ root = document, formCodec = FormCodec } = {}) {
     if (!this.getTypesFromGridHosts(root)) return [];
 
@@ -965,12 +996,24 @@ export default class ScoopAPI {
       }
     }
 
-    // ── Phase 2: analytics grids self-fetch, one at a time (unchanged pacing) ──
-    for (const { dom, type, model, grid } of analyticsEntries) {
+    // ── Phase 2: every grid's own fetch, all started together ──
+    // Each analytics type self-fetches independently of the others AND of
+    // the bundle fetch below — previously these ran one at a time, in a
+    // sequential for-await loop, strictly before the bundle fetch even
+    // started, purely because that's the order the two loops happened to be
+    // written in (see git history — analytics support was spliced in ahead
+    // of the pre-existing bundle logic, not deliberately sequenced). That
+    // meant every bundle-type grid (Cabinet, FlavorTub, Batch, ...) sat at
+    // 'unknown'/"Loading" for the entire analytics phase on any page mixing
+    // both kinds. PageStatus's load timing is per-key now (see
+    // page-status.js's _loads map) specifically so this could run
+    // concurrently without one load's completion tripping over another's.
+    const analyticsFetches = analyticsEntries.map(async ({ dom, type, model, grid }) => {
+      const key = `${window.location.pathname}::${type}`;
       PageStatus.setState(dom.id, 'fetching');
-      PageStatus.beginLoadTiming(`${window.location.pathname}::${type}`);
+      PageStatus.beginLoadTiming(key, undefined, [dom.id]);
       await model.fetch();
-      PageStatus.completeLoadTiming(model.lastCacheStatus);
+      PageStatus.completeLoadTiming(key, model.lastCacheStatus);
 
       grid.init(model);
 
@@ -978,16 +1021,19 @@ export default class ScoopAPI {
       // List's own _reportFresh() — mark it directly (Grid-based Analytics/
       // Flavors already get this for free from init()).
       if (type === "Popular") PageStatus.setState(dom.id, 'fresh');
-    }
+    });
 
     // ── Phase 2: bundle-based grids share one fetch ──
+    let bundleFetch = Promise.resolve();
     if (bundleGrids.length) {
       this._bundleGrids = bundleGrids;
       this._bundleFilterParams = this._bundleFilterParamsForGrids(bundleGrids);
-      await this.refreshPageDomain({ force: true });
-
-      bundleGrids.forEach(g => g.setDomain(this._domain));
+      bundleFetch = this.refreshPageDomain({ force: true }).then(() => {
+        bundleGrids.forEach(g => g.setDomain(this._domain));
+      });
     }
+
+    await Promise.all([...analyticsFetches, bundleFetch]);
 
     return allGrids;
   }

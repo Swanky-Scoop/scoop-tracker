@@ -3,6 +3,10 @@
 .vscode/sftp.local.json
 .claude/settings.local.json
 
+# Local dedicated agent worktrees (git worktree add .claude/worktrees/<name>)
+# — nested checkouts, never meant to be added to the parent repo's tree.
+.claude/worktrees/
+
 # SSH deploy keys — never commit, never deploy
 scoop-deploy-key
 scoop-deploy-key.pub

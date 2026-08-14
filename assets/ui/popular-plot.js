@@ -97,6 +97,8 @@ export default class PopularPlot {
       this._syncDockHash();
       e.stopPropagation();
     }, true);
+
+    this._bindPageStatusToggle();
   }
 
   // Every dock slot hides a CLOSED panel with a pure CSS transform — .canvas
@@ -148,6 +150,10 @@ export default class PopularPlot {
 
   dockToggle() {
     return List.prototype.dockToggle.call(this);
+  }
+
+  _bindPageStatusToggle() {
+    return List.prototype._bindPageStatusToggle.call(this);
   }
 
   _closeSlotSiblings() {

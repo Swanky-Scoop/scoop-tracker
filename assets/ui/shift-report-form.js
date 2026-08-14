@@ -199,7 +199,12 @@ export default class ShiftReportForm extends El {
 
     switch (field.type) {
       case 'paragraph':
-        control = el('textarea', field.required ? { attrs: { required: true } } : {});
+        control = el('textarea',  { 
+          attrs: { 
+            ...(field.required ? { required: true } : {}),
+            ...(field.description ? { placeholder: field.description } : {})
+          }
+        });
         this._fieldGetters[field.name] = () => control.value || '';
         break;
 
@@ -277,15 +282,20 @@ export default class ShiftReportForm extends El {
 
       case 'text':
       default:
-        control = el('input', { attrs: { type: 'text', ...(field.required ? { required: true } : {}) } });
+        control = el('input', { 
+          attrs: { 
+            type: 'text', ...(field.required ? { required: true } : {}) ,
+            ...(field.description ? { placeholder: field.description } : {}),
+          } 
+        });
         this._fieldGetters[field.name] = () => control.value || '';
         break;
     }
 
     const WRAP = el('div', { classes: ['field', `field-type-${field.type}`] });
     if (!skipOwnLabel) WRAP.append(el('label', { classes: ['field-label'], text: field.label }));
-    if (field.description) WRAP.append(el('p', { text: field.description, classes: ['field-description'] }));
     WRAP.append(control);
+    if (field.description) WRAP.append(el('p', { text: field.description, classes: ['field-description'] }));
 
     return WRAP;
   }
@@ -299,8 +309,7 @@ export default class ShiftReportForm extends El {
     const el = this.el;
     const WRAP = el('div', { classes: ['field', 'field-type-file'] });
     WRAP.append(el('label', { classes: ['field-label'], text: field.label }));
-    if (field.description) WRAP.append(el('p', { text: field.description, classes: ['field-description'] }));
-
+    
     // capture="environment" biases mobile/tablet browsers toward opening the
     // rear camera directly rather than a gallery picker — appropriate here
     // since this field is meant to capture what's actually in the cabinet
@@ -316,6 +325,8 @@ export default class ShiftReportForm extends El {
     this.PHOTO_INPUT.addEventListener('change', () => this._onPhotoSelected());
 
     WRAP.append(this.PHOTO_INPUT, this.PHOTO_PREVIEW);
+    if (field.description) WRAP.append(el('p', { text: field.description, classes: ['field-description'] }));
+
     return WRAP;
   }
 
