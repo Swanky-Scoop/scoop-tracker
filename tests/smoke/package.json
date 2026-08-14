@@ -1,0 +1,13 @@
+{
+  "name": "scoop-tracker-smoke-tests",
+  "private": true,
+  "description": "End-to-end lifecycle smoke tests against the LOCAL WordPress dev mirror (ops.swanky.local) — not CI, not tests/visual's fixture-based approach. See README.md.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.48.2"
+  }
+}

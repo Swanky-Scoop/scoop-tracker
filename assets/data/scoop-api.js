@@ -312,26 +312,87 @@ export default class ScoopAPI {
   // just restarts the clock at that point, which only costs the countdown
   // reflecting the DELETE phase's own duration, not the fact that a timer
   // was showing at all.
-  beginLoadTiming() {
-    const ids = (this._bundleGrids ?? []).map(g => g.pageStatusId).filter(Boolean);
-    PageStatus.beginLoadTiming(`${window.location.pathname}::${this.typesKey}`, this._defaultBustMsForPage(), ids);
+  // `types` defaults to the full page union (initial load, or any caller
+  // that hasn't been scoped) — a scoped triggered refresh passes its own
+  // narrower list so its naturally-faster duration doesn't get averaged
+  // into the same ETA history bucket as full-page loads (see
+  // scopedRefreshTypes/_startDomainFetch below), which would corrupt the
+  // countdown estimate for both. `ids` (the pageStatusIds THIS load will
+  // make 'fetching') is derived from the same types list, restricted to
+  // bundle grids actually of one of those types — PageStatus's own
+  // concurrent-load tracking (page-status.js's _loads map) uses ids to know
+  // when THIS load specifically is done, not any other one that happens to
+  // be in flight at the same time (see _list.js's _bindPageStatusToggle,
+  // which relies on this to paint the right grid's own loading ring).
+  beginLoadTiming(types = this._pageTypes) {
+    const ids = this._idsForTypes(types);
+    PageStatus.beginLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, this._defaultBustMsForPage(types), ids);
   }
 
   // Counterpart to beginLoadTiming() above — rebuilds the identical key
-  // string rather than stashing it on the instance, since this.typesKey
-  // doesn't change between a begin/complete pair for the same fetch.
-  completeLoadTiming(cacheStatus) {
-    PageStatus.completeLoadTiming(`${window.location.pathname}::${this.typesKey}`, cacheStatus);
+  // string from the SAME types list rather than stashing it on the
+  // instance, since a scoped fetch's types don't change between its own
+  // begin/complete pair. Callers must pass the same `types` they began
+  // with (see _startDomainFetch).
+  completeLoadTiming(types = this._pageTypes, cacheStatus) {
+    PageStatus.completeLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, cacheStatus);
   }
 
-  _defaultBustMsForPage() {
+  // pageStatusIds for every bundle grid whose type is in `types` — shared by
+  // beginLoadTiming/completeLoadTiming above (for PageStatus's per-load
+  // tracking) so both always compute the identical id set for a given fetch.
+  _idsForTypes(types = this._pageTypes) {
+    return (this._bundleGrids ?? [])
+      .filter(g => types.includes(g.name))
+      .map(g => g.pageStatusId)
+      .filter(Boolean);
+  }
+
+  _defaultBustMsForPage(types = this._pageTypes) {
     let ms = ETA_DEFAULT_BUST_MS;
-    for (const type of this._pageTypes ?? []) {
+    for (const type of types ?? []) {
       if (ETA_TYPE_DEFAULT_BUST_MS[type] != null) {
         ms = Math.max(ms, ETA_TYPE_DEFAULT_BUST_MS[type]);
       }
     }
     return ms;
+  }
+
+  // Which on-page bundle types could plausibly need fresher data because
+  // `triggerType` just wrote to one or more pods — used to scope a
+  // triggered refresh (autosave, manual Save) instead of always refetching
+  // every type on the page. Always includes triggerType itself (it needs
+  // its own fresh server-computed decorations, e.g. alertCase/badges, even
+  // though its own edit was already applied optimistically client-side).
+  //
+  // writesPods is an ARRAY (not a single pod) because some writes cascade:
+  // saving a Batch also creates 'tub' rows server-side, saving a Closeout
+  // also marks tubs Emptied — neither is captured by the route's own
+  // pod_name alone. See scoop_client_refresh_scope() in includes/_specs.php
+  // for the authoritative list (single-sourced from scoop_routes_config()'s
+  // pod_name + cascades_to).
+  //
+  // Falls back to the FULL `_pageTypes` set — never a narrower guess —
+  // whenever triggerType is missing from SCOOP.refreshScope or has no
+  // writesPods (e.g. a read-only type, or one like CabinetWorkflow that
+  // writes through a different type's route entirely and so never appears
+  // here as a trigger identity). Under-scoping silently is worse than one
+  // extra fetch. See PERFORMANCE-REFACTOR.md item #2.
+  scopedRefreshTypes(triggerType) {
+    const scope = SCOOP?.refreshScope ?? {};
+    const entry = scope[triggerType];
+    const writesPods = entry?.writesPods;
+
+    if (!entry || !Array.isArray(writesPods) || !writesPods.length) return this._pageTypes;
+
+    const out = new Set([triggerType]);
+    for (const type of this._pageTypes) {
+      if (type === triggerType) continue;
+      const needs = scope[type]?.needs;
+      if (Array.isArray(needs) && needs.some((n) => writesPods.includes(n))) out.add(type);
+    }
+
+    return [...out];
   }
 
   _columnsForGridType(name) {
@@ -387,20 +448,32 @@ export default class ScoopAPI {
     const url = this._bundleUrlForTypes(types);
     const bundle = await this.getJson(url);
 
-    // Minimal guards so models can safely assume arrays exist.
-    const data = bundle?.data ?? {};
+    // Only default/keep entity keys the server actually fetched for THIS
+    // request — bundle.needs (includes/bundle.php's $body['needs']) is
+    // already scoped to exactly the entities the requested `types` union
+    // needs, nothing more. Force-defaulting a fixed list of entity keys
+    // here (the old behavior) was harmless when every fetch requested the
+    // full page union, but is wrong for a scoped fetch: it would fabricate
+    // empty arrays for entities that simply weren't requested, and
+    // _startDomainFetch's merge would then read that as "now empty"
+    // instead of "not part of this fetch", wiping out real data for every
+    // OTHER grid relying on that entity. See PERFORMANCE-REFACTOR.md #2.
+    const data  = bundle?.data ?? {};
+    const needs = Array.isArray(bundle?.needs) ? bundle.needs : Object.keys(data);
+
+    const out = {};
+    for (const entityKey of needs) {
+      out[entityKey] = Array.isArray(data[entityKey]) ? data[entityKey] : (data[entityKey] ?? []);
+    }
+    // Anything else the server included that wasn't listed in `needs`
+    // still passes through untouched (shouldn't happen given bundle.php's
+    // own loop, but avoids silently dropping data if that ever changes).
+    for (const [k, v] of Object.entries(data)) {
+      if (!(k in out)) out[k] = v;
+    }
+
     bundle.data = {
-      //cabinet : Array.isArray(data.cabinet)  ? data.cabinet  : [],
-      slot    : Array.isArray(data.slot)     ? data.slot     : [],
-      tub     : Array.isArray(data.tub)      ? data.tub      : [],
-      flavor  : Array.isArray(data.flavor)   ? data.flavor   : [],
-      location: Array.isArray(data.location) ? data.location : [],
-      use     : Array.isArray(data.use)      ? data.use      : [],
-      inventory_change: Array.isArray(data.inventory_change) ? data.inventory_change : [],
-      // if these exist later, keep them without forcing structure:
-      batch  : Array.isArray(data.batch)   ? data.batch   : (data.batch ?? []),
-      closeout: Array.isArray(data.closeout) ? data.closeout : (data.closeout ?? []),
-      ...data,
+      ...out,
       _date_filters: bundle?.date_filters ?? data._date_filters ?? {},
     };
 
@@ -409,7 +482,11 @@ export default class ScoopAPI {
 
   // The models expect "domain" = the data object with arrays:
   // { cabinet, slot, tub, flavor, location, use, ... }
-  async refreshPageDomain({ force = false, toast = null, info = null } = {}) {
+  // `types`, when passed, scopes this one fetch to a narrower set than the
+  // full page union (see scopedRefreshTypes) — omit it (or pass null/[]) to
+  // get today's full-page-union behavior, which is what the initial mount
+  // and any not-yet-scoped caller still does.
+  async refreshPageDomain({ force = false, toast = null, info = null, types = null } = {}) {
 
     if (!this.gridTypes) throw new Error("refreshPageDomain: page types not set");
     if (!force && this._domain) return this._domain;
@@ -430,45 +507,58 @@ export default class ScoopAPI {
       // (already reported via its own Toast) — one bad fetch shouldn't
       // block the next.
       if (!force) return this._domainInflight;
-      this._domainInflight = this._domainInflight.catch(() => {}).then(() => this._startDomainFetch(info));
+      this._domainInflight = this._domainInflight.catch(() => {}).then(() => this._startDomainFetch(info, types));
       return this._domainInflight;
     }
 
-    return this._startDomainFetch(info);
+    return this._startDomainFetch(info, types);
   }
 
   // The actual fetch — factored out of refreshPageDomain() so a forced call
   // arriving mid-flight (see above) can chain a real second run of this
   // instead of reusing the first one's promise.
-  _startDomainFetch(info) {
-    // A real fetch is about to happen — every bundle grid shares this one
-    // fetch, so mark them all at once. Each grid reports its own
-    // 'fresh'/'stale' back once the fetch resolves (see List.init/
-    // refresh/_onDomainUpdated in _list.js). info.name identifies which
-    // grid's action (Save submit, autosave, filter change) caused this
-    // refresh — absent only for the initial page-load call.
+  _startDomainFetch(info, types = null) {
+    // An empty/omitted types list means "full page union" — the initial
+    // mount's call and any caller not yet scoped to a specific trigger.
+    const fetchTypes = (Array.isArray(types) && types.length) ? types : this._pageTypes;
+    const fetchSet = new Set(fetchTypes);
+
+    // Only the grids actually part of THIS fetch flip to 'fetching' — an
+    // out-of-scope grid's last real state (fresh/stale) is still accurate,
+    // nothing about its data is changing (see the merge below). Each grid
+    // reports its own 'fresh'/'stale' back once the fetch resolves (see
+    // List.init/refresh/_onDomainUpdated in _list.js). info.name identifies
+    // which grid's action (Save submit, autosave, filter change) caused
+    // this refresh — absent only for the initial page-load call.
     this._bundleGrids.forEach(g => {
-      if (g.pageStatusId) PageStatus.setState(g.pageStatusId, 'fetching');
+      if (g.pageStatusId && fetchSet.has(g.name)) PageStatus.setState(g.pageStatusId, 'fetching');
     });
     PageStatus.setTrigger(info?.name ?? 'page load');
 
     // ETA/countdown for this fetch specifically — called here (not just once
     // from mountAllGrids) so it shows up for every real bundle fetch: the
     // initial load, a Save submit, autosave's background refresh, or a
-    // filter change. this.typesKey is already narrowed to bundle-only types
-    // by the time this runs (see mountAllGrids), so the key stays scoped to
-    // exactly what's being fetched.
-    this.beginLoadTiming();
+    // filter change. Keyed on fetchTypes (not always the page-wide
+    // typesKey) so a scoped fetch's naturally-faster duration tracks its
+    // own history bucket instead of corrupting the full-page one.
+    this.beginLoadTiming(fetchTypes);
 
     this._domainInflight = (async () => {
       try {
-        const bundle = await this.getBundleForTypes(this._pageTypes);
-        this._domain = bundle?.data ?? {};
+        const bundle = await this.getBundleForTypes(fetchTypes);
+        const incoming = bundle?.data ?? {};
+
+        // MERGE, not replace: keep every previously-known entity key, only
+        // overwrite keys THIS fetch actually asked for (getBundleForTypes
+        // no longer fabricates [] for anything else — see that method). A
+        // scoped fetch that only returns {tub,flavor,slot} must leave
+        // location/use/batch/closeout/inventory_change exactly as they were.
+        this._domain = { ...(this._domain ?? {}), ...incoming };
         this._lastBundleCacheStatus = bundle?._cache ?? null;
-        this.completeLoadTiming(this._lastBundleCacheStatus);
+        this.completeLoadTiming(fetchTypes, this._lastBundleCacheStatus);
 
         document.dispatchEvent(new CustomEvent("ts:domain:updated", {
-          detail: { types: this._pageTypes, ts: Date.now() }
+          detail: { types: fetchTypes, ts: Date.now() }
         }));
         /*
         if(toast) toast.update(toast, {
@@ -487,12 +577,12 @@ export default class ScoopAPI {
         // Falling back to 'stale' (not leaving grids stuck on 'fetching')
         // lets the next save/filter-change/manual-refresh retry normally.
         this._bundleGrids.forEach(g => {
-          if (g.pageStatusId) PageStatus.setState(g.pageStatusId, 'stale');
+          if (g.pageStatusId && fetchSet.has(g.name)) PageStatus.setState(g.pageStatusId, 'stale');
         });
         document.body.classList.remove('TS_GRID-UPDATING');
         Toast.addMessage({
           title: 'Data load failed',
-          message: `Couldn't refresh ${this.typesKey || 'this page'} — ${err?.message ?? err}. Try again or reload the page.`,
+          message: `Couldn't refresh ${this._typesKey(fetchTypes) || 'this page'} — ${err?.message ?? err}. Try again or reload the page.`,
         });
         throw err;
       } finally {
@@ -673,7 +763,12 @@ export default class ScoopAPI {
   async refreshGridFilters(grid = null) {
     this._bundleFilterParams = this._bundleFilterParamsForGrids();
     document.body.classList.add('TS_GRID-UPDATING');
-    return this.refreshPageDomain({ force: true, info: { name: grid?.name ?? 'filters' } });
+    // A filter change didn't write anything — only the one grid whose
+    // filter changed needs a fresh fetch, unlike a save (which can affect
+    // other on-page types too, see scopedRefreshTypes). No grid => no
+    // scoping info, fall back to the full page union.
+    const types = grid?.name ? [grid.name] : null;
+    return this.refreshPageDomain({ force: true, info: { name: grid?.name ?? 'filters' }, types });
   }
 
 

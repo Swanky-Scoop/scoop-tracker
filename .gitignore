@@ -48,6 +48,13 @@ tests/visual/test-results/
 tests/visual/playwright-report/
 tests/visual/blob-report/
 
+# Smoke test suite (tests/smoke/README.md) — live-instance credentials and
+# regenerated run output, never source.
+tests/smoke/.env
+tests/smoke/test-results/
+tests/smoke/playwright-report/
+tests/smoke/blob-report/
+
 # Playwright MCP session artifacts (snapshots/console logs from ad-hoc
 # browser-driven debugging, not the visual test suite above) — regenerated
 # per session, not source.

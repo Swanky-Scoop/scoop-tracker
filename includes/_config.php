@@ -44,6 +44,13 @@ function scoop_routes_config(string $batch_key = ''): array {
       'envelope_key' => 'Batch',
       'post_type'    => 'batch',
       'pod_name'     => 'batch',
+      // scoop_create_tubs_for_new_batch (includes/hooks/batch-tub.php) creates
+      // 'tub' pod rows as a side effect of every batch save — a real client
+      // write to a pod other than pod_name, caught by tests/smoke's lifecycle
+      // test (FlavorTub silently stayed stale after a scoped Batch save
+      // before this was added). See scoop_client_refresh_scope() in
+      // includes/_specs.php, which folds this into the type's writesPods.
+      'cascades_to'  => ['tub'],
       'allowed_fields_cb' => 'scoop_batches_allowed_fields',
     ],
     'Popular' => [
@@ -99,6 +106,10 @@ function scoop_routes_config(string $batch_key = ''): array {
       'envelope_key' => 'Closeout',
       'post_type'    => 'closeout',
       'pod_name'     => 'closeout',
+      // scoop_process_closeout (includes/hooks/closeout.php) marks matched
+      // tubs Emptied as a side effect of every closeout save — same
+      // cascading-write shape as Batch above, same fix.
+      'cascades_to'  => ['tub'],
       'allowed_fields_cb' => 'scoop_closeouts_allowed_fields',
     ],
     'DateActivity' => [

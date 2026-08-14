@@ -1,5 +1,15 @@
 ﻿@import url('https://cdnjs.cloudflare.com/ajax/libs/Iosevka/6.0.0/iosevka/iosevka.min.css');
 
+/* Test-only escape hatch: tests/smoke adds this class to <body> (see
+   cabinet-workflow-lifecycle.spec.js) so Playwright's pointer-event-based
+   clicks don't have to wait out this stylesheet's blanket
+   `transition: all 0.3s ease 0.05s` (see below) or any @keyframes before an
+   element is considered "stable" — never added by app code itself. */
+body.no-animations,
+body.no-animations * {
+  transition: none !important;
+  animation: none !important;
+}
 
 /* ============================================
    CSS VARIABLES - COLOR PALETTE

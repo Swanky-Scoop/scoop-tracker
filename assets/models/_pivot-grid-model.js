@@ -39,6 +39,19 @@
 import BaseGridModel from "./_base-grid-model.js";
 
 export default class PivotGridModel extends BaseGridModel {
+  constructor(name, domain = null, options = {}) {
+    super(name, domain, options);
+
+    // Every pivot's columns are rebuilt from scratch in buildRows() (see
+    // this file's header comment) — never a stable list, so
+    // List._onDomainUpdated's additive _patchRefresh path (which patches
+    // existing rows by iterating a model's columns) has nothing to work
+    // with and silently can't update a bucket's contents on a refresh this
+    // grid didn't itself cause. Same fix, same reasoning as
+    // CabinetWorkflowGridModel's constructor — opt into a real rebuild
+    // every time instead of the generic patch.
+    this.rebuildOnRefresh = true;
+  }
 
   primaryEntityKey() {
     throw new Error(`${this.constructor.name}.primaryEntityKey() must be overridden — return the domain[] key holding this pivot's items.`);
