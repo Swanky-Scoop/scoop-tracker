@@ -411,33 +411,43 @@ function scoop_entity_relations(): array {
 }
 
 /**
- * Per-type { needs, writesPod } — shipped to the client as SCOOP.refreshScope
+ * Per-type { needs, writesPods } — shipped to the client as SCOOP.refreshScope
  * so a triggered refresh (autosave, manual Save, filter change) can be
  * scoped to only the on-page grid types that could plausibly need fresher
  * data, instead of always refetching the full page-wide type union. See
  * PERFORMANCE-REFACTOR.md item #2.
  *
  * Single-sourced from the two functions that already declare this data —
- * scoop_bundle_specs() (needs) and scoop_routes_config() (pod_name) — no
- * hand-maintained duplicate.
+ * scoop_bundle_specs() (needs) and scoop_routes_config() (pod_name +
+ * cascades_to) — no hand-maintained duplicate.
  *
  * The naive scoping rule ("only refetch other types whose needs overlap the
  * triggering type's own needs") turns out useless: every bundle type's
  * needs includes 'flavor', so that overlap always matches everything. The
- * rule that actually works is which POD the triggering write targets
- * (writesPod) matched against every other on-page type's needs — e.g.
+ * rule that actually works is which POD(s) the triggering write targets
+ * (writesPods) matched against every other on-page type's needs — e.g.
  * Cabinet's writes target the 'slot' pod, so a Cabinet autosave should only
  * refresh other on-page types whose needs include 'slot' (FlavorTub,
  * CabinetWorkflow, ...), not Batch/BatchHistory (neither needs 'slot').
  *
- * writesPod is null for any type with no writeable route in
+ * writesPods is an ARRAY, not a single pod, because some routes write to
+ * more than their own declared pod_name as a side effect: Batch's create
+ * hook (scoop_create_tubs_for_new_batch) also creates 'tub' rows, and
+ * Closeout's save hook (scoop_process_closeout) also marks tubs Emptied —
+ * see cascades_to on those two entries in scoop_routes_config(). Missing
+ * this originally meant a Batch save's scoped refresh only re-fetched
+ * {batch, flavor} and silently left FlavorTub (needs 'tub', not 'batch')
+ * stale until something else refreshed it — caught by tests/smoke's
+ * lifecycle spec, not by hand.
+ *
+ * writesPods is [] for any type with no writeable route in
  * scoop_routes_config() (BatchHistory, ItemPivot, Popular, Flavors,
  * Analytics — and CabinetWorkflow, which has no _config.php entry at all:
  * its writes go through the FlavorTub/Cabinet envelope keys, see
- * cabinet-workflow-tile.js/confirm-swap-modal.js). The client treats a
- * missing/null writesPod as "never triggers a scoped refresh of OTHER
- * types; always fall back to the full page-wide refetch when THIS type is
- * the trigger" — under-scoping silently would be worse than one extra fetch.
+ * cabinet-workflow-tile.js/confirm-swap-modal.js). The client treats an
+ * empty writesPods as "never triggers a scoped refresh of OTHER types;
+ * always fall back to the full page-wide refetch when THIS type is the
+ * trigger" — under-scoping silently would be worse than one extra fetch.
  */
 function scoop_client_refresh_scope(): array {
   $specs  = scoop_bundle_specs();
@@ -445,9 +455,15 @@ function scoop_client_refresh_scope(): array {
 
   $out = [];
   foreach ( $specs as $type => $spec ) {
+    $route      = $routes[ $type ] ?? [];
+    $writesPods = array_filter( array_merge(
+      [ $route['pod_name'] ?? null ],
+      $route['cascades_to'] ?? []
+    ) );
+
     $out[ $type ] = [
-      'needs'     => $spec['needs'] ?? [],
-      'writesPod' => $routes[ $type ]['pod_name'] ?? null,
+      'needs'      => $spec['needs'] ?? [],
+      'writesPods' => array_values( array_unique( $writesPods ) ),
     ];
   }
   return $out;
