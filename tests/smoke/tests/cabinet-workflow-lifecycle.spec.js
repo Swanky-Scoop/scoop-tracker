@@ -171,6 +171,88 @@ async function swapSlotToFlavor(page, slotId, flavorTitle, targetTubId) {
   await page.keyboard.press('Escape');
 }
 
+// ── Cross-run cleanup ────────────────────────────────────────────────────
+// Module-scope (not `let` inside the test body) so afterEach can see
+// whatever got recorded before a mid-test failure — see README.md's "Not
+// yet done": a run that dies between steps 1-7 previously left a real
+// orphaned batch and/or a slot stuck mid-swap for the next run to trip
+// over. Reset in beforeEach so a stale run's state can't leak into a
+// later one if this file ever grows a second test.
+let state = {};
+
+test.beforeEach(() => {
+  state = {};
+});
+
+test.afterEach(async ({ page }, testInfo) => {
+  // Nothing was recorded yet (failed during login/setup, before step 1)
+  // — nothing to clean up.
+  if (!state.newBatchId && !state.recordedSlotId) return;
+
+  console.log(`[smoke:cleanup] test status "${testInfo.status}" — checking for state to restore`);
+
+  let domain;
+  try {
+    await forceFreshDomain(page);
+    domain = await getDomain(page);
+  } catch (err) {
+    console.error(`[smoke:cleanup] could not read domain, skipping cleanup: ${err.message}`);
+    return;
+  }
+
+  // Delete the fixture batch if step 5 never reached it (or failed partway).
+  if (state.newBatchId && (domain.batch || []).some((b) => Number(b.id) === Number(state.newBatchId))) {
+    console.warn(`[smoke:cleanup] batch ${state.newBatchId} was not deleted by the test — deleting now`);
+    const nonce = await page.evaluate(() => window.SCOOP.nonce);
+    // Don't trust the response body's parsed JSON for success/failure — seen
+    // a real run where the server-side delete fully succeeded (confirmed via
+    // a direct DB check) but the client-side `.json()` parse still failed on
+    // a 200. Verify against actual re-fetched state instead.
+    const status = await page.evaluate(async ({ id, nonce }) => {
+      const r = await fetch(`/wp-json/scoop/v1/batches/${id}`, {
+        method: 'DELETE',
+        headers: { 'X-WP-Nonce': nonce },
+        credentials: 'include',
+      });
+      return r.status;
+    }, { id: state.newBatchId, nonce });
+
+    await forceFreshDomain(page);
+    domain = await getDomain(page);
+    const stillThere = (domain.batch || []).some((b) => Number(b.id) === Number(state.newBatchId));
+    if (stillThere) {
+      console.error(`[smoke:cleanup] failed to delete orphaned batch ${state.newBatchId}: DELETE returned status ${status}, batch still exists after re-fetch`);
+    } else {
+      console.log(`[smoke:cleanup] batch ${state.newBatchId} deleted successfully`);
+    }
+  }
+
+  // Restore the target slot/tub if they don't match what step 2 recorded —
+  // covers a failure anywhere from step 3 (swap committed, slot now mid-
+  // change) through step 7 (restore attempted but not yet verified).
+  if (state.recordedSlotId && state.recordedOriginalFlavorId && state.recordedOriginalTubId) {
+    const slot = (domain.slot || []).find((s) => Number(s.id) === Number(state.recordedSlotId));
+    const tub = (domain.tub || []).find((t) => Number(t.id) === Number(state.recordedOriginalTubId));
+    const needsRestore =
+      !slot ||
+      Number(slot.current_flavor) !== Number(state.recordedOriginalFlavorId) ||
+      !tub ||
+      tub.state !== 'Opened' ||
+      Number(tub.slot) !== Number(state.recordedSlotId);
+
+    if (needsRestore) {
+      console.warn(`[smoke:cleanup] slot ${state.recordedSlotId} was left mid-swap — restoring original tub ${state.recordedOriginalTubId}`);
+      const originalFlavorTitle = (domain.flavor || []).find((f) => Number(f.id) === Number(state.recordedOriginalFlavorId))?._title;
+      try {
+        if (!originalFlavorTitle) throw new Error(`original flavor ${state.recordedOriginalFlavorId} not found in domain`);
+        await swapSlotToFlavor(page, state.recordedSlotId, originalFlavorTitle, state.recordedOriginalTubId);
+      } catch (err) {
+        console.error(`[smoke:cleanup] failed to restore slot ${state.recordedSlotId}: ${err.message}`);
+      }
+    }
+  }
+});
+
 // ── The lifecycle ────────────────────────────────────────────────────────
 
 test('cabinet workflow lifecycle: create batch, swap into a slot, delete, restore', async ({ page }) => {
@@ -209,12 +291,6 @@ test('cabinet workflow lifecycle: create batch, swap into a slot, delete, restor
 
   await forceFreshDomain(page);
 
-  let recordedSlotId;
-  let recordedOriginalTubId;
-  let recordedOriginalFlavorId;
-  let newBatchId;
-  let newFractionalTubId;
-
   await test.step('step 1: add batch (fixture flavor, configured count)', async () => {
     await openGrid(page, 'Batch');
     const batchHost = page.locator('.scoop-grid[data-grid-type="Batch"]');
@@ -237,29 +313,29 @@ test('cabinet workflow lifecycle: create batch, swap into a slot, delete, restor
       .filter((b) => Number(b.flavor) === (domain.flavor.find((f) => f._title === TEST_FLAVOR_TITLE)?.id))
       .sort((a, b) => Number(b.id) - Number(a.id))[0];
     expect(batch, 'newly created batch should be in the domain').toBeTruthy();
-    newBatchId = batch.id;
+    state.newBatchId = batch.id;
 
-    const tubs = (domain.tub || []).filter((t) => Number(t.batch) === Number(newBatchId));
+    const tubs = (domain.tub || []).filter((t) => Number(t.batch) === Number(state.newBatchId));
     const fractional = tubs.find((t) => t.amount % 1 !== 0);
     expect(fractional, 'batch should include exactly one fractional tub').toBeTruthy();
-    newFractionalTubId = fractional.id;
+    state.newFractionalTubId = fractional.id;
   });
 
   await test.step('step 2: record the tub currently in the target slot', async () => {
     const domain = await getDomain(page);
     const slot = (domain.slot || []).find((s) => s._title === TARGET_SLOT_TITLE);
     expect(slot, `slot "${TARGET_SLOT_TITLE}" should exist`).toBeTruthy();
-    recordedSlotId = slot.id;
-    recordedOriginalFlavorId = slot.current_flavor;
+    state.recordedSlotId = slot.id;
+    state.recordedOriginalFlavorId = slot.current_flavor;
 
-    const occupant = (domain.tub || []).find((t) => Number(t.slot) === Number(recordedSlotId));
+    const occupant = (domain.tub || []).find((t) => Number(t.slot) === Number(state.recordedSlotId));
     expect(occupant, `slot "${TARGET_SLOT_TITLE}" should currently hold a tub`).toBeTruthy();
-    recordedOriginalTubId = occupant.id;
-    console.log(`[smoke] recorded pre-test occupant of ${TARGET_SLOT_TITLE}: tub ${recordedOriginalTubId} ("${occupant._title}")`);
+    state.recordedOriginalTubId = occupant.id;
+    console.log(`[smoke] recorded pre-test occupant of ${TARGET_SLOT_TITLE}: tub ${state.recordedOriginalTubId} ("${occupant._title}")`);
   });
 
   await test.step('step 3: use CabinetWorkflow to place the fractional tub', async () => {
-    await swapSlotToFlavor(page, recordedSlotId, TEST_FLAVOR_TITLE, newFractionalTubId);
+    await swapSlotToFlavor(page, state.recordedSlotId, TEST_FLAVOR_TITLE, state.newFractionalTubId);
   });
 
   await test.step('step 4: confirm Cabinet / CabinetWorkflow / ItemPivot all reflect the swap', async () => {
@@ -272,11 +348,11 @@ test('cabinet workflow lifecycle: create batch, swap into a slot, delete, restor
     // class of race entirely, same pattern step 8 already relies on.
     await forceFreshDomain(page);
     const domain = await getDomain(page);
-    const newTub = (domain.tub || []).find((t) => Number(t.id) === Number(newFractionalTubId));
+    const newTub = (domain.tub || []).find((t) => Number(t.id) === Number(state.newFractionalTubId));
     expect(newTub.state, 'new fractional tub should be Opened').toBe('Opened');
-    expect(Number(newTub.slot), 'new fractional tub should be linked to the target slot').toBe(Number(recordedSlotId));
+    expect(Number(newTub.slot), 'new fractional tub should be linked to the target slot').toBe(Number(state.recordedSlotId));
 
-    const oldTub = (domain.tub || []).find((t) => Number(t.id) === Number(recordedOriginalTubId));
+    const oldTub = (domain.tub || []).find((t) => Number(t.id) === Number(state.recordedOriginalTubId));
     expect(oldTub.state, 'the previous occupant tub should now be Emptied').toBe('Emptied');
     expect(Number(oldTub.slot), 'the previous occupant tub should be unlinked from the slot').toBe(0);
 
@@ -284,7 +360,7 @@ test('cabinet workflow lifecycle: create batch, swap into a slot, delete, restor
     const tileClass = await page.evaluate((id) => {
       const host = document.querySelector('.scoop-grid[data-grid-type="CabinetWorkflow"]');
       return host.querySelector(`[data-row-id="${id}"]`)?.className;
-    }, recordedSlotId);
+    }, state.recordedSlotId);
     expect(tileClass).toContain(TEST_FLAVOR_TITLE.trim().replace(/\s+/g, '_'));
 
     // ItemPivot — separate page, own bundle fetch.
@@ -299,7 +375,7 @@ test('cabinet workflow lifecycle: create batch, swap into a slot, delete, restor
   await test.step('step 5: delete the batch', async () => {
     await openGrid(page, 'Batch');
 
-    const rowSelector = `.scoop-grid[data-grid-type="Batch"] [data-row-id="${newBatchId}"]`;
+    const rowSelector = `.scoop-grid[data-grid-type="Batch"] [data-row-id="${state.newBatchId}"]`;
     await page.waitForSelector(rowSelector, { timeout: 15_000 });
     await page.evaluate((sel) => {
       document.querySelector(sel).querySelector('button').click();
@@ -313,8 +389,8 @@ test('cabinet workflow lifecycle: create batch, swap into a slot, delete, restor
     const deleteRequest = await page.evaluate((batchId) => {
       const entry = performance.getEntriesByType('resource').find((e) => e.name.includes(`/batches/${batchId}`));
       return entry ? Math.round(entry.duration) : null;
-    }, newBatchId);
-    console.log(`[smoke] DELETE /batches/${newBatchId} took ${deleteRequest}ms`);
+    }, state.newBatchId);
+    console.log(`[smoke] DELETE /batches/${state.newBatchId} took ${deleteRequest}ms`);
     expect(deleteRequest, 'batch DELETE request duration').toBeLessThan(15_000);
   });
 
@@ -328,9 +404,9 @@ test('cabinet workflow lifecycle: create batch, swap into a slot, delete, restor
       if (container?.classList.contains('closed')) {
         document.querySelector(`[data-group-id="${container.dataset.groupId}"] .oc`)?.click();
       }
-    }, recordedOriginalTubId);
+    }, state.recordedOriginalTubId);
 
-    const stateInput = page.locator(`[data-row-id="${recordedOriginalTubId}"] .state input[type="text"]`);
+    const stateInput = page.locator(`[data-row-id="${state.recordedOriginalTubId}"] .state input[type="text"]`);
     await stateInput.click();
     await stateInput.fill('Opened');
     await page.getByRole('option', { name: 'Opened' }).click();
@@ -359,7 +435,7 @@ test('cabinet workflow lifecycle: create batch, swap into a slot, delete, restor
         const slot = domain.slot.find((s) => Number(s.id) === Number(slotId));
         return slot && slot.confirm_state !== '';
       },
-      recordedSlotId,
+      state.recordedSlotId,
       { timeout: 20_000 },
     );
 
@@ -370,10 +446,10 @@ test('cabinet workflow lifecycle: create batch, swap into a slot, delete, restor
     // Hard reload before reading, same reasoning as step 4.
     await forceFreshDomain(page);
     let domain = await getDomain(page);
-    let slot = domain.slot.find((s) => Number(s.id) === Number(recordedSlotId));
-    if (Number(slot.current_flavor) !== Number(recordedOriginalFlavorId)) {
-      const originalFlavorTitle = domain.flavor.find((f) => Number(f.id) === Number(recordedOriginalFlavorId))?._title;
-      await swapSlotToFlavor(page, recordedSlotId, originalFlavorTitle, recordedOriginalTubId);
+    let slot = domain.slot.find((s) => Number(s.id) === Number(state.recordedSlotId));
+    if (Number(slot.current_flavor) !== Number(state.recordedOriginalFlavorId)) {
+      const originalFlavorTitle = domain.flavor.find((f) => Number(f.id) === Number(state.recordedOriginalFlavorId))?._title;
+      await swapSlotToFlavor(page, state.recordedSlotId, originalFlavorTitle, state.recordedOriginalTubId);
     }
   });
 
@@ -381,17 +457,17 @@ test('cabinet workflow lifecycle: create batch, swap into a slot, delete, restor
     await forceFreshDomain(page);
     const domain = await getDomain(page);
 
-    const slot = domain.slot.find((s) => Number(s.id) === Number(recordedSlotId));
-    expect(Number(slot.current_flavor), 'slot current_flavor restored').toBe(Number(recordedOriginalFlavorId));
+    const slot = domain.slot.find((s) => Number(s.id) === Number(state.recordedSlotId));
+    expect(Number(slot.current_flavor), 'slot current_flavor restored').toBe(Number(state.recordedOriginalFlavorId));
 
-    const originalTub = domain.tub.find((t) => Number(t.id) === Number(recordedOriginalTubId));
+    const originalTub = domain.tub.find((t) => Number(t.id) === Number(state.recordedOriginalTubId));
     expect(originalTub.state, 'original tub restored to Opened').toBe('Opened');
-    expect(Number(originalTub.slot), 'original tub re-linked to the target slot').toBe(Number(recordedSlotId));
+    expect(Number(originalTub.slot), 'original tub re-linked to the target slot').toBe(Number(state.recordedSlotId));
 
-    const remainingBatch = domain.batch.find((b) => Number(b.id) === Number(newBatchId));
+    const remainingBatch = domain.batch.find((b) => Number(b.id) === Number(state.newBatchId));
     expect(remainingBatch, 'test batch should no longer exist').toBeFalsy();
 
-    const remainingNewTub = domain.tub.find((t) => Number(t.id) === Number(newFractionalTubId));
+    const remainingNewTub = domain.tub.find((t) => Number(t.id) === Number(state.newFractionalTubId));
     expect(remainingNewTub, 'test batch\'s fractional tub should no longer exist').toBeFalsy();
   });
 });

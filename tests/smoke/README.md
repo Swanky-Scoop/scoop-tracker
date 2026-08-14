@@ -54,14 +54,18 @@ npx playwright test --debug      # step through interactively
 `playwright.config.js`) — these tests mutate the same shared dev-site rows
 sequentially; running them in parallel would race.
 
-**If a run fails partway through, it can leave real orphaned data** (an
-undeleted `zz__flavor test___` batch, or the target slot left mid-swap) —
-this suite does not yet have a `beforeEach`/`afterEach` cleanup hook (see
-"Not yet done" below). Before re-running after a failure, either restore
-the target slot/tub by hand or delete any leftover batches for the fixture
-flavor first, or the next run's own "record pre-test state" step will
-capture the WRONG baseline and its final "back to pre-test state"
-assertion will be comparing against already-polluted data.
+**If a run fails partway through, it now has a `test.afterEach` safety net**
+that deletes any leftover fixture batch and restores the target slot/tub to
+whatever step 2 recorded, regardless of where the failure happened (see
+`cabinet-workflow-lifecycle.spec.js`'s module-scope `state` object and the
+`test.afterEach` block right after the helpers). It runs after every test
+— including passing ones, where it's a fast no-op — and logs under the
+`[smoke:cleanup]` prefix whenever it actually has to fix something. It's a
+best-effort net, not a guarantee: if the page itself is unusable (e.g. the
+failure happened during login, before any grid ever mounted), cleanup logs
+an error and skips rather than throwing, so before re-running after a
+`[smoke:cleanup]` failure line, verify the target slot/tub and fixture-flavor
+batches by hand.
 
 ## What `cabinet-workflow-lifecycle.spec.js` covers
 
@@ -220,15 +224,11 @@ actually clicks) rather than over-engineering test-ids for a one-suite need.
   1 but never reached by step 5's delete is a genuine orphaned WordPress
   post with real tub children; a slot swapped in step 3 but never restored
   by steps 6-7 leaves the *actual* cabinet in a wrong state, not a test
-  fixture. This suite doesn't yet clean up after its own failures (no
-  `test.afterEach`) — see "Running" above.
+  fixture. **Fixed** via a `test.afterEach` cleanup hook — see "Running"
+  above and `cabinet-workflow-lifecycle.spec.js`'s `state`/`test.afterEach`.
 
 ## Not yet done
 
-- A `test.afterEach`/`test.afterAll` that deletes any batch for the fixture
-  flavor created during a run that didn't reach step 5, and restores the
-  target slot to whatever step 2 recorded, regardless of where the test
-  failed — would remove the manual-cleanup burden documented above.
 - Resolving the step 3/4 mystery documented above, and reverting to
   driving the real "Confirm Swap" UI once it's understood (the direct-REST
   workaround is a deliberate, documented trade of UI fidelity for
