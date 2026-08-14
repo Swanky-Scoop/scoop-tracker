@@ -63,6 +63,18 @@ const WHOLE_TUB_THRESHOLD = 0.8;
 export default class CabinetWorkflowGridModel extends BaseGridModel {
   constructor(name = 'CabinetWorkflow', domain, attrs = {}) {
     super(name, domain, attrs);
+
+    // This model ships no columns (see this file's header comment), so
+    // List._onDomainUpdated's additive _patchRefresh path — which patches
+    // existing rows by iterating a model's columns — has nothing to work
+    // with and silently can't update a slot's flavor/tub/status on a
+    // refresh this tile didn't itself cause (see change-tub.md's
+    // "Optimistic repaint + confirmation diff" section). Opting into a real
+    // rebuild every time is the counterpart to Batch/Closeout's
+    // `repaintOnRefresh = false` — same idea (the generic patch mechanism
+    // doesn't apply to this view), opposite direction (always repaint for
+    // real, rather than never).
+    this.rebuildOnRefresh = true;
   }
 
   // Every slot at the model's own location, grouped by cabinet — including

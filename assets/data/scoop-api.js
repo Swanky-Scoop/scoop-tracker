@@ -21,6 +21,7 @@ import ItemPivotGridModel       from "../models/item-pivot-grid-model.js";
 import ItemPivotGrid            from "../ui/item-pivot-grid.js";
 import ShiftReportGridModel     from "../models/shift-report-grid-model.js";
 import ShiftReportForm          from "../ui/shift-report-form.js";
+import HashState                from "./hash-state.js";
 
 // Some grid types run visibly heavier cold-cache queries than the rest of
 // the bundle (see bundle-fetch.php's date-filter/inventory_change handling
@@ -71,8 +72,43 @@ export default class ScoopAPI {
   }
 
   _hashForcesBust() {
-    const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
-    return new URLSearchParams(raw).has('bust');
+    return HashState.has('bust');
+  }
+
+  // Stable per-host identity for the location hash's per-control tier
+  // (#loc.<id>=...) — data-grid-type alone collides when the same type
+  // appears twice on one page (see DOCKING.md's "State model"); an author
+  // can break that tie with the shortcode's optional `slug` attribute
+  // (data-slug). Most pages have one host per type and never need it.
+  _controlId(dom) {
+    const type = dom?.dataset?.gridType ?? '';
+    const slug = dom?.dataset?.slug;
+    return slug ? `${type}@${slug}` : type;
+  }
+
+  // Location cascade for a grid/tile host, highest priority first:
+  //   1. #loc.<controlId>=  — per-control hash override (incl. a future
+  //      in-GUI location picker writing back via HashState.set())
+  //   2. #location=         — page-wide hash override
+  //   3. data-location      — the shortcode's own explicit `location=` attr
+  //   4. data-default-location on the nearest .in-dock ancestor —
+  //      [scoop_dock location="..."]'s default
+  //   5. 935 (Woodinville) — hardcoded fallback
+  // "Code sets initial state, but hash overrides": PHP-rendered attrs (3/4)
+  // are the page's authored defaults; any hash present (1/2) wins over them.
+  _resolveLocation(dom) {
+    const controlHash = HashState.get(`loc.${this._controlId(dom)}`);
+    if (controlHash != null) return Number(controlHash);
+
+    const pageHash = HashState.get('location');
+    if (pageHash != null) return Number(pageHash);
+
+    if (dom?.dataset?.location) return Number(dom.dataset.location);
+
+    const dockDefault = dom?.closest?.('.in-dock')?.dataset?.defaultLocation;
+    if (dockDefault) return Number(dockDefault);
+
+    return 935;
   }
 
   _normalizeRoutes(routes = {}) {
@@ -264,6 +300,20 @@ export default class ScoopAPI {
     return base;
   }
 
+  // Public wrapper so a caller outside this class (e.g. List._handleRowDelete
+  // in _list.js, showing feedback the instant a delete is confirmed, before
+  // the DELETE request itself — let alone the bundle refetch that follows it
+  // — has even started) can start the same ETA countdown _startDomainFetch
+  // uses, rather than leaving the countdown dark for however long that
+  // earlier phase takes. Calling this again later, once _startDomainFetch's
+  // own real fetch begins, is expected and harmless — beginLoadTiming()
+  // just restarts the clock at that point, which only costs the countdown
+  // reflecting the DELETE phase's own duration, not the fact that a timer
+  // was showing at all.
+  beginLoadTiming() {
+    PageStatus.beginLoadTiming(`${window.location.pathname}::${this.typesKey}`, this._defaultBustMsForPage());
+  }
+
   _defaultBustMsForPage() {
     let ms = ETA_DEFAULT_BUST_MS;
     for (const type of this._pageTypes ?? []) {
@@ -353,13 +403,37 @@ export default class ScoopAPI {
 
     if (!this.gridTypes) throw new Error("refreshPageDomain: page types not set");
     if (!force && this._domain) return this._domain;
-    if (this._domainInflight) return this._domainInflight;
-    //if(toast) toast.update(toast, {title:"Data Saved..."});
 
-    // A real fetch is about to happen (not a cache-hit early return above,
-    // not piggy-backing on an already-inflight request) — every bundle grid
-    // shares this one fetch, so mark them all at once. Each grid reports its
-    // own 'fresh'/'stale' back once the fetch resolves (see List.init/
+    if (this._domainInflight) {
+      // A fetch is already in flight. A non-forced caller is happy to just
+      // wait on it — same outcome as any other unforced call landing right
+      // now. A forced caller needs genuinely fresh data, though: handing it
+      // the in-flight promise risks resolving to a snapshot taken BEFORE
+      // whatever this caller just wrote (e.g. a delete confirming its own
+      // write landed while an earlier, unrelated refresh — another grid's
+      // save, a cabinet-workflow action — was still resolving; see
+      // PARTIAL-REFRESH.md). Chain a genuine follow-up fetch onto the
+      // in-flight one instead of just returning it: the earlier fetch still
+      // resolves and updates state normally, then this one runs and
+      // re-updates with truly current data. `.catch(() => {})` lets the
+      // chain proceed to the forced fetch even if the earlier one failed
+      // (already reported via its own Toast) — one bad fetch shouldn't
+      // block the next.
+      if (!force) return this._domainInflight;
+      this._domainInflight = this._domainInflight.catch(() => {}).then(() => this._startDomainFetch(info));
+      return this._domainInflight;
+    }
+
+    return this._startDomainFetch(info);
+  }
+
+  // The actual fetch — factored out of refreshPageDomain() so a forced call
+  // arriving mid-flight (see above) can chain a real second run of this
+  // instead of reusing the first one's promise.
+  _startDomainFetch(info) {
+    // A real fetch is about to happen — every bundle grid shares this one
+    // fetch, so mark them all at once. Each grid reports its own
+    // 'fresh'/'stale' back once the fetch resolves (see List.init/
     // refresh/_onDomainUpdated in _list.js). info.name identifies which
     // grid's action (Save submit, autosave, filter change) caused this
     // refresh — absent only for the initial page-load call.
@@ -374,7 +448,7 @@ export default class ScoopAPI {
     // filter change. this.typesKey is already narrowed to bundle-only types
     // by the time this runs (see mountAllGrids), so the key stays scoped to
     // exactly what's being fetched.
-    PageStatus.beginLoadTiming(`${window.location.pathname}::${this.typesKey}`, this._defaultBustMsForPage());
+    this.beginLoadTiming();
 
     this._domainInflight = (async () => {
       try {
@@ -605,7 +679,7 @@ export default class ScoopAPI {
   // List's delegated click listener is scoped to `this.FORM`, not
   // `this.target` — see the comment in _list.js's _bindEvents.
   _mountEmbeddedBatchHistory(batchDom, batchGrid, formCodec) {
-    const location = Number(batchDom.dataset.location || 0);
+    const location = this._resolveLocation(batchDom);
     const modelInstance = new BatchHistoryGridModel("BatchHistory", null, {
       location,
       metaData: SCOOP.metaData?.BatchHistory,
@@ -683,10 +757,11 @@ export default class ScoopAPI {
     // host already carries a stable id from shortcode.php. 'unknown' is the
     // literal starting state until its first fetch begins.
     this._hosts.forEach(dom => {
+      const resolvedLocation = this._resolveLocation(dom);
       PageStatus.register(dom.id, {
-        label: `${dom.dataset.gridType ?? 'grid'} (${dom.dataset.location || 'no location'})`,
+        label: `${dom.dataset.gridType ?? 'grid'} (${resolvedLocation || 'no location'})`,
         type: dom.dataset.gridType ?? '',
-        location: dom.dataset.location ?? '',
+        location: resolvedLocation || '',
       });
 
       // Batch's `history` shortcode attribute embeds a BatchHistory grid
@@ -694,9 +769,9 @@ export default class ScoopAPI {
       // it its own PageStatus entry anyway so its load state is still visible.
       if (dom.dataset.gridType === 'Batch' && dom.dataset.history) {
         PageStatus.register(`${dom.id}::history`, {
-          label: `Batch History (${dom.dataset.location || 'no location'})`,
+          label: `Batch History (${resolvedLocation || 'no location'})`,
           type: 'BatchHistory',
-          location: dom.dataset.location ?? '',
+          location: resolvedLocation || '',
         });
       }
     });
@@ -728,7 +803,7 @@ export default class ScoopAPI {
 
     for (const dom of this._hosts) {
       const type     = dom.dataset.gridType;
-      const location = Number(dom.dataset.location || 0);
+      const location = this._resolveLocation(dom);
 
       if (analyticsTypes.has(type)) {
         const days = Number(dom.dataset.days || 30);

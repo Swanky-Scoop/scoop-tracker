@@ -10,6 +10,7 @@
 import Tile from "./tile.js";
 import ConfirmSwapModal from "./confirm-swap-modal.js";
 import FlavorPickerModal from "./flavor-picker-modal.js";
+import Toast from "./toast.js";
 
 export default class CabinetWorkflowTile extends Tile {
 
@@ -174,9 +175,12 @@ export default class CabinetWorkflowTile extends Tile {
 
     if (!mismatchedSlotIds.length) return;
 
-    alert(mismatchedSlotIds.length === 1
-      ? "This slot's change didn't match what the server confirmed — repainting with its actual state."
-      : `${mismatchedSlotIds.length} slots' changes didn't match what the server confirmed — repainting with its actual state.`);
+    Toast.addMessage({
+      title: 'Repainted with actual state',
+      message: mismatchedSlotIds.length === 1
+        ? "This slot's change didn't match what the server confirmed — repainting with its actual state."
+        : `${mismatchedSlotIds.length} slots' changes didn't match what the server confirmed — repainting with its actual state.`,
+    });
     this.modelInstance.setDomain(freshDomain);
     this.refresh(this.modelInstance);
   }
@@ -339,7 +343,7 @@ export default class CabinetWorkflowTile extends Tile {
       if (Object.keys(tubCells).length) {
         const r = await this.api.postJson({ cells: tubCells, source: 'workflow' }, 'FlavorTub');
         if (!r.ok || !r.data?.ok) {
-          alert(`Confirm Cabinet: saving failed.\n${r?.data?.error ?? `HTTP ${r?.status}`}`);
+          Toast.addMessage({ title: 'Confirm Cabinet: saving failed', message: r?.data?.error ?? `HTTP ${r?.status}` });
           return;
         }
       }
@@ -347,7 +351,10 @@ export default class CabinetWorkflowTile extends Tile {
       if (Object.keys(slotCells).length) {
         const rSlots = await this.api.postJson({ cells: slotCells, source: 'workflow' }, 'Cabinet');
         if (!rSlots.ok || !rSlots.data?.ok) {
-          alert(`Confirm Cabinet: tubs updated, but recording slot status failed.\n${rSlots?.data?.error ?? `HTTP ${rSlots?.status}`}`);
+          Toast.addMessage({
+            title: 'Confirm Cabinet: recording slot status failed',
+            message: `Tubs updated, but recording slot status failed.\n${rSlots?.data?.error ?? `HTTP ${rSlots?.status}`}`,
+          });
           return;
         }
       }
@@ -365,7 +372,12 @@ export default class CabinetWorkflowTile extends Tile {
         });
       }
 
-      if (alertResult) alert(this._confirmCabinetMessage(assigned, discrepancies, impossible));
+      if (alertResult) {
+        Toast.addMessage({
+          title: 'Confirm Cabinet',
+          changes: this._confirmCabinetMessage(assigned, discrepancies, impossible),
+        });
+      }
 
       if (Object.keys(tubCells).length || Object.keys(slotCells).length) {
         await this.api.refreshPageDomain({ force: true });
@@ -383,24 +395,29 @@ export default class CabinetWorkflowTile extends Tile {
     }
   }
 
+  // Returns Toast.addMessage's `changes` shape ([{ sentence }, ...]) rather
+  // than a single joined string — Toast renders each entry as its own <li>,
+  // so this reads as a real list instead of a run-on paragraph (the TOAST
+  // <p> has no `white-space: pre-line`, so embedded '\n's wouldn't break
+  // lines there the way they used to inside a native alert()).
   _confirmCabinetMessage(assigned, discrepancies, impossible) {
     const lines = assigned.length
       ? [`Linked ${assigned.length} slot(s):`, ...assigned.map(row => `- ${row.flavorTitle} (${row.cabinetTitle})`)]
       : ['No changes needed.'];
 
     if (discrepancies.length) {
-      lines.push('', 'Multiple open tubs matched (paired closest to a whole tub):',
+      lines.push('Multiple open tubs matched (paired closest to a whole tub):',
         ...discrepancies.map(row => `- ${row.flavorTitle} (${row.cabinetTitle})`));
     }
 
     if (impossible.length) {
-      lines.push('', 'Slots with no valid tub:', ...impossible.map(row => {
+      lines.push('Slots with no valid tub:', ...impossible.map(row => {
         const reason = row.allergenConflict ? 'allergen conflict with cabinet' : 'no eligible tub found';
         return `- ${row.flavorTitle} (${row.cabinetTitle}): ${reason}`;
       }));
     }
 
-    return lines.join('\n');
+    return lines.map(sentence => ({ sentence }));
   }
 
   buildItemDom(row) {

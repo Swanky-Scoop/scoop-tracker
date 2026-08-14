@@ -13,11 +13,28 @@
 // on a bundle-fed view: setDomain(domain), and an optional dockToggle()
 // (omitted here — no dock button for a one-time submit form, it just
 // renders inline).
+//
+// Schema-driven, not hand-coded: the field list used to be hardcoded here,
+// which meant every field added in Pods admin needed a matching code change
+// before it would appear (hit this three times while building the earlier
+// version — see WHITEBOARD-INGESTION.md). Instead this fetches
+// GET /shift-report-fields (scoop_shift_report_field_schema() in rest.php)
+// once, and renders one <section> per Pods field GROUP (in Pods admin's own
+// order), each containing its fields (also in Pods admin's own order). Only
+// four fields need real custom logic no generic renderer could produce —
+// tempering_cabinet_photo (upload + camera capture), flavors_changed
+// (filtered to today's slot.current_flavor, grouped by cabinet),
+// supplies_low (grouped by the supply pod's own category field), and
+// cake_orders (creates new cake_order records inline rather than picking
+// from existing ones) — those are the only entries in BESPOKE_FIELD_NAMES.
+// Everything else, including location, renders generically off field
+// metadata (type/label/options) the server already resolved.
 //////////////////////////////////
 import El from "./_el.js";
 import Toast from "./toast.js";
 import PageStatus from "./page-status.js";
-import { CHANGE_LOW_OPTIONS, STAFFING_LEVEL_OPTIONS } from "../models/shift-report-grid-model.js";
+
+const BESPOKE_FIELD_NAMES = new Set(['tempering_cabinet_photo', 'flavors_changed', 'supplies_low', 'cake_orders']);
 
 export default class ShiftReportForm extends El {
   constructor(dom, type, { api, modelInstance, pageStatusId = null } = {}) {
@@ -30,17 +47,27 @@ export default class ShiftReportForm extends El {
 
     this._photoId = null;
     this._cakeOrderRows = []; // [{ li, orderName, cakePieFlavor, pickupDate, details }]
+    this._fieldGetters = {};  // name -> () => value, for every field except tempering_cabinet_photo/cake_orders
+    this._fieldSchema = null; // cached GET /shift-report-fields groups, fetched once
+    this.LOCATION_SELECT = null; // set once the (generically-rendered) location field builds, if present
 
-    this._buildDom();
+    this.ROOT = this.el('form', { classes: ['shift-report-form'] });
+    this.ROOT.append(this.el('h2', { text: 'End-of-shift report' }));
+    this.ROOT.append(this.el('p', { text: 'Loading form…', classes: ['loading-note'] }));
+    this.ROOT.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this._submit();
+    });
+    this.dom.replaceChildren(this.ROOT);
   }
 
   // External contract ScoopAPI actually calls (see scoop-api.js's
-  // bundleGrids.forEach(g => g.setDomain(...))) — applies the fetched
-  // domain to the model, then (re)populates the flavor/supply/location
-  // <select>s. Doesn't rebuild the whole form on a later refresh — a
-  // background bundle refresh landing mid-fill (e.g. someone else on the
-  // page saving something) must not wipe out-of-progress input, same
-  // reasoning as Closeout's repaintOnRefresh=false.
+  // bundleGrids.forEach(g => g.setDomain(...))). First call: fetches the
+  // field schema and builds the real form (replacing the loading
+  // placeholder). Later calls (a background bundle refresh landing mid-fill,
+  // e.g. someone else on the page saving something): only refresh the two
+  // domain-derived bespoke checklists, never rebuild the whole form — same
+  // "don't repaint mid-fill" reasoning as Closeout's repaintOnRefresh=false.
   //
   // PageStatus.register() (scoop-api.js's mountAllGrids) marks every grid
   // host 'unknown' at mount time regardless of view type — only
@@ -52,20 +79,228 @@ export default class ShiftReportForm extends El {
   // just its own <li>.
   async setDomain(domain) {
     this.modelInstance.setDomain(domain);
-    this._populateLocationSelect();
-    this._renderFlavorsChangedChecklist();
-    this._renderSuppliesLowChecklist();
+
+    if (!this._fieldSchema) {
+      this._fieldSchema = await this._fetchFieldSchema();
+      this._buildForm();
+    } else {
+      this._renderFlavorsChangedChecklist();
+      this._renderSuppliesLowChecklist();
+    }
+
     if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'fresh');
   }
 
-  _buildDom() {
-    const el = this.el;
+  async _fetchFieldSchema() {
+    try {
+      const url = new URL('/wp-json/scoop/v1/shift-report-fields', window.location.origin);
+      const res = await fetch(url, {
+        credentials: 'include',
+        headers: { Accept: 'application/json', ...(this.api?.nonce ? { 'X-WP-Nonce': this.api.nonce } : {}) },
+      });
+      const data = await res.json().catch(() => null);
+      return (res.ok && data?.ok && Array.isArray(data.groups)) ? data.groups : [];
+    } catch (err) {
+      console.error('ShiftReportForm: failed to load field schema:', err);
+      return [];
+    }
+  }
 
-    this.ROOT = el('form', { classes: ['shift-report-form'] });
+  _buildForm() {
+    const el = this.el;
+    this.ROOT.replaceChildren();
     this.ROOT.append(el('h2', { text: 'End-of-shift report' }));
 
-    // ── Tempering cabinet photo (required, single) ──────────────────
-    this.ROOT.append(el('h3', { text: 'Tempering cabinet photo' }));
+    this._fieldGetters = {};
+    this.LOCATION_SELECT = null;
+
+    if (!this._fieldSchema.length) {
+      this.ROOT.append(el('p', {
+        text: 'Could not load the report form. Reload the page to try again.',
+        classes: ['empty-note'],
+      }));
+      return;
+    }
+
+    for (const group of this._fieldSchema) {
+      const SECTION = el('section', { classes: ['field-group'], data: { group: group.name } });
+      SECTION.append(el('h3', { text: group.label }));
+
+      for (const field of group.fields) {
+        const NODE = BESPOKE_FIELD_NAMES.has(field.name)
+          ? this._buildBespokeField(field)
+          : this._buildGenericField(field);
+        if (NODE) SECTION.append(NODE);
+      }
+
+      this.ROOT.append(SECTION);
+    }
+
+    this.SUBMIT = el('button', { text: 'Submit report', attrs: { type: 'submit' } });
+    this.ROOT.append(this.SUBMIT);
+
+    // location is generically rendered (just a plain <select> — no bespoke
+    // logic of its own), but flavors_changed's cabinet-grouped checklist
+    // still needs to know which location is selected and rebuild when it
+    // changes, so this one listener bridges a generic field to a bespoke one.
+    if (this.LOCATION_SELECT) {
+      this.LOCATION_SELECT.addEventListener('change', () => this._renderFlavorsChangedChecklist());
+    }
+    this._renderFlavorsChangedChecklist();
+    this._renderSuppliesLowChecklist();
+    this._wireConditionalGroups();
+  }
+
+  // Pods has field-level conditional logic but not group-level (checked
+  // directly against live field/group data 2026-08-11 — none configured
+  // anyway), so this is a small explicit rule, not a generic system: the
+  // "End of day" group (tempering_cabinet_photo + final_tasks) only makes
+  // sense for a closing shift, so it stays hidden unless shift = Late.
+  // Hiding via the native `hidden` attribute (not a CSS-only class) matters
+  // for tempering_cabinet_photo's required-ness — per the HTML5 spec, a
+  // form control excluded from rendering by an ancestor's `display: none`
+  // (which `hidden` applies by default) is also excluded from constraint
+  // validation, so the required file input doesn't block submission while
+  // its group is hidden. _submit()'s own explicit photo check mirrors this
+  // by checking the section's actual hidden state rather than a separate
+  // flag, so the two can't drift apart.
+  //
+  // If another group ever needs the same treatment, this is the place to
+  // add a second rule — not worth a generic engine for one instance.
+  _wireConditionalGroups() {
+    const endOfDay = this.ROOT.querySelector('[data-group="end_of_day"]');
+    if (!endOfDay || !this._shiftRadios) return;
+
+    const toggle = () => { endOfDay.hidden = !this._shiftRadios.no.checked; };
+    this._shiftRadios.yes.addEventListener('change', toggle);
+    this._shiftRadios.no.addEventListener('change', toggle);
+    toggle(); // neither radio checked yet on first build — starts hidden
+  }
+
+  _buildBespokeField(field) {
+    switch (field.name) {
+      case 'tempering_cabinet_photo': return this._buildPhotoField(field);
+      case 'flavors_changed':         return this._buildFlavorsChangedField(field);
+      case 'supplies_low':            return this._buildSuppliesLowField(field);
+      case 'cake_orders':             return this._buildCakeOrdersField(field);
+      default: return null;
+    }
+  }
+
+  // Generic renderer — covers every field with no entry in
+  // BESPOKE_FIELD_NAMES, driven entirely by what the server already
+  // resolved (type/label/description/required/options). Registers a value
+  // getter in this._fieldGetters so _submit() can collect it without
+  // needing to know the field ahead of time.
+  _buildGenericField(field) {
+    const el = this.el;
+    let control;
+    let skipOwnLabel = false;
+
+    switch (field.type) {
+      case 'paragraph':
+        control = el('textarea', field.required ? { attrs: { required: true } } : {});
+        this._fieldGetters[field.name] = () => control.value || '';
+        break;
+
+      case 'boolean':
+        if (field.format === 'radio') {
+          const groupName = `field-${field.name}`;
+          const yes = el('input', { attrs: { type: 'radio', name: groupName, id: `${groupName}-yes`, value: '1' } });
+          const no  = el('input', { attrs: { type: 'radio', name: groupName, id: `${groupName}-no`,  value: '0' } });
+          const yesLabel = el('label', { classes: ['radio-option'] });
+          yesLabel.append(yes, ` ${field.yesLabel}`);
+          const noLabel = el('label', { classes: ['radio-option'] });
+          noLabel.append(no, ` ${field.noLabel}`);
+          control = el('div', { classes: ['radio-pair'] });
+          control.append(yesLabel, noLabel);
+          this._fieldGetters[field.name] = () => (yes.checked ? true : no.checked ? false : null);
+
+          // 'shift' specifically drives the "End of day" group's
+          // conditional visibility (see _wireConditionalGroups) — stashing
+          // both radios here, keyed by field name, the same pattern
+          // this.LOCATION_SELECT already uses for location.
+          if (field.name === 'shift') this._shiftRadios = { yes, no };
+        } else {
+          const cb = el('input', { attrs: { type: 'checkbox' } });
+          control = el('label', { classes: ['checkbox-field'] });
+          control.append(cb, ` ${field.yesLabel || field.label}`);
+          this._fieldGetters[field.name] = () => cb.checked;
+          skipOwnLabel = true;
+        }
+        break;
+
+      case 'pick': {
+        const options = field.options ?? [];
+        if (field.multi) {
+          control = el('ul', { classes: ['generic-checklist'] });
+          const boxes = [];
+          for (const opt of options) {
+            const id = `field-${field.name}-${this._slug(String(opt.id))}`;
+            const cb = el('input', { attrs: { type: 'checkbox', id, value: opt.id } });
+            boxes.push(cb);
+            const label = el('label', { attrs: { for: id } });
+            label.append(cb, ` ${opt.title}`);
+            const li = el('li');
+            li.append(label);
+            control.append(li);
+          }
+          this._fieldGetters[field.name] = () =>
+            boxes.filter(b => b.checked).map(b => (field.relatedPod ? Number(b.value) : b.value));
+        } else {
+          control = el('select', field.required ? { attrs: { required: true } } : {});
+          control.append(el('option', { text: `— ${field.label} —`, attrs: { value: '' } }));
+          for (const opt of options) control.append(el('option', { text: opt.title, attrs: { value: opt.id } }));
+          if (field.name === 'location' && this.modelInstance.location) {
+            control.value = String(this.modelInstance.location);
+          }
+          this._fieldGetters[field.name] = () => {
+            if (!control.value) return field.relatedPod ? 0 : '';
+            return field.relatedPod ? Number(control.value) : control.value;
+          };
+          if (field.name === 'location') this.LOCATION_SELECT = control;
+        }
+        break;
+      }
+
+      case 'number':
+      case 'currency':
+        control = el('input', { attrs: { type: 'number', step: '0.01', ...(field.required ? { required: true } : {}) } });
+        this._fieldGetters[field.name] = () => (control.value ? Number(control.value) : 0);
+        break;
+
+      case 'date':
+      case 'datetime':
+        control = el('input', { attrs: { type: 'date', ...(field.required ? { required: true } : {}) } });
+        this._fieldGetters[field.name] = () => control.value || '';
+        break;
+
+      case 'text':
+      default:
+        control = el('input', { attrs: { type: 'text', ...(field.required ? { required: true } : {}) } });
+        this._fieldGetters[field.name] = () => control.value || '';
+        break;
+    }
+
+    const WRAP = el('div', { classes: ['field', `field-type-${field.type}`] });
+    if (!skipOwnLabel) WRAP.append(el('label', { classes: ['field-label'], text: field.label }));
+    if (field.description) WRAP.append(el('p', { text: field.description, classes: ['field-description'] }));
+    WRAP.append(control);
+
+    return WRAP;
+  }
+
+  _slug(text) {
+    return String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  }
+
+  // ── Tempering cabinet photo (required, single) ──────────────────────
+  _buildPhotoField(field) {
+    const el = this.el;
+    const WRAP = el('div', { classes: ['field', 'field-type-file'] });
+    WRAP.append(el('label', { classes: ['field-label'], text: field.label }));
+    if (field.description) WRAP.append(el('p', { text: field.description, classes: ['field-description'] }));
+
     // capture="environment" biases mobile/tablet browsers toward opening the
     // rear camera directly rather than a gallery picker — appropriate here
     // since this field is meant to capture what's actually in the cabinet
@@ -74,125 +309,82 @@ export default class ShiftReportForm extends El {
     // show a normal file picker. Some mobile browsers hide the "choose
     // existing photo" option entirely when this is set — accepted here as
     // the right default for a same-moment freshness check.
-    this.PHOTO_INPUT = el('input', { attrs: { type: 'file', accept: 'image/*', capture: 'environment', required: true } });
+    this.PHOTO_INPUT = el('input', {
+      attrs: { type: 'file', accept: 'image/*', capture: 'environment', ...(field.required ? { required: true } : {}) },
+    });
     this.PHOTO_PREVIEW = el('div', { classes: ['photo-preview'] });
     this.PHOTO_INPUT.addEventListener('change', () => this._onPhotoSelected());
-    this.ROOT.append(this.PHOTO_INPUT, this.PHOTO_PREVIEW);
 
-    // ── Flavors changed out (multi-relationship, checkboxes) ──────────
-    // Source list is today's slot.current_flavor, filtered to the selected
-    // location and grouped by cabinet (see
-    // ShiftReportGridModel.currentFlavorsByCabinet) — only flavors actually
-    // in a cabinet slot right now are worth asking about, not the whole
-    // flavor catalog. Rebuilt whenever the location changes (see the
-    // LOCATION_SELECT listener below), since a different location's
-    // cabinets hold different flavors.
-    this.ROOT.append(el('h3', { text: 'Flavors changed out' }));
-    this.FLAVORS_CHANGED_WRAP = el('div', { classes: ['flavors-changed-checklist'] });
-    this.ROOT.append(this.FLAVORS_CHANGED_WRAP);
-
-    // ── Supplies low (multi-relationship, checkboxes grouped by category) ──
-    // Source is the 'supply' pod's own 'group' field (see
-    // WHITEBOARD-INGESTION.md — 83 items populated on local), grouped and
-    // ordered via ShiftReportGridModel.supplyOptionsByGroup().
-    this.ROOT.append(el('h3', { text: 'Supplies: I noticed we are running out of' }));
-    this.SUPPLIES_LOW_WRAP = el('div', { classes: ['supplies-low-checklist'] });
-    this.ROOT.append(this.SUPPLIES_LOW_WRAP);
-
-    // ── Cash discrepancy / change low ─────────────────────────────────
-    this.CASH_DISCREPANCY = el('input', { attrs: { type: 'number', step: '0.01' } });
-    this.ROOT.append(this._labeled('Known cash discrepancies', this.CASH_DISCREPANCY));
-
-    this.ROOT.append(el('h3', { text: 'Running low on any change or small bills?' }));
-    const CHANGE_WRAP = el('ul', { classes: ['change-low-checklist'] });
-    this._changeLowCheckboxes = [];
-    for (const denom of CHANGE_LOW_OPTIONS) {
-      const ID = `change-low-${this._slug(denom)}`;
-      const CB = el('input', { attrs: { type: 'checkbox', id: ID, value: denom } });
-      this._changeLowCheckboxes.push(CB);
-      const LABEL = el('label', { attrs: { for: ID } });
-      LABEL.append(CB, ` ${denom}`);
-      const LI = el('li');
-      LI.append(LABEL);
-      CHANGE_WRAP.append(LI);
-    }
-    this.ROOT.append(CHANGE_WRAP);
-
-    // ── Cake orders — create new records inline, not a picker ─────────
-    this.ROOT.append(el('h3', { text: '# of cake orders taken today' }));
-    this.CAKE_ORDERS = el('div', { classes: ['cake-orders'] });
-    this.ADD_CAKE_ORDER = el('button', {
-      text: '+ Add cake order', classes: ['add-cake-order'], attrs: { type: 'button' },
-    });
-    this.ADD_CAKE_ORDER.addEventListener('click', () => this._addCakeOrderRow());
-    this.ROOT.append(this.CAKE_ORDERS, this.ADD_CAKE_ORDER);
-
-    // ── Remaining text fields ──────────────────────────────────────────
-    this.FINAL_TASKS = el('textarea', {});
-    this.ROOT.append(this._labeled('Final tasks', this.FINAL_TASKS));
-
-    this.POSITIVE_FEEDBACK = el('textarea', {});
-    this.ROOT.append(this._labeled('Were you able to hand out 10 pieces of positive feedback?', this.POSITIVE_FEEDBACK));
-
-    this.CUSTOMER_ISSUES = el('textarea', {});
-    this.ROOT.append(this._labeled('Customer issues', this.CUSTOMER_ISSUES));
-
-    this.NOTES_FOR_TOMORROW = el('textarea', {});
-    this.ROOT.append(this._labeled('Any notes for tomorrow?', this.NOTES_FOR_TOMORROW));
-
-    this.STAFFING_LEVEL = this._buildSelect(
-      'staffing_level',
-      STAFFING_LEVEL_OPTIONS.map(v => ({ id: v, title: v })),
-      'staffing level',
-    );
-    this.ROOT.append(this._labeled('Did you have too many or not enough scoopers?', this.STAFFING_LEVEL));
-
-    this.LOCATION_SELECT = this._buildSelect('location', [], 'Location');
-    // A different location has different cabinets/slots — the flavors
-    // checklist has to rebuild for whichever location is actually selected,
-    // not just whatever the shortcode's default was at mount time.
-    this.LOCATION_SELECT.addEventListener('change', () => this._renderFlavorsChangedChecklist());
-    this.ROOT.append(this._labeled('Location', this.LOCATION_SELECT));
-
-    // ── Submit ──────────────────────────────────────────────────────
-    this.SUBMIT = el('button', { text: 'Submit report', attrs: { type: 'submit' } });
-    this.ROOT.append(this.SUBMIT);
-
-    this.ROOT.addEventListener('submit', (e) => {
-      e.preventDefault();
-      this._submit();
-    });
-
-    this.dom.replaceChildren(this.ROOT);
-  }
-
-  _labeled(text, field) {
-    const WRAP = this.el('label', { classes: ['field'] });
-    WRAP.append(this.el('span', { text }), field);
+    WRAP.append(this.PHOTO_INPUT, this.PHOTO_PREVIEW);
     return WRAP;
   }
 
-  _buildSelect(name, options, placeholder) {
-    const SELECT = this.el('select', { attrs: { name } });
-    SELECT.append(this.el('option', { text: `— ${placeholder} —`, attrs: { value: '' } }));
-    for (const opt of options) {
-      SELECT.append(this.el('option', { text: opt.title, attrs: { value: opt.id } }));
+  async _onPhotoSelected() {
+    const file = this.PHOTO_INPUT.files?.[0];
+    if (!file) return;
+
+    this.PHOTO_INPUT.disabled = true;
+    this.PHOTO_PREVIEW.replaceChildren(this.el('span', { text: `Uploading ${file.name}…`, classes: ['photo-uploading'] }));
+
+    try {
+      this._photoId = await this._uploadPhoto(file);
+      const img = this.el('img', { attrs: { src: URL.createObjectURL(file), alt: file.name } });
+      this.PHOTO_PREVIEW.replaceChildren(img);
+    } catch (err) {
+      this._photoId = null;
+      this.PHOTO_PREVIEW.replaceChildren(this.el('span', { text: `Failed: ${file.name}`, classes: ['photo-error'] }));
+      console.error('Photo upload failed:', err);
+    } finally {
+      this.PHOTO_INPUT.disabled = false;
     }
-    return SELECT;
   }
 
-  _slug(text) {
-    return String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  // Uploads straight to WP core's own media endpoint (wp/v2/media), not a
+  // scoop/v1 route — standard WP REST nonce (SCOOP.nonce, wp_rest action)
+  // authorizes core routes the same as this plugin's own, so no separate
+  // auth path is needed. Returns the created attachment's post id.
+  async _uploadPhoto(file) {
+    const url = new URL('/wp-json/wp/v2/media', window.location.origin);
+    const res = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Disposition': `attachment; filename="${file.name.replace(/"/g, '')}"`,
+        'Content-Type': file.type || 'application/octet-stream',
+        ...(this.api?.nonce ? { 'X-WP-Nonce': this.api.nonce } : {}),
+      },
+      body: file,
+    });
+
+    if (!res.ok) throw new Error(`Upload failed: HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data?.id) throw new Error('Upload succeeded but no media id returned.');
+    return data.id;
   }
 
-  // Rebuilds the flavors-changed checklist from
-  // ShiftReportGridModel.currentFlavorsByCabinet() for whichever location is
-  // currently selected. Preserves already-checked flavors across a rebuild
-  // (location change, or a background domain refresh) the same way
-  // _populateMultiSelect preserves selections — a rebuild triggered by
-  // something other than the user's own location change shouldn't discard
-  // their in-progress picks.
+  // ── Flavors changed out (multi-relationship, checkboxes) ────────────
+  // Source list is today's slot.current_flavor, filtered to the selected
+  // location and grouped by cabinet (see
+  // ShiftReportGridModel.currentFlavorsByCabinet) — only flavors actually in
+  // a cabinet slot right now are worth asking about, not the whole flavor
+  // catalog. Rebuilt whenever the location changes (see the LOCATION_SELECT
+  // listener in _buildForm), since a different location's cabinets hold
+  // different flavors.
+  _buildFlavorsChangedField(field) {
+    const el = this.el;
+    const WRAP = el('div', { classes: ['field', 'field-type-flavors-changed'] });
+    WRAP.append(el('label', { classes: ['field-label'], text: field.label || 'Flavors changed out' }));
+    this.FLAVORS_CHANGED_WRAP = el('div', { classes: ['flavors-changed-checklist'] });
+    WRAP.append(this.FLAVORS_CHANGED_WRAP);
+    return WRAP;
+  }
+
+  // Preserves already-checked flavors across a rebuild (location change, or
+  // a background domain refresh) — a rebuild triggered by something other
+  // than the user's own location change shouldn't discard their
+  // in-progress picks.
   _renderFlavorsChangedChecklist() {
+    if (!this.FLAVORS_CHANGED_WRAP) return;
     const el = this.el;
     const locationId = Number(this.LOCATION_SELECT?.value || this.modelInstance.location || 0);
     const previouslyChecked = new Set(
@@ -245,13 +437,25 @@ export default class ShiftReportForm extends El {
     return [...ids];
   }
 
-  // Rebuilds the supplies-low checklist from
-  // ShiftReportGridModel.supplyOptionsByGroup(). No location-scoping needed
-  // (supply isn't location-specific), so unlike flavors-changed this only
-  // needs to run once, from setDomain() — but still preserves already-
-  // checked items the same way, in case a background domain refresh lands
-  // mid-fill.
+  // ── Supplies low (multi-relationship, checkboxes grouped by category) ──
+  // Source is the 'supply' pod's own 'group' field (see
+  // WHITEBOARD-INGESTION.md — 83 items populated on local), grouped and
+  // ordered via ShiftReportGridModel.supplyOptionsByGroup().
+  _buildSuppliesLowField(field) {
+    const el = this.el;
+    const WRAP = el('div', { classes: ['field', 'field-type-supplies-low'] });
+    WRAP.append(el('label', { classes: ['field-label'], text: field.label || 'Supplies: I noticed we are running out of' }));
+    this.SUPPLIES_LOW_WRAP = el('div', { classes: ['supplies-low-checklist'] });
+    WRAP.append(this.SUPPLIES_LOW_WRAP);
+    return WRAP;
+  }
+
+  // No location-scoping needed (supply isn't location-specific), so unlike
+  // flavors-changed this only needs to run once, from setDomain() — but
+  // still preserves already-checked items the same way, in case a
+  // background domain refresh lands mid-fill.
   _renderSuppliesLowChecklist() {
+    if (!this.SUPPLIES_LOW_WRAP) return;
     const el = this.el;
     const previouslyChecked = new Set(
       (this._suppliesLowCheckboxes ?? []).filter(cb => cb.checked).map(cb => cb.value)
@@ -296,21 +500,24 @@ export default class ShiftReportForm extends El {
       .map(cb => Number(cb.value));
   }
 
-  _populateLocationSelect() {
-    const current = this.LOCATION_SELECT.value;
-    const options = this.modelInstance.locationOptions();
-    this.LOCATION_SELECT.replaceChildren();
-    this.LOCATION_SELECT.append(this.el('option', { text: '— Location —', attrs: { value: '' } }));
-    for (const loc of options) {
-      this.LOCATION_SELECT.append(this.el('option', { text: loc.title, attrs: { value: loc.id } }));
-    }
-    if (current) this.LOCATION_SELECT.value = current;
-    else if (this.modelInstance.location) this.LOCATION_SELECT.value = String(this.modelInstance.location);
+  // ── Cake orders — create new records inline, not a picker ───────────
+  // cake_pie_flavor is a Pods custom Pick list on the cake_order pod
+  // itself, not shift_report — this generic-fields fetch only covers
+  // shift_report's own fields, so cake_pie_flavor stays a plain text input
+  // as a stand-in until cake_order gets the same schema-driven treatment.
+  _buildCakeOrdersField(field) {
+    const el = this.el;
+    const WRAP = el('div', { classes: ['field', 'field-type-cake-orders'] });
+    WRAP.append(el('label', { classes: ['field-label'], text: field.label || '# of cake orders taken today' }));
+    this.CAKE_ORDERS = el('div', { classes: ['cake-orders'] });
+    this.ADD_CAKE_ORDER = el('button', {
+      text: '+ Add cake order', classes: ['add-cake-order'], attrs: { type: 'button' },
+    });
+    this.ADD_CAKE_ORDER.addEventListener('click', () => this._addCakeOrderRow());
+    WRAP.append(this.CAKE_ORDERS, this.ADD_CAKE_ORDER);
+    return WRAP;
   }
 
-  // cake_pie_flavor is a Pods custom Pick list, option values not yet known
-  // (see WHITEBOARD-INGESTION.md) — plain text input as a stand-in until
-  // confirmed, then this becomes a _buildSelect() like staffing_level.
   _addCakeOrderRow() {
     const el = this.el;
     const LI = el('div', { classes: ['cake-order-row'] });
@@ -327,10 +534,10 @@ export default class ShiftReportForm extends El {
     });
 
     LI.append(
-      this._labeled('Order name', orderName),
-      this._labeled('Cake/pie flavor', cakePieFlavor),
-      this._labeled('Pickup date', pickupDate),
-      this._labeled('Details', details),
+      this._fieldLabeled('Order name', orderName),
+      this._fieldLabeled('Cake/pie flavor', cakePieFlavor),
+      this._fieldLabeled('Pickup date', pickupDate),
+      this._fieldLabeled('Details', details),
       remove,
     );
     this.CAKE_ORDERS.append(LI);
@@ -338,51 +545,10 @@ export default class ShiftReportForm extends El {
     this._cakeOrderRows.push({ li: LI, orderName, cakePieFlavor, pickupDate, details });
   }
 
-  async _onPhotoSelected() {
-    const file = this.PHOTO_INPUT.files?.[0];
-    if (!file) return;
-
-    this.PHOTO_INPUT.disabled = true;
-    this.PHOTO_PREVIEW.replaceChildren(this.el('span', { text: `Uploading ${file.name}…`, classes: ['photo-uploading'] }));
-
-    try {
-      this._photoId = await this._uploadPhoto(file);
-      const img = this.el('img', { attrs: { src: URL.createObjectURL(file), alt: file.name } });
-      this.PHOTO_PREVIEW.replaceChildren(img);
-    } catch (err) {
-      this._photoId = null;
-      this.PHOTO_PREVIEW.replaceChildren(this.el('span', { text: `Failed: ${file.name}`, classes: ['photo-error'] }));
-      console.error('Photo upload failed:', err);
-    } finally {
-      this.PHOTO_INPUT.disabled = false;
-    }
-  }
-
-  // Uploads straight to WP core's own media endpoint (wp/v2/media), not a
-  // scoop/v1 route — standard WP REST nonce (SCOOP.nonce, wp_rest action)
-  // authorizes core routes the same as this plugin's own, so no separate
-  // auth path is needed. Returns the created attachment's post id.
-  async _uploadPhoto(file) {
-    const url = new URL('/wp-json/wp/v2/media', window.location.origin);
-    const res = await fetch(url, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Disposition': `attachment; filename="${file.name.replace(/"/g, '')}"`,
-        'Content-Type': file.type || 'application/octet-stream',
-        ...(this.api?.nonce ? { 'X-WP-Nonce': this.api.nonce } : {}),
-      },
-      body: file,
-    });
-
-    if (!res.ok) throw new Error(`Upload failed: HTTP ${res.status}`);
-    const data = await res.json();
-    if (!data?.id) throw new Error('Upload succeeded but no media id returned.');
-    return data.id;
-  }
-
-  _collectChangeLow() {
-    return this._changeLowCheckboxes.filter(cb => cb.checked).map(cb => cb.value);
+  _fieldLabeled(text, control) {
+    const WRAP = this.el('label', { classes: ['field'] });
+    WRAP.append(this.el('span', { text }), control);
+    return WRAP;
   }
 
   _collectNewCakeOrders() {
@@ -396,26 +562,30 @@ export default class ShiftReportForm extends El {
       .filter(o => o.order_name || o.cake_pie_flavor || o.pickup_date || o.details);
   }
 
+  // ── Submit ────────────────────────────────────────────────────────
   async _submit() {
-    if (!this._photoId) {
+    // tempering_cabinet_photo is only required while its group ("End of
+    // day") is actually visible (see _wireConditionalGroups) — checking the
+    // section's own hidden state here, rather than a separate tracked flag,
+    // means this can't drift out of sync with what the user can actually see.
+    const endOfDay = this.ROOT.querySelector('[data-group="end_of_day"]');
+    const photoRequired = !endOfDay || !endOfDay.hidden;
+    if (photoRequired && !this._photoId) {
       Toast.addMessage({ title: 'Photo required', message: 'Upload the tempering cabinet photo before submitting.' });
       return;
     }
 
-    const payload = {
-      tempering_cabinet_photo: this._photoId,
-      flavors_changed: this._collectFlavorsChanged(),
-      supplies_low: this._collectSuppliesLow(),
-      cash_discrepancy: this.CASH_DISCREPANCY.value ? Number(this.CASH_DISCREPANCY.value) : 0,
-      change_low: this._collectChangeLow(),
-      new_cake_orders: this._collectNewCakeOrders(),
-      final_tasks: this.FINAL_TASKS.value || '',
-      positive_feedback: this.POSITIVE_FEEDBACK.value || '',
-      customer_issues: this.CUSTOMER_ISSUES.value || '',
-      notes_for_tomorrow: this.NOTES_FOR_TOMORROW.value || '',
-      staffing_level: this.STAFFING_LEVEL.value || '',
-      location: Number(this.LOCATION_SELECT.value || 0),
-    };
+    // Omit the key entirely when there's no photo (an early shift, group
+    // hidden) rather than sending an explicit null — matches how a
+    // never-filled-in field would arrive, not a distinct "clear it" signal.
+    const payload = {};
+    if (this._photoId) payload.tempering_cabinet_photo = this._photoId;
+    for (const [name, getValue] of Object.entries(this._fieldGetters)) {
+      payload[name] = getValue();
+    }
+    payload.flavors_changed = this._collectFlavorsChanged();
+    payload.supplies_low = this._collectSuppliesLow();
+    payload.new_cake_orders = this._collectNewCakeOrders();
 
     this.SUBMIT.disabled = true;
     this.SUBMIT.textContent = 'Submitting…';
@@ -463,9 +633,8 @@ export default class ShiftReportForm extends El {
     this.PHOTO_PREVIEW.replaceChildren();
     this.CAKE_ORDERS.replaceChildren();
     this._cakeOrderRows = [];
-    this._populateLocationSelect();
-    // Native reset() clears every checkbox's checked state, but the
-    // checklist itself was built off whatever location was selected before
+    // Native reset() clears every checkbox/select/radio, but the flavors
+    // checklist was built off whatever location was selected before
     // reset — rebuild it against the (possibly different) post-reset
     // location so it isn't showing a stale set of cabinets/flavors.
     this._renderFlavorsChangedChecklist();

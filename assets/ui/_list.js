@@ -30,6 +30,7 @@ import FindInGrid from "./find-in-grid.js";
 import Toast      from "./toast.js";
 import Details    from "./details.js";
 import PageStatus from "./page-status.js";
+import HashState  from "../data/hash-state.js";
 
 // Fade duration for a dirty marker resolving once the domain that confirms
 // it actually lands — see _flashResolvedMarks(). Must match the
@@ -998,6 +999,55 @@ export default class List extends El{
         slot.append(this.target);
       }
     }
+
+    // Restore open/closed state from a shared link's #dock= hash (see
+    // DOCKING.md's "State model") — runs once, synchronously, before this
+    // control's rows are ever painted, so there's no flash of the default
+    // (closed) state. Only ever opens: the DOM's default is already closed,
+    // so a control's ID simply not being listed means "stay closed", same
+    // as any fresh mount. _setToggled() below still runs the normal
+    // exclusivity rules, so a stale/hand-edited hash listing two
+    // same-slot controls self-corrects to whichever mounts last.
+    const openIds = (HashState.get('dock') ?? '').split(',').filter(Boolean);
+    if (openIds.includes(this.api?._controlId?.(this.target))) {
+      this._setToggled(true);
+    }
+
+    this._syncDockHash();
+  }
+
+  // Shared by the TOGGLE click handler and dockToggle()'s hash-restore path
+  // — one place that applies a new open/closed state plus the exclusivity
+  // rules that go with it (at most one open control per slot, 'nostack'
+  // eviction), so restoring from a hash on load behaves identically to a
+  // real click.
+  _setToggled(isOpen) {
+    this.target.classList.toggle("toggled", isOpen);
+    this.TOGGLE.classList.toggle("active", isOpen);
+    if (isOpen) this._closeSlotSiblings();
+    this._enforceCanvasExclusivity();
+
+    // Mirrors .toggled onto the shared slot itself (.action-target or
+    // <aside> — see DOCK_SLOT_SELECTORS), not just this.target — see the
+    // click handler's original comment on why (css.css's <aside>
+    // min/max-width rules need a plain classname to key off).
+    this.target.closest('.action-target, aside')?.classList.toggle('active', isOpen);
+  }
+
+  // Re-derives #dock= from whatever's actually .toggled right now, rather
+  // than patching the hash incrementally — a single click can close OTHER
+  // controls too (slot/nostack exclusivity), so a full resync is the only
+  // way to keep the hash matching reality without duplicating that logic
+  // here. No-op outside a dock (undocked controls don't participate).
+  _syncDockHash() {
+    const dock = this.target.closest('.in-dock');
+    if (!dock) return;
+
+    const openIds = [...dock.querySelectorAll('.scoop-grid.toggled')]
+      .map(el => this.api?._controlId?.(el))
+      .filter(Boolean);
+
+    HashState.set('dock', openIds.join(','));
   }
 
   // Maps a model's `dockTarget` value to the :scope-relative selector for
@@ -1756,21 +1806,9 @@ export default class List extends El{
     // .in-dock .toolbar), where a this.target-scoped listener would never see
     // its clicks bubble through.
     this.TOGGLE.addEventListener("click", (e) => {
-      const isOpen = this.target.classList.toggle("toggled");
-      this.TOGGLE.classList.toggle("active", isOpen);
-      if (isOpen) this._closeSlotSiblings();
-      this._enforceCanvasExclusivity();
-
-      // Mirrors .toggled onto the shared slot itself (.action-target or
-      // <aside> — see DOCK_SLOT_SELECTORS), not just this.target, so CSS
-      // that needs to style the SLOT differently while something's open in
-      // it (e.g. <aside>'s own min/max width, which shouldn't apply while
-      // collapsed) has a plain classname to key off instead of having to
-      // repeat the :has(.scoop-grid.toggled) selector everywhere. Safe to
-      // set from isOpen directly (rather than re-scanning every sibling)
-      // because _closeSlotSiblings() above already enforces "at most one
-      // open child per slot" before this line runs.
-      this.target.closest('.action-target, aside')?.classList.toggle('active', isOpen);
+      const isOpen = !this.target.classList.contains("toggled");
+      this._setToggled(isOpen);
+      this._syncDockHash();
 
       e.stopPropagation();
     }, true);
@@ -1959,18 +1997,24 @@ export default class List extends El{
             const resolvedKeys = [...this.awaitingRefreshSet];
             this.awaitingRefreshSet.clear();
 
-            // A grid with its own server-side filter (currently just
-            // DateActivity's date range — see getServerFilterParams) needs
-            // this refresh to actually drop rows that fall outside the
-            // filter, so it keeps the old destructive rebuild. Every other
-            // grid gets the additive patch instead: this event fires for
-            // domain refreshes this grid didn't cause (another grid's save,
-            // an autosave elsewhere, a cabinet-workflow action), and a full
+            // Two reasons a grid needs the old destructive rebuild instead
+            // of the additive patch below: a grid with its own server-side
+            // filter (DateActivity/BatchHistory's date range — see
+            // getServerFilterParams) needs this refresh to actually drop
+            // rows that fall outside the filter; a grid whose model sets
+            // `rebuildOnRefresh = true` (currently just CabinetWorkflow —
+            // see that model's constructor) ships no columns for the patch
+            // path to iterate, so patching is a structural no-op there, not
+            // a stability trade-off worth keeping. Every other grid gets the
+            // additive patch instead: this event fires for domain refreshes
+            // this grid didn't cause (another grid's save, an autosave
+            // elsewhere, a cabinet-workflow action), and a full
             // teardown/rebuild there can reorder, regroup, or drop rows out
             // from under someone who's just looking at this grid, not
             // editing it. See _patchRefresh/_patchBodies above.
-            const hasServerFilter = typeof this.modelInstance?.getServerFilterParams === 'function';
-            if (hasServerFilter) {
+            const needsFullRebuild = typeof this.modelInstance?.getServerFilterParams === 'function'
+              || this.modelInstance?.rebuildOnRefresh === true;
+            if (needsFullRebuild) {
               await this.refresh(this.modelInstance);
             } else {
               await this._patchRefresh(this.modelInstance);
@@ -2011,11 +2055,26 @@ export default class List extends El{
     if (!confirm(`Delete ${label}? This cannot be undone.`)) return;
 
     btn.disabled = true;
+
+    // Visible feedback starts the instant the delete is confirmed, not once
+    // the eventual refreshPageDomain() fetch happens to begin — the DELETE
+    // request itself can be slow (batch delete especially; see
+    // scoop_handle_batch_delete's unoptimized Pods-API relationship
+    // cleanup), and without this the grid looks inert for that entire
+    // stretch even though the delete is genuinely in flight. The ETA
+    // countdown (not just the 'fetching' label) starts here too — otherwise
+    // it stays dark for this whole first phase, only appearing once
+    // _startDomainFetch's own bundle refetch begins (see ScoopAPI.beginLoadTiming).
+    if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'fetching');
+    PageStatus.setTrigger(this.name);
+    this.api.beginLoadTiming?.();
+
     try {
       const r = await this.modelInstance.deleteRow(rowId, this.api);
 
       if (!r?.ok || !r?.data?.ok) {
         Toast.addMessage({ title: 'Delete failed', message: r?.data?.error ?? `HTTP ${r?.status}` });
+        if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'stale');
         return;
       }
 
@@ -2023,6 +2082,7 @@ export default class List extends El{
       await this.api.refreshPageDomain({ force: true, info: { name: this.name } });
     } catch (err) {
       console.error('Row delete failed:', err);
+      if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'stale');
       Toast.addMessage({ title: 'Delete error', message: String(err) });
     } finally {
       btn.disabled = false;

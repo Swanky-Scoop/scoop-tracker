@@ -71,8 +71,11 @@ function scoop_access_policy(): array {
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
-        'shift_report'         => ['tempering_cabinet_photo','flavors_changed','supplies_low','cash_discrepancy','change_low','cake_orders','final_tasks','positive_feedback','customer_issues','notes_for_tomorrow','staffing_level','location'],
-        'cake_order'           => ['order_name','cake_pie_flavor','pickup_date','details'],
+        // Live from Pods, not hardcoded — see scoop_shift_reports_allowed_fields()
+        // in _write_fields.php for why this entity's field list doesn't need
+        // per-role hand-maintenance the way tub/slot's do.
+        'shift_report'         => scoop_pod_field_names('shift_report'),
+        'cake_order'           => scoop_pod_field_names('cake_order'),
       ],
     ],
 
@@ -132,8 +135,11 @@ function scoop_access_policy(): array {
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
-        'shift_report'         => ['tempering_cabinet_photo','flavors_changed','supplies_low','cash_discrepancy','change_low','cake_orders','final_tasks','positive_feedback','customer_issues','notes_for_tomorrow','staffing_level','location'],
-        'cake_order'           => ['order_name','cake_pie_flavor','pickup_date','details'],
+        // Live from Pods, not hardcoded — see scoop_shift_reports_allowed_fields()
+        // in _write_fields.php for why this entity's field list doesn't need
+        // per-role hand-maintenance the way tub/slot's do.
+        'shift_report'         => scoop_pod_field_names('shift_report'),
+        'cake_order'           => scoop_pod_field_names('cake_order'),
       ],
     ],
 
@@ -157,8 +163,11 @@ function scoop_access_policy(): array {
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
-        'shift_report'         => ['tempering_cabinet_photo','flavors_changed','supplies_low','cash_discrepancy','change_low','cake_orders','final_tasks','positive_feedback','customer_issues','notes_for_tomorrow','staffing_level','location'],
-        'cake_order'           => ['order_name','cake_pie_flavor','pickup_date','details'],
+        // Live from Pods, not hardcoded — see scoop_shift_reports_allowed_fields()
+        // in _write_fields.php for why this entity's field list doesn't need
+        // per-role hand-maintenance the way tub/slot's do.
+        'shift_report'         => scoop_pod_field_names('shift_report'),
+        'cake_order'           => scoop_pod_field_names('cake_order'),
       ],
     ],
 

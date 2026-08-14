@@ -6,24 +6,18 @@
 // CabinetWorkflowGridModel — see change-tub.md) — ShiftReportForm builds its
 // own DOM directly off this model's domain/option-list accessors.
 //
-// Field names/option values here match the actual Pods admin config for
-// shift_report, not an earlier draft — see WHITEBOARD-INGESTION.md for the
-// design history (supplies_low moved from a hardcoded string checklist to a
-// real relationship once the 'supply' content type was built;
-// flavors_changed is a direct multi-relationship, not an old/new pair;
-// cake_orders means creating new cake_order records inline, not picking
-// from existing ones).
+// Only flavors_changed and supplies_low still need model support — every
+// other shift_report field (including change_low/staffing_level/location,
+// which used to have hardcoded option lists/accessors here) now renders
+// generically off live Pods field metadata (see rest.php's
+// scoop_shift_report_field_schema() and shift-report-form.js's
+// _buildGenericField()) — see WHITEBOARD-INGESTION.md for the design
+// history (supplies_low moved from a hardcoded string checklist to a real
+// relationship once the 'supply' content type was built; flavors_changed is
+// a direct multi-relationship, not an old/new pair; cake_orders means
+// creating new cake_order records inline, not picking from existing ones).
 //////////////////////////////////
 import BaseGridModel from "./_base-grid-model.js";
-
-// Pods "Simple (custom defined list)" option values for change_low —
-// multiple selection. Spelling ("Nickles") matches the Pods field exactly.
-export const CHANGE_LOW_OPTIONS = [
-  "Pennies", "Nickles", "Dimes", "Quarters", "Dollars", "Fives", "Tens", "Twenties",
-];
-
-// staffing_level — single selection.
-export const STAFFING_LEVEL_OPTIONS = ["Too many", "Just right", "Too few"];
 
 // supply.group's checklist display order — matches the original design pass
 // (WHITEBOARD-INGESTION.md), front-of-house-frequent items first, facilities/
@@ -123,10 +117,5 @@ export default class ShiftReportGridModel extends BaseGridModel {
           .sort((a, b) => a.title.localeCompare(b.title)),
       }))
       .sort((a, b) => rank(a.group) - rank(b.group) || a.group.localeCompare(b.group));
-  }
-
-  locationOptions() {
-    const locations = Array.isArray(this.domain?.location) ? this.domain.location : [];
-    return locations.map(l => ({ id: l.id, title: l._title || `Location ${l.id}` }));
   }
 }

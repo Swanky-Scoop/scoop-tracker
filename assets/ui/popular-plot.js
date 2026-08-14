@@ -87,16 +87,14 @@ export default class PopularPlot {
     // Copied verbatim from List's own TOGGLE click binding (_list.js,
     // _bindEvents) rather than borrowed via .call(), since it's an event
     // listener — defining it here captures `this` as this PopularPlot
-    // instance directly, same effect without the indirection.
+    // instance directly, same effect without the indirection. Routes
+    // through the same _setToggled()/_syncDockHash() borrowed methods List
+    // itself uses, so Popular's open/closed state records into #dock= too.
     this.TOGGLE.addEventListener("click", (e) => {
-      const isOpen = this.target.classList.toggle("toggled");
-      this.TOGGLE.classList.toggle("active", isOpen);
-      if (isOpen) {
-        this._closeSlotSiblings();
-        this._scheduleHeightSyncAfterOpen();
-      }
-      this._enforceCanvasExclusivity();
-      this.target.closest('.action-target, aside')?.classList.toggle('active', isOpen);
+      const isOpen = !this.target.classList.contains("toggled");
+      this._setToggled(isOpen);
+      if (isOpen) this._scheduleHeightSyncAfterOpen();
+      this._syncDockHash();
       e.stopPropagation();
     }, true);
   }
@@ -158,6 +156,18 @@ export default class PopularPlot {
 
   _enforceCanvasExclusivity() {
     return List.prototype._enforceCanvasExclusivity.call(this);
+  }
+
+  // dockToggle() (borrowed above) now restores/records open state via
+  // these two — borrow them too so that restore path (and the click
+  // handler below) doesn't throw looking for methods PopularPlot never
+  // defined, same reasoning as every other borrowed method here.
+  _setToggled(isOpen) {
+    return List.prototype._setToggled.call(this, isOpen);
+  }
+
+  _syncDockHash() {
+    return List.prototype._syncDockHash.call(this);
   }
 
   init(state = this.modelInstance) {

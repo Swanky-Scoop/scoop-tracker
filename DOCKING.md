@@ -86,20 +86,75 @@ today, avoids a schema change when the other modes land.
 Requirement: a URL can force a specific set of controls open (shareable
 "display state" link), not just runtime-only toggle state.
 
-Open design question, not yet resolved: what identifies a grid instance in
-the hash? `data-grid-type` alone collides if the same type appears twice on
-one page (e.g. two `FlavorTub` grids at different locations). The DOM id
-(`scoop-grid-<uniqid>`) is unique but regenerates every page render, so it
-can't be the thing a URL points at. Most likely stable key is a composite of
-`data-grid-type` + `data-location` (+ possibly a shortcode-supplied slug for
-the rare case of two same-type/same-location instances) — needs a decision
-before implementation, not just documentation.
+RESOLVED: what identifies a grid instance in the hash? `data-grid-type`
+alone collides if the same type appears twice on one page (e.g. two
+`FlavorTub` grids at different locations), and using `data-location` as
+part of the identity is circular for anything that's supposed to *set*
+location. Decided: `ScoopAPI._controlId(dom)`
+([scoop-api.js](assets/data/scoop-api.js)) is `data-grid-type`, optionally
+suffixed `@<slug>` from the shortcode's own optional `slug` attribute
+(`data-slug`) for the rare same-type-twice case — most pages have one host
+per type and never set it. This same control ID is what both the location
+cascade (below) and dock open/closed state (below) key their hash entries
+on.
 
-Shape sketch (not final): `#dock=FlavorTub:935,Batch:935` — comma-separated
-`type:location` pairs, parsed on load, applied as `.toggled` before/at mount
-so there's no flash of the default (collapsed) state, and kept in sync via
-`history.replaceState` as the user opens/closes things (not `pushState` —
-toggling dock panels shouldn't spam browser back-button history).
+### Dock open/closed state (implemented)
+
+`#dock=` holds a comma-separated list of open controls' `_controlId`s, e.g.
+`#dock=FlavorTub,Batch@west`. Written by `List._syncDockHash()`
+([_list.js](assets/ui/_list.js)), which re-derives the whole value from
+whatever's currently `.toggled` inside the `.in-dock` root (rather than
+patching the hash incrementally) — a single click can close OTHER controls
+too via the existing slot/`nostack` exclusivity rules, so a full resync is
+the only way to keep the hash matching reality without duplicating that
+logic. Called from both the TOGGLE click handler and `dockToggle()`'s
+mount-time restore, through the shared `_setToggled(isOpen)` helper so a
+restored-from-hash open state runs through the identical exclusivity path a
+real click would.
+
+Restore-on-load happens in `dockToggle()`, synchronously, before this
+control's rows are ever painted (no flash of the default/closed state): if
+this control's ID is listed in `#dock=`, it opens via `_setToggled(true)`;
+otherwise it's left at its default (closed), same as any fresh mount. A
+stale or hand-edited hash listing two same-slot controls self-corrects to
+whichever mounts last, since `_setToggled()`'s exclusivity rules still run
+during restore.
+
+Only ever *opens* from the hash, never force-closes — there's no case yet
+where a page needs to override a control's default-closed state to
+"closed." `history.replaceState` (not `pushState` — toggling dock panels
+shouldn't spam browser back-button history) and the underlying
+`#key=value` parse/write live in
+[hash-state.js](assets/data/hash-state.js), shared with the location
+cascade below rather than each hand-rolling its own
+URLSearchParams-over-`location.hash` reader.
+
+Known gap: if a page ever has more than one `[scoop_dock]` root, they'd all
+share the single global `#dock=` key today (control IDs from both docks
+mixed in one list) — fine while pages only ever have one dock, would need a
+per-dock hash namespace if that changes.
+
+### Location cascade (implemented)
+
+Every grid/tile host's effective `location` is resolved by
+`ScoopAPI._resolveLocation(dom)`, highest priority first:
+
+1. `#loc.<controlId>=` — a per-control hash override. Nothing writes this
+   yet (no grid type has its own location picker), but any future one
+   should call `HashState.set(`loc.${api._controlId(dom)}`, newLocationId)`
+   so setting it and the `_resolveLocation()` read stay in sync.
+2. `#location=` — a page-wide hash override.
+3. `data-location` — the shortcode's own explicit `location="..."` attr
+   (`[scoop_grid type="FlavorTub" location="1118"]`) — an author's pin,
+   independent of the dock default.
+4. `data-default-location` on the nearest `.in-dock` ancestor —
+   `[scoop_dock location="935"]`'s page-wide default.
+5. `935` (Woodinville) — hardcoded fallback for pages with none of the above.
+
+Rule of thumb: hash always beats shortcode-authored attributes regardless of
+specificity ("code sets the initial state, hash overrides it"); within the
+same source, a more specific (per-control) value beats a more general
+(page/dock-wide) one.
 
 ## Icon representation — IMPLEMENTED
 

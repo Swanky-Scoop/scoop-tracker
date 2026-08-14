@@ -10,11 +10,13 @@ export default class CabinetGridModel extends BaseGridModel{
 
   buildRows() {
     if (!this.domain) return [];
-    // Access the primary entity from domain
-    const primary = this.metaData?.primary || 'cabinet';
-    const items = this.domain[primary] || [];
 
-    const cabinetIds = new Set(this.filterByLocation(items).map(c => c.id));
+    // NOTE: this.metaData.primary is 'slot' for this route (writes target
+    // slot, not cabinet — see _config.php's Cabinet.pod_name), so it can't
+    // be used here. Cabinet groups/locations come from domain.cabinet
+    // directly, not the generic primary-entity convention.
+    const cabinets = this.domain.cabinet || [];
+    const cabinetIds = new Set(this.filterByLocation(cabinets).map(c => c.id));
 
     const rtn = this.buildGroupedRows({
       groupsMap     : this._slotsByCabinetId,

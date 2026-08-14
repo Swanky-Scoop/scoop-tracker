@@ -120,6 +120,24 @@ function scoop_pods_ready(): bool {
   return function_exists('pods_api') && is_object(pods_api());
 }
 
+// Live field-name list for a pod — used where a route's writeable-field
+// list should track whatever fields actually exist in Pods admin right now
+// rather than a hand-maintained array that drifts out of sync (see
+// WHITEBOARD-INGESTION.md — shift_report/cake_order's writeable lists used
+// to be hardcoded in _specs.php and needed a code change every time a field
+// was added in Pods admin). Memoized per-request; Pods field lists don't
+// change mid-request.
+function scoop_pod_field_names(string $pod_name): array {
+  static $cache = [];
+  if (isset($cache[$pod_name])) return $cache[$pod_name];
+
+  if (!scoop_pods_ready()) return [];
+  $pod = pods_api()->load_pod(['name' => $pod_name]);
+  if (!$pod || empty($pod['fields'])) return $cache[$pod_name] = [];
+
+  return $cache[$pod_name] = array_keys($pod['fields']);
+}
+
 function scoop_pods_field_def(string $pod_name, string $field_name) /* no : array */ {
   if (!scoop_pods_ready()) return [];
 
@@ -154,7 +172,19 @@ function scoop_pods_dropdown_options(string $pod_name, string $field_name): arra
   if (isset($cache[$k])) return $cache[$k];
 
   $field = scoop_pods_field_def($pod_name, $field_name);
-  $opts  = is_array($field) ? ($field['options'] ?? []) : [];
+
+  // pick_custom/choices live at the TOP level of the field definition
+  // array, not nested under an 'options' key — confirmed directly against
+  // real field defs (tub.state, shift_report.change_low) via the local
+  // PHP CLI 2026-08-11: neither has an 'options' key at all. This was
+  // previously read from $field['options'][...], which silently always
+  // returned [] — closeout.php's scoop_closeout_tub_where() already had a
+  // defensive fallback for exactly this ('Fallback if helper fails'), so
+  // the practical impact was "always uses the static fallback state list,
+  // never actually reads Pods" rather than a visible bug — but the
+  // fallback masked a real bug in this helper for anyone else relying on
+  // "dynamic!" actually being dynamic.
+  $opts = is_array($field) ? $field : [];
 
   $out = [];
 

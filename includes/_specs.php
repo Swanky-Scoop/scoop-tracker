@@ -4,7 +4,7 @@ function scoop_bundle_specs(): array {
   
   $specs = [
     'Cabinet'      => ['needs' => ['cabinet','slot','flavor','tub']],
-    'FlavorTub'    => ['needs' => ['tub','flavor','use','slot']],
+    'FlavorTub'    => ['needs' => ['tub','flavor','use','slot','location']],
     'Batch'        => ['needs' => ['flavor']],
     'BatchHistory' => ['needs' => ['batch','flavor']],
     'Closeout'     => ['needs' => ['flavor','use']],
@@ -321,77 +321,15 @@ function scoop_entity_specs(string $key = ''): array {
         'writeable' => ['tubs_emptied', 'flavor', 'use', 'location', 'order'],
       ],
 
-      // End-of-shift report — see WHITEBOARD-INGESTION.md. One post per
-      // submission, created via scoop_handle_shift_report_create() in
-      // rest.php (not the generic per-type create dispatch — see that
-      // handler's own comment for why). Field names/types below mirror the
-      // actual Pods admin config as built — this code assumes that schema
-      // exists, same as slot.confirm_state's precedent (see change-tub.md).
-      'shift_report' => [
-        'post_type' => 'shift_report',
-        'pod'       => 'shift_report',
-        'title'     => true,
-        'fields'    => [
-          'tempering_cabinet_photo' => ['data_type' => 'file'],
-          'flavors_changed'         => ['data_type' => 'ids', 'control' => 'find', 'titleMap' => 'flavor'],
-          // Multi-select relationship to the 'supply' pod (see
-          // WHITEBOARD-INGESTION.md — supersedes the earlier hardcoded
-          // checklist-of-strings design once 'supply' became a real content
-          // type with price/purchase-date/quantity fields).
-          'supplies_low'            => ['data_type' => 'ids', 'control' => 'find', 'titleMap' => 'supply'],
-          'cash_discrepancy'        => ['data_type' => 'float'],
-          // Pods "Simple (custom defined list)", multiple selection —
-          // denominations, not related posts. 'post_names' is the closest
-          // existing data_type: plain strings, no id resolution (same shape
-          // as flavor.allergens).
-          'change_low'              => ['data_type' => 'post_names'],
-          // Multi-select relationship to 'cake_order' — but the staffer
-          // always CREATES new cake_order posts as part of submitting this
-          // form, never picks from existing ones (per your note). See
-          // scoop_handle_shift_report_create() for the create-children-first
-          // sequencing this implies.
-          'cake_orders'             => ['data_type' => 'ids', 'control' => 'find', 'titleMap' => 'cake_order'],
-          'final_tasks'             => ['data_type' => 'string'],
-          'positive_feedback'       => ['data_type' => 'string'],
-          'customer_issues'         => ['data_type' => 'string'],
-          'notes_for_tomorrow'      => ['data_type' => 'string'],
-          // Single-select ("too many"/"just right"/"too few" are mutually
-          // exclusive) despite being a Pods "Relationship" category field —
-          // that's just how Pods' admin list groups custom Pick fields.
-          'staffing_level'          => ['data_type' => 'string', 'control' => 'enum'],
-          'location'                => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'location', 'hidden' => true],
-        ],
-        'post_fields' => [
-          'author_name' => 'string',
-          'post_date'   => 'datetime',
-        ],
-        'writeable' => [
-          'tempering_cabinet_photo', 'flavors_changed', 'supplies_low', 'cash_discrepancy',
-          'change_low', 'cake_orders', 'final_tasks', 'positive_feedback', 'customer_issues',
-          'notes_for_tomorrow', 'staffing_level', 'location',
-        ],
-      ],
-
-      // Created inline from the shift_report form (see change_low's own
-      // comment above and scoop_handle_shift_report_create() in rest.php) —
-      // a real standalone entity, not shift_report-specific, so it carries
-      // no back-reference field to shift_report; the link is one-directional
-      // via shift_report.cake_orders.
-      'cake_order' => [
-        'post_type' => 'cake_order',
-        'pod'       => 'cake_order',
-        'title'     => true,
-        'fields'    => [
-          'order_name'      => ['data_type' => 'string'],
-          // Pods "Simple (custom defined list)" — option values not yet
-          // known (see WHITEBOARD-INGESTION.md); treated as free-form enum
-          // client-side until confirmed.
-          'cake_pie_flavor' => ['data_type' => 'string', 'control' => 'enum'],
-          'pickup_date'     => ['data_type' => 'datetime'],
-          'details'         => ['data_type' => 'string'],
-        ],
-        'writeable' => ['order_name', 'cake_pie_flavor', 'pickup_date', 'details'],
-      ],
+      // shift_report and cake_order intentionally have NO entry here — see
+      // WHITEBOARD-INGESTION.md. Both are single-purpose create-only forms
+      // whose field list, types, and writeable set are now derived live
+      // from Pods (scoop_pod_field_names(), scoop_shift_report_field_schema()
+      // in rest.php) instead of hand-maintained here, so a field added in
+      // Pods admin shows up in the form and becomes writeable without a
+      // code change. Neither is ever read via the bundle (shift_report/
+      // cake_order records are write-only from this app's perspective), so
+      // there's nothing here for scoop_fetch_entities() to need either.
 
       // shift_report.supplies_low's target entity — see
       // WHITEBOARD-INGESTION.md for the pivot from a hardcoded checklist to

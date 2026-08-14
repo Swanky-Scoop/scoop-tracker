@@ -195,6 +195,162 @@
   }
 
   /**
+   * GET /scoop/v1/shift-report-fields — live field schema for the
+   * end-of-shift report form, grouped and ordered exactly as configured in
+   * Pods admin. See WHITEBOARD-INGESTION.md: the form used to hardcode its
+   * field list, so every new Pods field needed a matching code change
+   * before it would appear. This makes the form (assets/ui/shift-report-form.js)
+   * schema-driven instead — new fields (and new Pods field GROUPS, used as
+   * the form's own section headers) show up automatically. A handful of
+   * fields still get bespoke rendering client-side (photo upload,
+   * flavors_changed's cabinet-grouped picker, supplies_low's
+   * category-grouped picker, cake_orders' create-new-record flow) because
+   * their UX can't be derived from field metadata alone — everything else
+   * renders generically off what's returned here.
+   *
+   * Pods' own field-level 'group' is a numeric id referencing a pod-level
+   * group definition (label/weight) — NOT the same thing as the 'supply'
+   * pod's own custom 'group' field used for the supplies_low checklist
+   * (see supply's entity spec) — different concepts that happen to share a
+   * name.
+   */
+  function scoop_shift_report_field_schema(): array {
+    if (!function_exists('pods_api')) return ['groups' => []];
+
+    $pod = pods_api()->load_pod(['name' => 'shift_report']);
+    if (!$pod || empty($pod['fields'])) return ['groups' => []];
+
+    $groupsById = [];
+    $order = 0;
+
+    // Pod-level group definitions (label/weight) — keyed here by the
+    // group's own numeric id, since that's what each field's 'group'
+    // property references, not the group's name key in $pod['groups'].
+    foreach (($pod['groups'] ?? []) as $groupDef) {
+      $id = (string)($groupDef['id'] ?? '');
+      if ($id === '') continue;
+
+      $groupsById[$id] = [
+        // 'name' is the stable Pods group slug (e.g. "end_of_day") — unlike
+        // 'label', which is just display text an admin could rename, this
+        // is what client code should match against for anything that needs
+        // to target a specific group (e.g. shift-report-form.js's
+        // conditional visibility for the "End of day" group).
+        'name'   => $groupDef['name'] ?? $id,
+        'label'  => $groupDef['label'] ?? $id,
+        'weight' => (int)($groupDef['weight'] ?? 0),
+        // Tie-break for equal-weight groups — PHP 8's usort is stable, so
+        // this preserves $pod['groups']'s own array order, which reflects
+        // Pods admin's actual configured order.
+        'order'  => $order++,
+        'fields' => [],
+      ];
+    }
+
+    foreach ($pod['fields'] as $name => $field) {
+      $groupId = (string)($field['group'] ?? '');
+      if (!isset($groupsById[$groupId])) {
+        // A field with no matching group definition (shouldn't normally
+        // happen, but Pods data can drift) — surfaced under its own
+        // fallback group rather than silently dropped.
+        $groupsById[$groupId] = ['name' => 'other', 'label' => 'Other', 'weight' => PHP_INT_MAX, 'order' => $order++, 'fields' => []];
+      }
+      $groupsById[$groupId]['fields'][] = scoop_shift_report_field_entry((string)$name, $field);
+    }
+
+    foreach ($groupsById as &$g) {
+      usort($g['fields'], fn($a, $b) => $a['weight'] <=> $b['weight']);
+    }
+    unset($g);
+
+    $groups = array_values($groupsById);
+    usort($groups, fn($a, $b) => $a['weight'] <=> $b['weight'] ?: $a['order'] <=> $b['order']);
+
+    return ['groups' => $groups];
+  }
+
+  /**
+   * One field's render-relevant metadata — enough for a generic client-side
+   * renderer to build the right control (text/textarea/number/date/
+   * checkbox/radio/select) without knowing the field ahead of time. Pick
+   * fields' option lists are resolved here (custom lists via
+   * scoop_pods_dropdown_options(), relationship fields via a live query on
+   * the related pod) so the client never needs its own Pods knowledge.
+   */
+  function scoop_shift_report_field_entry(string $name, $field): array {
+    // Pods field definitions can come back as Pods\Whatsit\Field objects
+    // (confirmed directly 2026-08-11: array-vs-object depends on the Pods
+    // version/context, not something to assume either way) — same
+    // normalization scoop_pods_field_def() already does. Whatsit objects
+    // support array-style property access via ArrayAccess, so this loop's
+    // own $field['key'] reads below already work either way; only the
+    // strict `array` type hint on this function's own signature needed
+    // loosening.
+    if (is_object($field)) {
+      if (method_exists($field, 'export')) {
+        $field = $field->export();
+      } elseif (method_exists($field, 'to_array')) {
+        $field = $field->to_array();
+      } else {
+        $field = (array)$field;
+      }
+    }
+    if (!is_array($field)) $field = [];
+
+    $entry = [
+      'name'        => $name,
+      'label'       => $field['label'] ?? $name,
+      'description' => $field['description'] ?? '',
+      'type'        => $field['type'] ?? 'text',
+      'weight'      => (int)($field['weight'] ?? 0),
+      'required'    => !empty($field['required']),
+    ];
+
+    if ($entry['type'] === 'boolean') {
+      $entry['format']   = $field['boolean_format_type'] ?? 'checkbox';
+      $entry['yesLabel'] = $field['boolean_yes_label'] ?? 'Yes';
+      $entry['noLabel']  = $field['boolean_no_label'] ?? 'No';
+    }
+
+    if ($entry['type'] === 'pick') {
+      $entry['multi'] = ($field['pick_format_type'] ?? 'single') === 'multi';
+      $pickObject = $field['pick_object'] ?? '';
+
+      if ($pickObject === 'custom-simple') {
+        $entry['options'] = array_map(
+          fn($o) => ['id' => $o['key'], 'title' => $o['label']],
+          scoop_pods_dropdown_options('shift_report', $name)
+        );
+      } elseif ($pickObject === 'post_type' && !empty($field['pick_val'])) {
+        $entry['relatedPod'] = $field['pick_val'];
+
+        // flavors_changed/supplies_low/cake_orders keep their own hand-built
+        // client-side logic (cabinet-grouped current-flavor picker,
+        // category-grouped supply checklist, create-new-record flow — see
+        // WHITEBOARD-INGESTION.md) and never read this generic options list,
+        // so skip fetching it for them — flavors_changed alone would mean
+        // querying and returning the entire ~200-item flavor catalog on
+        // every call to this endpoint for a client that discards it.
+        static $skipGenericOptions = ['flavors_changed', 'supplies_low', 'cake_orders'];
+        if (!in_array($name, $skipGenericOptions, true) && function_exists('pods')) {
+          $options = [];
+          $related = pods($field['pick_val'], ['limit' => -1]);
+          if ($related) {
+            while ($related->fetch()) {
+              $options[] = ['id' => $related->id(), 'title' => get_the_title($related->id())];
+            }
+          }
+          $entry['options'] = $options;
+        } else {
+          $entry['options'] = [];
+        }
+      }
+    }
+
+    return $entry;
+  }
+
+  /**
    * POST /scoop/v1/shift-reports — end-of-shift report create. Custom route
    * (see includes/_routes.php), not the generic per-type create dispatch
    * (scoop_handle_create_post): cake_orders on shift_report means the

@@ -43,3 +43,8 @@ assets/icon-font/.normalized/
 tests/visual/test-results/
 tests/visual/playwright-report/
 tests/visual/blob-report/
+
+# Playwright MCP session artifacts (snapshots/console logs from ad-hoc
+# browser-driven debugging, not the visual test suite above) — regenerated
+# per session, not source.
+.playwright-mcp/

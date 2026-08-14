@@ -1,3 +1,6 @@
 {
-    "streamline-icons.downloadPath": "assets/icon-font/svg"
+    "streamline-icons.downloadPath": "assets/icon-font/svg",
+    "[css]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    }
 }

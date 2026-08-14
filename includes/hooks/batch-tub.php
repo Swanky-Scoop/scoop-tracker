@@ -659,3 +659,39 @@ function scoop_bump_flavor_modified_date_on_tub_save($pieces, $is_new_item, $id)
     return $pieces;
   }, $pieces);
 }
+
+/**
+ * Batch delete (scoop_handle_batch_delete, includes/rest.php) was measured
+ * at 24-26s per tub on real local data — traced (see partitioned-plotting-
+ * galaxy.md) to Pods' own PodsAPI::delete_relationships(), NOT to anything
+ * in this codebase's own delete path. Pods' bidirectional sister-field sync
+ * (tub.location/tub.use, both sister-paired to location.tubs/use.tubs — see
+ * change-tub.md for the same sister_id mechanism as tub.slot/slot.tub) does
+ * two things when a tub is removed from the related item's list: (1) an
+ * unconditional, cheap, single-query wp_podsrel delete — the actual
+ * relationship removal — and (2) IF `pods_relationship_meta_storage_enabled`
+ * is true (Pods' own hardcoded default for every relationship, not
+ * something this project configured), a full re-sync of the related item's
+ * *entire remaining relationship list* into wp_postmeta, one `add_metadata()`
+ * call per item. Virtually every tub shares one of a handful of location/use
+ * values, so that list runs into the thousands — profiled at ~2.3ms per
+ * remaining item, i.e. genuinely O(n) per single tub delete, not a fixed
+ * cost. This postmeta mirror is never read by this app: relationship data
+ * is read canonically from wp_podsrel (see project memory on Pods
+ * relationship storage — postmeta mirroring was already found unreliable at
+ * scale for tub's own fields). Disabling it here removes pure overhead with
+ * no functional effect, and does NOT touch (2)'s sibling wp_podsrel delete —
+ * verified directly (both for a plain tub and for a tub with a real slot
+ * link, confirming the slot.tub sister-clear still fires) that relationship
+ * cleanup stays intact with this off. Scoped to just the pods in tub's own
+ * relationship graph, not applied schema-wide, since only these were
+ * profiled/verified.
+ */
+add_filter('pods_relationship_meta_storage_enabled', 'scoop_disable_tub_relationship_meta_mirror', 10, 3);
+function scoop_disable_tub_relationship_meta_mirror($enabled, $field, $pod) {
+  $scoped_pods = ['tub', 'batch', 'flavor', 'location', 'use', 'slot', 'closeout'];
+  if (is_array($pod) && in_array($pod['name'] ?? '', $scoped_pods, true)) {
+    return false;
+  }
+  return $enabled;
+}

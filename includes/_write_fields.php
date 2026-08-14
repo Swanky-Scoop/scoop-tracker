@@ -26,13 +26,20 @@ function scoop_closeouts_allowed_fields(\WP_User $u): array {
   return [ 'tubs_emptied', 'flavor', 'use', 'location', 'order']; //'amount'
 }
 
+// Live from Pods, not a hand-maintained _specs.php list — see
+// WHITEBOARD-INGESTION.md. shift_report/cake_order are single-purpose forms
+// with identical field access across their three authorized roles (no
+// per-field distinction has ever been needed), so there's no security
+// reason to require a matching code change every time a field is added or
+// renamed in Pods admin — whoever can do that already has full site-admin
+// capability.
 function scoop_shift_reports_allowed_fields(\WP_User $u): array {
-  $route_fields = scoop_entity_specs('shift_report')['writeable'];
+  $route_fields = scoop_pod_field_names('shift_report');
   return scoop_allowed_fields_for_entity($u, 'shift_report', $route_fields);
 }
 
 function scoop_cake_orders_allowed_fields(\WP_User $u): array {
-  $route_fields = scoop_entity_specs('cake_order')['writeable'];
+  $route_fields = scoop_pod_field_names('cake_order');
   return scoop_allowed_fields_for_entity($u, 'cake_order', $route_fields);
 }
 

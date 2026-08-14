@@ -29,6 +29,11 @@ function scoop_render_grid_host($raw_atts, string $view) {
         // immediately after Batch's own — see
         // ScoopAPI._mountEmbeddedBatchHistory() in assets/data/scoop-api.js.
         'history'        => null,
+        // Disambiguates two hosts of the same `type` on one page (e.g. two
+        // FlavorTub grids for different locations) for the location hash's
+        // per-control key — see ScoopAPI._controlId(). Optional; most pages
+        // only ever have one host per type and don't need this.
+        'slug'           => null,
     ], $raw_atts, 'scoop_' . $view);
 
     if (!is_user_logged_in()) {
@@ -84,6 +89,9 @@ function scoop_render_grid_host($raw_atts, string $view) {
     data-grid-type="<?php echo esc_attr($atts['type']); ?>"
     data-view="<?php echo esc_attr($view); ?>"
     data-location="<?php echo esc_attr($atts['location']); ?>"
+    <?php if (!empty($atts['slug'])) : ?>
+    data-slug="<?php echo esc_attr($atts['slug']); ?>"
+    <?php endif; ?>
     <?php if (!empty($atts['days'])) : ?>
     data-days="<?php echo esc_attr($atts['days']); ?>"
     <?php endif; ?>
@@ -139,17 +147,27 @@ add_shortcode('scoop_tile', function ($atts) {
  * positioning). Controls inside .canvas don't know they're docked; the
  * docking hook is purely "does this control's host have an .in-dock
  * ancestor".
+ *
+ * [scoop_dock location="935"] sets a page-wide default location for any
+ * nested [scoop_grid]/[scoop_tile] that doesn't specify its own `location`
+ * attribute — read as `data-default-location` off .in-dock. This is the
+ * lowest-priority tier in ScoopAPI._resolveLocation()'s cascade (see
+ * DOCKING.md's "State model"): a per-control #loc.<id>= hash value beats a
+ * general #location= hash value beats a shortcode's own `location=` attr
+ * beats this dock default beats the hardcoded 935 fallback.
  */
-add_shortcode('scoop_dock', function ($atts, $content = null) {
+add_shortcode('scoop_dock', function ($raw_atts, $content = null) {
     if (!is_user_logged_in()) {
         return '<p>You must be logged in to view this.</p>';
     }
+
+    $atts = shortcode_atts(['location' => null], is_array($raw_atts) ? $raw_atts : [], 'scoop_dock');
 
     $inner = do_shortcode((string)$content);
 
     ob_start();
     ?>
-    <div class="in-dock">
+    <div class="in-dock"<?php if (!empty($atts['location'])) : ?> data-default-location="<?php echo esc_attr($atts['location']); ?>"<?php endif; ?>>
       <div class="action-target"></div>
       <div class="toolbar">
         <a href="../wp-admin/edit.php?post_type=tub" class="gridToggle wp"><i class="ab-icon"></i><span class="dockTitle">WP Admin</span></a>

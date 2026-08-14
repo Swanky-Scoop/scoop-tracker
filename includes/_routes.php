@@ -118,4 +118,16 @@ add_action('rest_api_init', function () {
     },
     'permission_callback' => scoop_write_permission('ShiftReport'),
   ]);
+
+  // Live field schema (groups + fields, ordered per Pods admin) for the
+  // shift-report form — see scoop_shift_report_field_schema() in rest.php.
+  // Read-only, same permission tier as /bundle: any authenticated user, not
+  // gated per-route like the write side, since it's just field metadata.
+  register_rest_route('scoop/v1', '/shift-report-fields', [
+    'methods'  => ['GET'],
+    'callback' => function(\WP_REST_Request $req) {
+      return new \WP_REST_Response(['ok' => true] + scoop_shift_report_field_schema(), 200);
+    },
+    'permission_callback' => 'scoop_require_authenticated_user_read_only',
+  ]);
 });

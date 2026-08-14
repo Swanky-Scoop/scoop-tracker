@@ -57,8 +57,14 @@ export default class Toast {
     TOASTER.querySelector('.SCROLLER').append(TOAST);
     TOASTER.classList.add('show');
 
+    // Fades out on its own after a few seconds (see the .expired rule in
+    // css.css) — deliberately NOT removed from the DOM, unlike the close
+    // button's handler above. Keeping it around is what a future "review
+    // session activity" feature would read from.
+    setTimeout(() => TOAST.classList.add('expired'), 4000);
+
     return TOAST;
-    
+
   }
   
   static update(node, {title='title', message='This event happened', state='OK'} = {}){

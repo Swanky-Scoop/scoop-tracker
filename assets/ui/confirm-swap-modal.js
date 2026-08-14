@@ -32,6 +32,7 @@
 // this._plan for _confirm()/_confirmEmpty() to reuse without recomputing.
 //////////////////////////////////
 import El from "./_el.js";
+import Toast from "./toast.js";
 
 export default class ConfirmSwapModal extends El {
   constructor({ api, model, onChangePlan, openPickerFor, getRow, paintOptimistic, confirmOptimistic }) {
@@ -284,7 +285,7 @@ export default class ConfirmSwapModal extends El {
   async _pickScheduled(row, field, flavorId, resumeFlavorId) {
     const rSlot = await this.api.postJson({ cells: { [row.slotId]: { [field]: flavorId } }, source: 'workflow' }, 'Cabinet');
     if (!rSlot.ok || !rSlot.data?.ok) {
-      alert(`Scheduling the flavor failed.\n${rSlot?.data?.error ?? `HTTP ${rSlot?.status}`}`);
+      Toast.addMessage({ title: 'Scheduling the flavor failed', message: rSlot?.data?.error ?? `HTTP ${rSlot?.status}` });
       return;
     }
 
@@ -322,7 +323,7 @@ export default class ConfirmSwapModal extends El {
 
     const rTubs = await this.api.postJson({ cells: tubCells, source: 'workflow' }, 'FlavorTub');
     if (!rTubs.ok || !rTubs.data?.ok) {
-      alert(`Tub swap failed.\n${rTubs?.data?.error ?? `HTTP ${rTubs?.status}`}`);
+      Toast.addMessage({ title: 'Tub swap failed', message: rTubs?.data?.error ?? `HTTP ${rTubs?.status}` });
       return;
     }
 
@@ -331,7 +332,10 @@ export default class ConfirmSwapModal extends El {
       'Cabinet',
     );
     if (!rSlot.ok || !rSlot.data?.ok) {
-      alert(`Tubs were swapped, but the slot's flavor failed to save.\n${rSlot?.data?.error ?? `HTTP ${rSlot?.status}`}`);
+      Toast.addMessage({
+        title: "Slot flavor didn't save",
+        message: `Tubs were swapped, but the slot's flavor failed to save.\n${rSlot?.data?.error ?? `HTTP ${rSlot?.status}`}`,
+      });
       return;
     }
 
@@ -357,23 +361,27 @@ export default class ConfirmSwapModal extends El {
       impossible: false,
     });
 
-    // Debug alert cascade (see CabinetWorkflow QA conversation) — native +
-    // sequential is deliberate for now, for manual/visual verification,
-    // not final UX. "Back out of after it happens" and a proper reviewable
-    // log are explicitly deferred, not built here.
-    if (emptying) alert(`${plan.outgoingTub._title} was emptied`);
-    if (Number(plan.tub.location) !== Number(row.location)) alert(`${plan.tub._title} is at a different location.`);
-    if (Number(plan.tub.amount ?? 1) < 1) alert('Using a partial');
+    // One consolidated, non-blocking Toast instead of the former sequential
+    // native alert() cascade (see change-tub.md's "Debug alert cascade" —
+    // that was deliberately crude scaffolding, not final UX, and blocked
+    // the confirmation refetch below on the user dismissing every dialog).
+    // Toast's `changes` list (see Toast.addMessage) is the "reviewable
+    // change log" that section explicitly deferred building.
+    const swapNotes = [];
+    if (emptying) swapNotes.push({ sentence: `${plan.outgoingTub._title} was emptied` });
+    if (Number(plan.tub.location) !== Number(row.location)) swapNotes.push({ sentence: `${plan.tub._title} is at a different location.` });
+    if (Number(plan.tub.amount ?? 1) < 1) swapNotes.push({ sentence: 'Using a partial' });
     if (plan.rule === 'a') {
       if (plan.pool.length === 1) {
-        alert('perfect!');
+        swapNotes.push({ sentence: 'Perfect match — one candidate.' });
       } else {
         const skipped = plan.pool.filter(t => Number(t.id) !== Number(plan.tub.id)).map(t => t._title).join(', ');
-        alert(`Found tub ${plan.tub._title}. Not selected: ${skipped}`);
+        swapNotes.push({ sentence: `Found tub ${plan.tub._title}. Not selected: ${skipped}` });
       }
     } else {
-      alert(`Found match: ${plan.tub._title}`);
+      swapNotes.push({ sentence: `Found match: ${plan.tub._title}` });
     }
+    Toast.addMessage({ title: 'Tub swap confirmed', changes: swapNotes });
 
     // The "confirmation fetch" — refreshPageDomain's broadcast also repaints
     // every other grid on the page (e.g. a plain Cabinet view control, if
@@ -404,7 +412,7 @@ export default class ConfirmSwapModal extends El {
       const cells = outgoingTub.state === 'Opened' ? { state: 'Emptied', slot: 0 } : { slot: 0 };
       const rTub = await this.api.postJson({ cells: { [outgoingTub.id]: cells }, source: 'workflow' }, 'FlavorTub');
       if (!rTub.ok || !rTub.data?.ok) {
-        alert(`Emptying the tub failed.\n${rTub?.data?.error ?? `HTTP ${rTub?.status}`}`);
+        Toast.addMessage({ title: 'Emptying the tub failed', message: rTub?.data?.error ?? `HTTP ${rTub?.status}` });
         return;
       }
     }
@@ -426,7 +434,10 @@ export default class ConfirmSwapModal extends El {
     // current_flavor never actually cleared).
     const rSlot = await this.api.postJson({ cells: { [row.slotId]: slotCells }, source: 'workflow' }, 'Cabinet');
     if (!rSlot.ok || !rSlot.data?.ok) {
-      alert(`Tub emptied, but clearing the slot failed.\n${rSlot?.data?.error ?? `HTTP ${rSlot?.status}`}`);
+      Toast.addMessage({
+        title: "Slot didn't clear",
+        message: `Tub emptied, but clearing the slot failed.\n${rSlot?.data?.error ?? `HTTP ${rSlot?.status}`}`,
+      });
       return;
     }
 
