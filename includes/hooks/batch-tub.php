@@ -686,12 +686,180 @@ function scoop_bump_flavor_modified_date_on_tub_save($pieces, $is_new_item, $id)
  * cleanup stays intact with this off. Scoped to just the pods in tub's own
  * relationship graph, not applied schema-wide, since only these were
  * profiled/verified.
+ *
+ * 2026-08-14 update: this filter had a real scoping gap, found while
+ * chasing the separate tub-SAVE slowness below. `delete_relationships()`
+ * passes `$pod` as a `Pods\Whatsit\Pod` OBJECT when it's invoked from
+ * PodsField_Pick::save()'s bidirectional-removal call (i.e. every ordinary
+ * tub save that changes location/use away from its old value) — the
+ * `is_array($pod)` check below is false for that shape, so the filter
+ * silently fell through to `$enabled` (true) and the O(n) meta-mirror
+ * thrash kept running on exactly this path even with this "fix" in place.
+ * It only ever matched the plain-array `$pod` shape that
+ * `pods_api()->delete_pod_item()` happens to pass, which is why the full
+ * batch-delete measurement above looked fixed while ordinary saves stayed
+ * slow. Broadened to also read the name off array-accessible objects
+ * (`Pods\Whatsit\Pod` implements `ArrayAccess`), confirmed via PHP CLI:
+ * moving a tub out of a 2,636-tub location dropped from ~5.0s to ~15ms for
+ * this step alone.
  */
 add_filter('pods_relationship_meta_storage_enabled', 'scoop_disable_tub_relationship_meta_mirror', 10, 3);
 function scoop_disable_tub_relationship_meta_mirror($enabled, $field, $pod) {
   $scoped_pods = ['tub', 'batch', 'flavor', 'location', 'use', 'slot', 'closeout'];
-  if (is_array($pod) && in_array($pod['name'] ?? '', $scoped_pods, true)) {
+  $pod_name = scoop_pod_name($pod);
+  if ($pod_name !== null && in_array($pod_name, $scoped_pods, true)) {
     return false;
   }
   return $enabled;
+}
+
+if (!function_exists('scoop_pod_name')) {
+  /**
+   * Read a pod's name, tolerant of the array (older Pods) and
+   * Whatsit\Pod object (2.8+/3.x, ArrayAccess) shapes Pods passes around.
+   */
+  function scoop_pod_name($pod): ?string {
+    if (is_array($pod)) return $pod['name'] ?? null;
+    if (is_object($pod) && $pod instanceof ArrayAccess && isset($pod['name'])) return (string)$pod['name'];
+    return null;
+  }
+}
+
+/**
+ * A plain tub SAVE that sets/changes location or use was measured at
+ * 5-11s — a different Pods bug from the delete-side one above, not touched
+ * by scoop_disable_tub_relationship_meta_mirror(). See project memory
+ * tub-save-relationship-loop-bug.
+ *
+ * Root cause: for a bidirectional sister-paired field, PodsField_Pick::save()
+ * (pick.php ~2071) calls
+ *   PodsAPI::save_relationships($related_id, $bidirectional_ids, $related_pod, $related_field)
+ * where $bidirectional_ids is the RELATED item's entire current relationship
+ * list plus the one new id being added. Concretely: saving tub.location
+ * calls save_relationships() on location's "tubs" field with the FULL list
+ * of every tub currently at that location (thousands, for the common
+ * locations — virtually every tub shares one of a handful of location/use
+ * values). save_relationships()'s "Relationships table" sync
+ * (PodsAPI.php ~6446-6506) then loops that entire list doing one individual
+ * UPDATE-or-INSERT wp_podsrel query per item, even though only the single
+ * newly-added tub actually needs a new row — every other row gets rewritten
+ * with identical data. Confirmed via PHP CLI: 5.0-11.0s per save, scaling
+ * with the target location/use's tub count (2,639-member location: 11.0s;
+ * a smaller one: 5.5s) — same O(n) signature as the delete bug, different
+ * code path, unconditional on `pods_podsrel_enabled()` rather than the
+ * metadata-mirror filter.
+ *
+ * Fix: skip Pods' own per-item loop for exactly this field pairing (the
+ * reverse "tubs" field on location/use — matched by field name + pick
+ * target rather than field ID, since field IDs aren't guaranteed stable
+ * across environments, see the Schema-Sync sister_id gap in project
+ * memory) via the `pods_podsrel_enabled` filter, scoped to context==='save'
+ * only so 'lookup'/'lookup-from' reads are completely untouched — every
+ * read still hits the real, unmodified wp_podsrel table. Once Pods' loop is
+ * skipped, `scoop_bulk_write_tub_reverse_relationship()` performs the
+ * equivalent write itself: one indexed SELECT (on the field_id+item_id key
+ * that already exists on wp_podsrel) for the item's current related-id set,
+ * diffed in PHP against the full incoming list, then a single bulk
+ * multi-row INSERT for ids that are new and a single bulk DELETE for ids
+ * that dropped off (covers pick_limit eviction, even though location/use
+ * have none today) — never touching rows that didn't change. Weight is not
+ * preserved/renumbered for existing rows (new rows are appended after the
+ * current max) — confirmed nothing in this codebase reads location.tubs /
+ * use.tubs order (both are `data_type=ids, hidden=true` membership lookups
+ * in _specs.php, never a display list), only their membership.
+ *
+ * Known narrow gap: `pods_podsrel_enabled('save')` is also consulted a
+ * handful of times inside Pods' *field-definition* save path
+ * (PodsAPI::save_field(), re-linking a field's own sister_id bookkeeping
+ * rows when a field's config is edited in Pods Admin) — the same field
+ * name/shape match could theoretically fire there too. That path only runs
+ * when someone edits the location/use "tubs" field's own schema entry in
+ * Pods Admin (not on ordinary app writes), and only skips a metadata
+ * self-correction on the field-definition rows, not tub data — accepted as
+ * a low-frequency, low-blast-radius edge case rather than engineered
+ * around.
+ */
+add_filter('pods_podsrel_enabled', 'scoop_skip_tub_reverse_relationship_resync', 10, 3);
+function scoop_skip_tub_reverse_relationship_resync($enabled, $field, $context) {
+  if (!$enabled || 'save' !== $context) return $enabled;
+  if (!scoop_is_tub_reverse_relationship_field($field)) return $enabled;
+  return false;
+}
+
+add_action('pods_api_save_relationships', 'scoop_bulk_write_tub_reverse_relationship', 10, 4);
+function scoop_bulk_write_tub_reverse_relationship($id, $related_ids, $field, $pod) {
+  if (!scoop_is_tub_reverse_relationship_field($field)) return;
+
+  global $wpdb;
+  $lap_start = microtime(true);
+
+  $item_id  = (int)$id;
+  $field_id = (int)($field['id'] ?? 0);
+  $pod_id   = (int)($pod['id'] ?? 0);
+  if (!$item_id || !$field_id || !$pod_id) {
+    scoop_batch_debug("scoop_bulk_write_tub_reverse_relationship: could not resolve item/field/pod id (item={$item_id} field={$field_id} pod={$pod_id}) — relationship NOT written");
+    return;
+  }
+
+  $tub_field = $field->get_bidirectional_field();
+  if (!$tub_field) {
+    scoop_batch_debug("scoop_bulk_write_tub_reverse_relationship: no bidirectional field for field_id={$field_id} — relationship NOT written");
+    return;
+  }
+  $related_field_id = (int)($tub_field['id'] ?? 0);
+  $tub_pod = $tub_field->get_parent_object();
+  $related_pod_id = (int)($tub_pod['id'] ?? 0);
+  if (!$related_field_id || !$related_pod_id) {
+    scoop_batch_debug("scoop_bulk_write_tub_reverse_relationship: could not resolve tub-side field/pod id — relationship NOT written");
+    return;
+  }
+
+  $wanted_ids = array_unique(array_map('intval', (array)$related_ids));
+  $table = $wpdb->prefix . 'podsrel';
+
+  $existing_ids = $wpdb->get_col($wpdb->prepare(
+    "SELECT related_item_id FROM {$table} WHERE pod_id = %d AND field_id = %d AND item_id = %d",
+    $pod_id, $field_id, $item_id
+  ));
+  $existing_ids = array_map('intval', $existing_ids);
+
+  $to_insert = array_values(array_diff($wanted_ids, $existing_ids));
+  $to_remove = array_values(array_diff($existing_ids, $wanted_ids));
+
+  if ($to_remove) {
+    $placeholders = implode(',', array_fill(0, count($to_remove), '%d'));
+    $wpdb->query($wpdb->prepare(
+      "DELETE FROM {$table} WHERE pod_id = %d AND field_id = %d AND item_id = %d AND related_item_id IN ({$placeholders})",
+      array_merge([$pod_id, $field_id, $item_id], $to_remove)
+    ));
+  }
+
+  if ($to_insert) {
+    $next_weight = count($existing_ids) - count($to_remove);
+    $values = [];
+    foreach ($to_insert as $related_item_id) {
+      $values[] = $wpdb->prepare(
+        '(%d, %d, %d, %d, %d, %d, %d)',
+        $pod_id, $field_id, $item_id, $related_pod_id, $related_field_id, $related_item_id, $next_weight++
+      );
+    }
+    $wpdb->query("INSERT INTO {$table} (pod_id, field_id, item_id, related_pod_id, related_field_id, related_item_id, weight) VALUES " . implode(',', $values));
+  }
+
+  scoop_batch_debug("scoop_bulk_write_tub_reverse_relationship: item={$item_id} field={$field_id} +" . count($to_insert) . "/-" . count($to_remove) . " in " . scoop_batch_elapsed_ms($lap_start) . "ms");
+}
+
+function scoop_is_tub_reverse_relationship_field($field): bool {
+  if (!is_object($field)) return false;
+  $name = (string)($field['name'] ?? '');
+  if ('tubs' !== $name) return false;
+
+  $pick_val = method_exists($field, 'get_arg') ? $field->get_arg('pick_val') : ($field['pick_val'] ?? null);
+  if ('tub' !== $pick_val) return false;
+
+  if (!method_exists($field, 'get_parent_object')) return false;
+  $parent = $field->get_parent_object();
+  if (!$parent) return false;
+  $parent_name = (string)($parent['name'] ?? '');
+  return in_array($parent_name, ['location', 'use'], true);
 }
