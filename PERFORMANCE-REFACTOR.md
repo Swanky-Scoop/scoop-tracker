@@ -94,16 +94,55 @@ common write (any tub save touching location/use, which is most
 CabinetWorkflow writes), not just the rare delete. Next up: bundle-fetch
 type-scoping (#2 below).
 
-### 2. No bundle-fetch type-scoping — every refresh refetches the full page-wide union
+### 2. No bundle-fetch type-scoping — FIXED (2026-08-14)
 
-`ScoopAPI.refreshPageDomain()` always refetches `this._pageTypes` (every
-bundle type any grid on the page needs), never just the types actually
-affected by whatever triggered the call. Confirmed via trace of
-`mountAllGrids`/`_setPageTypes` (`assets/data/scoop-api.js`). Worst
-offender: `_list.js`'s `_scheduleBackgroundDomainRefresh` fires a full
-page-wide refetch 800ms after *every* autosaved cell edit. This is the item
-the user is currently leaning toward tackling first on this branch — see
-recommendation below.
+`ScoopAPI.refreshPageDomain()` always refetched `this._pageTypes` (every
+bundle type any grid on the page needs) on every *triggered* refresh
+(autosave, manual Save, filter change), never just the types actually
+affected. Worst offender: `_list.js`'s `_scheduleBackgroundDomainRefresh`
+fired a full page-wide refetch 800ms after *every* autosaved cell edit.
+
+The naive fix — scope by entity-needs overlap between the triggering type
+and other on-page types — turned out useless once checked against the real
+`scoop_bundle_specs()`: every single bundle type declares `'flavor'` in its
+needs, so that overlap always matches everything, delivering zero real
+reduction. The rule that actually works: scope by which **pod the write
+targets** (`pod_name` in `scoop_routes_config()`, already existed) against
+every other on-page type's declared needs. Verified by hand against the
+dock page: Cabinet's writes target the `slot` pod; of the five dock types,
+only Cabinet/FlavorTub/CabinetWorkflow declare `slot` in their needs — Batch
+and BatchHistory are correctly excluded.
+
+Implemented as a new `SCOOP.refreshScope` export (single-sourced from
+`scoop_bundle_specs()` + `scoop_routes_config()`, `includes/_specs.php`'s
+`scoop_client_refresh_scope()`) driving `ScoopAPI.scopedRefreshTypes()`.
+Falls back to the full page union for any type with no `writesPod` or
+missing from the export — under-scoping silently would be worse than one
+extra fetch, so five existing call sites (BatchHistory's row delete,
+CabinetWorkflow's four write paths) were deliberately left unscoped this
+pass and keep their current full-fallback behavior unchanged.
+
+Required two correctness-critical companion fixes, not just the scoping
+rule itself: `_startDomainFetch` now **merges** the fetched entities into
+`this._domain` instead of replacing it wholesale (a scoped fetch only
+returns a subset of entities); `getBundleForTypes` no longer force-defaults
+a fixed list of entity keys to `[]` (it used the server's own `needs` array,
+already present in the bundle response, to know which keys were actually
+requested) — the old defaulting would have fabricated empty arrays for
+unrequested entities and the merge would have read that as "now empty,"
+silently wiping out other grids' data. PageStatus's `'fetching'` marking and
+the ETA countdown's history key are scoped the same way, so unaffected
+grids don't flash fetching for no reason and a fast scoped fetch doesn't
+corrupt the full-page load-time estimate.
+
+Design was pressure-tested by a Plan subagent against the real file
+contents (not assumptions) before implementation. Verified via PHP CLI that
+`scoop_client_refresh_scope()`'s output matches expectations (Cabinet →
+`writesPod: 'slot'`, correctly excluding Batch/BatchHistory on the dock
+page). Live browser verification against `/dock/` (Network tab confirming
+the scoped `types=` query param, PageStatus not flashing for excluded
+grids, other grids' data intact after a scoped fetch) still needs a pass —
+see the plan file's verification checklist.
 
 ### 3. Dock-page PHP-FPM contention is real and measured, not theoretical
 
@@ -114,9 +153,10 @@ the `_domainInflight` chaining fix shipped this session (correct: a
 `force:true` call arriving mid-flight now chains a real follow-up fetch
 instead of incorrectly reusing stale data) has a real cost under this
 contention: it means waiting out **two full sequential bundle fetches**
-instead of one. Item #2's type-scoping would shrink both the size of each
-fetch and the odds of two overlapping in the first place — these two
-findings compound, not independent.
+instead of one. Item #2's type-scoping (now fixed) shrinks both the size of
+each triggered fetch and the odds of two overlapping in the first place —
+these two findings compound, not independent. Still worth re-measuring dock
+contention now that #2 has landed.
 
 ### 4. CabinetWorkflow's automatic on-load reconciliation — worth reconsidering for the dock model
 
@@ -136,21 +176,23 @@ low-risk, not yet done — good complementary work alongside #2, not a
 substitute for it (this is a read-cache-hit-rate fix; #1/#2 are write-cost
 and fetch-scope fixes, a different axis).
 
-## Recommendation: where to start (revised 2026-08-14, post-fix)
+## Recommendation: where to start (revised 2026-08-14, both fixes shipped)
 
-Item #1 is now fully fixed and verified (both the save-loop bug and the
-delete-fix scoping gap it exposed) — tub saves touching location/use went
-from 5-11s to 60-180ms, equivalence-checked against pre-fix DB state. That
-was the single highest-leverage item on this branch. Sequence now:
+Items #1 and #2 are both fixed and committed (`9ddc7fe`, `8b87193` on
+`worktree-performance-refactor`). #1: tub saves touching location/use went
+from 5-11s to 60-180ms, equivalence-checked against pre-fix DB state. #2:
+triggered refreshes now scope to only the on-page types a write could
+plausibly affect, instead of always refetching the full page union.
 
 1. ~~Fix `save_relationships()`'s per-item query loop~~ — **done.**
-2. **Bundle-fetch type-scoping** (#2) — now the top of the list. Still the
-   right next architectural project, still compounds with #3's measured
-   dock contention.
-3. Items #4/#5 remain lower-priority, standing background work.
+2. ~~Bundle-fetch type-scoping~~ — **done, needs live browser verification**
+   (implemented + PHP-CLI-verified, but not yet exercised against real
+   `/dock/` network traffic — see item #2's checklist above and the plan
+   file's verification section).
+3. **Re-measure dock-page PHP-FPM contention (#3)** now that #2 has landed —
+   it was measured before either fix; both should have shrunk it, worth
+   confirming with real numbers before deciding if more work is needed here.
+4. Items #4/#5 remain lower-priority, standing background work.
 
-**Concrete next step:** design bundle-fetch type-scoping — `ScoopAPI.
-refreshPageDomain()` refetching only the types actually affected by a given
-trigger, instead of the full page-wide union every time (see #2 above for
-the specifics, notably `_list.js`'s `_scheduleBackgroundDomainRefresh`
-firing a full refetch 800ms after every autosaved cell edit).
+**Concrete next step:** live-verify #2 on `/dock/` per its checklist, then
+either close out #3 with fresh measurements or move to #4/#5.
