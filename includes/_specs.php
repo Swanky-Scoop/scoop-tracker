@@ -9,6 +9,12 @@ function scoop_bundle_specs(): array {
     'BatchHistory' => ['needs' => ['batch','flavor']],
     'Closeout'     => ['needs' => ['flavor','use']],
     'DateActivity' => ['needs' => ['tub','inventory_change','flavor','use','location','slot','cabinet']],
+    // Read-only "what got emptied, grouped by day" log for a non-staff
+    // audience — see assets/models/emptied-log-grid-model.js. Narrower needs
+    // than DateActivity: no slot/cabinet, since there's no slot-warning logic
+    // here, and it deliberately ignores this.location (like ItemPivot) to
+    // show every location's emptied tubs together with location as a column.
+    'EmptiedLog'   => ['needs' => ['tub','inventory_change','flavor','use','location']],
     'InstockFlavor'=> ['needs' => ['flavor','tub','slot','cabinet']],
     // Read-only "where are the tubs" pivot — see assets/models/item-pivot-grid-model.js.
     'ItemPivot'    => ['needs' => ['tub','flavor','slot','cabinet','location']],
@@ -88,8 +94,13 @@ function scoop_entity_specs(string $key = ''): array {
           $state            = $row['state'] ?? '';
           $requesting_types = $ctx['requesting_types'] ?? [];
 
-          $has_date_activity = in_array('DateActivity', $requesting_types, true);
-          $has_other_grids   = !empty(array_diff($requesting_types, ['DateActivity']));
+          // EmptiedLog shares DateActivity's date-scoped tub fetch (same
+          // 'activity' composite window, see below) — it just groups/filters
+          // the result differently client-side (emptied-phase rows only,
+          // bucketed by day instead of by flavor).
+          $has_date_activity = in_array('DateActivity', $requesting_types, true)
+            || in_array('EmptiedLog', $requesting_types, true);
+          $has_other_grids   = !empty(array_diff($requesting_types, ['DateActivity', 'EmptiedLog']));
 
           // DateActivity needs tubs whose actual inventory event dates are recent.
           // post_modified is still used for manual override rows, but opens and
@@ -177,7 +188,10 @@ function scoop_entity_specs(string $key = ''): array {
         ],
         'filter' => function(array $row, array $ctx) {
           $requesting_types = $ctx['requesting_types'] ?? [];
-          if (!in_array('DateActivity', $requesting_types, true)) {
+          // EmptiedLog also reads audit rows (for the emptied-phase ones,
+          // same as DateActivity) — see the tub filter's comment above.
+          if (!in_array('DateActivity', $requesting_types, true)
+            && !in_array('EmptiedLog', $requesting_types, true)) {
             return false;
           }
 

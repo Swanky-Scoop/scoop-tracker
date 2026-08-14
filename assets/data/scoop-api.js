@@ -10,6 +10,7 @@ import BatchHistoryGridModel from "../models/batch-history-grid-model.js";
 import CloseoutGridModel     from "../models/closeout-grid-model.js";
 import FlavorTubGridModel    from "../models/flavor-tub-grid-model.js";
 import DateActivityGridModel from "../models/date-activity-grid-model.js";
+import EmptiedLogGridModel   from "../models/emptied-log-grid-model.js";
 import AnalyticsGridModel    from "../models/analytics-grid-model.js";
 import PopularGridModel      from "../models/popular-grid-model.js";
 import PopularPlot           from "../ui/popular-plot.js";
@@ -149,6 +150,7 @@ export default class ScoopAPI {
       "BatchHistory" : BatchHistoryGridModel,
       "Closeout"     : CloseoutGridModel,
       "DateActivity" : DateActivityGridModel,
+      "EmptiedLog"   : EmptiedLogGridModel,
       "Analytics"    : AnalyticsGridModel,
       "Popular"      : PopularGridModel,
       "Flavors"      : FlavorsGridModel,

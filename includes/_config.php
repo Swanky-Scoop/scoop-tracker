@@ -59,6 +59,18 @@ function scoop_routes_config(string $batch_key = ''): array {
       'icon'         => 'if:m',
       'canvas_mode'  => 'full-nostack',
     ],
+    // Read-only "what got emptied, by day" log — see
+    // assets/models/emptied-log-grid-model.js. No path/methods/mode/
+    // envelope_key here (same as ItemPivot above): it has no write endpoint
+    // of its own, it's read purely through the /bundle endpoint, which is
+    // open to any authenticated user rather than gated per-route (see
+    // includes/_routes.php) — that's what makes it visible to every logged-in
+    // role without a _policy.php entry.
+    'EmptiedLog' => [
+      'display_title' => 'Emptied Log',
+      'icon'         => 'if:e',
+      'canvas_mode'  => 'full-nostack',
+    ],
     'Flavors' => [
       'display_title' => 'Flavor History',
       'icon'         => 'if:s',

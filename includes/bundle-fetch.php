@@ -163,7 +163,7 @@ function scoop_date_filter_range_for_preset( string $preset ): array {
 function scoop_bundle_date_filter_context( \WP_REST_Request $req, array $requesting_types = [] ): array {
   $keys = scoop_parse_date_filter_keys( $req->get_param( 'date_filters' ) );
 
-  if ( empty( $keys ) && in_array( 'DateActivity', $requesting_types, true ) ) {
+  if ( empty( $keys ) && ( in_array( 'DateActivity', $requesting_types, true ) || in_array( 'EmptiedLog', $requesting_types, true ) ) ) {
     $keys = [ 'activity' ];
   }
   if ( empty( $keys ) && in_array( 'BatchHistory', $requesting_types, true ) ) {
@@ -668,10 +668,12 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
       $where_clauses[] = "(state != 'Emptied' OR emptied_at >= '{$cutoff_sql}')";
     }
 
-    // DateActivity-only tub bundles should not scan every historical tub.
-    // When other grids are present, keep active tubs in scope for their views.
-    $has_date_activity = in_array( 'DateActivity', $requesting_types, true );
-    $has_other_grids   = ! empty( array_diff( $requesting_types, [ 'DateActivity' ] ) );
+    // DateActivity-only (or EmptiedLog-only — same date-scoped tub fetch,
+    // see _specs.php's tub filter comment) tub bundles should not scan every
+    // historical tub. When other grids are present, keep active tubs in
+    // scope for their views.
+    $has_date_activity = in_array( 'DateActivity', $requesting_types, true ) || in_array( 'EmptiedLog', $requesting_types, true );
+    $has_other_grids   = ! empty( array_diff( $requesting_types, [ 'DateActivity', 'EmptiedLog' ] ) );
     $date_filters      = $ctx['date_filters'] ?? [];
     $date_ranges       = $ctx['date_filter_ranges'] ?? [];
 
@@ -694,7 +696,7 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
 
   if ( $key === 'inventory_change' ) {
     $requesting_types   = $ctx['requesting_types'] ?? [];
-    $has_date_activity = in_array( 'DateActivity', $requesting_types, true );
+    $has_date_activity = in_array( 'DateActivity', $requesting_types, true ) || in_array( 'EmptiedLog', $requesting_types, true );
     $date_filters      = $ctx['date_filters'] ?? [];
     $date_ranges       = $ctx['date_filter_ranges'] ?? [];
 
