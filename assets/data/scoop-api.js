@@ -357,30 +357,37 @@ export default class ScoopAPI {
   }
 
   // Which on-page bundle types could plausibly need fresher data because
-  // `triggerType` just wrote to a pod — used to scope a triggered refresh
-  // (autosave, manual Save) instead of always refetching every type on the
-  // page. Always includes triggerType itself (it needs its own fresh
-  // server-computed decorations, e.g. alertCase/badges, even though its own
-  // edit was already applied optimistically client-side).
+  // `triggerType` just wrote to one or more pods — used to scope a
+  // triggered refresh (autosave, manual Save) instead of always refetching
+  // every type on the page. Always includes triggerType itself (it needs
+  // its own fresh server-computed decorations, e.g. alertCase/badges, even
+  // though its own edit was already applied optimistically client-side).
+  //
+  // writesPods is an ARRAY (not a single pod) because some writes cascade:
+  // saving a Batch also creates 'tub' rows server-side, saving a Closeout
+  // also marks tubs Emptied — neither is captured by the route's own
+  // pod_name alone. See scoop_client_refresh_scope() in includes/_specs.php
+  // for the authoritative list (single-sourced from scoop_routes_config()'s
+  // pod_name + cascades_to).
   //
   // Falls back to the FULL `_pageTypes` set — never a narrower guess —
   // whenever triggerType is missing from SCOOP.refreshScope or has no
-  // writesPod (e.g. a read-only type, or one like CabinetWorkflow that
+  // writesPods (e.g. a read-only type, or one like CabinetWorkflow that
   // writes through a different type's route entirely and so never appears
   // here as a trigger identity). Under-scoping silently is worse than one
   // extra fetch. See PERFORMANCE-REFACTOR.md item #2.
   scopedRefreshTypes(triggerType) {
     const scope = SCOOP?.refreshScope ?? {};
     const entry = scope[triggerType];
-    const writesPod = entry?.writesPod;
+    const writesPods = entry?.writesPods;
 
-    if (!entry || !writesPod) return this._pageTypes;
+    if (!entry || !Array.isArray(writesPods) || !writesPods.length) return this._pageTypes;
 
     const out = new Set([triggerType]);
     for (const type of this._pageTypes) {
       if (type === triggerType) continue;
       const needs = scope[type]?.needs;
-      if (Array.isArray(needs) && needs.includes(writesPod)) out.add(type);
+      if (Array.isArray(needs) && needs.some((n) => writesPods.includes(n))) out.add(type);
     }
 
     return [...out];
