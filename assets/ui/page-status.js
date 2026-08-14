@@ -80,10 +80,25 @@ export default class PageStatus {
   static _items = new Map(); // id -> <li>
   static _editingIds = new Set(); // ids currently reporting a dirty/unsaved form
   static _anyEditing = false; // mirrors _recomputeEditingState's anyEditing — see _updateHeaderText
-  static _loadStart = null;
-  static _loadKey = null;
-  static _countdownTimer = null;
-  static _pendingCacheStatus = undefined; // set by completeLoadTiming(), consumed once nothing's still 'fetching'
+  // key -> { loadStart, ids: Set<statusId>, timer, pendingCacheStatus }. Keyed
+  // (not a single global) because mountAllGrids() now fires every grid's own
+  // fetch concurrently (Promise.all — analytics types self-fetch alongside
+  // the shared bundle fetch, not sequentially before it), so more than one
+  // load can genuinely be in flight at once. `ids` is what lets a shared
+  // grid-count (e.g. every bundle grid on one fetch) know when ITS load is
+  // done without being confused by an unrelated concurrent load's grids
+  // still fetching — see _tryFinishLoadTiming/_anyIdsFetching.
+  static _loads = new Map();
+  // Whichever key most recently called beginLoadTiming() owns the single
+  // shared PAGE-STATUS-ETA <em> — concurrent loads don't get concurrent
+  // widgets, just concurrent per-button rings (see List._bindPageStatusToggle),
+  // so the shared widget staying "last load wins" is a deliberate simplification,
+  // not an oversight. If the owning key finishes while another load is still
+  // running (e.g. Analytics self-fetching slower than the bundle fetch),
+  // _tryFinishLoadTiming() hands ownership to whichever load is still in
+  // _loads rather than leaving the widget frozen on the finished key's
+  // summary — see the handoff there.
+  static _displayKey = null;
 
   static _ensureHost() {
     let DIV = document.querySelector('body .PAGE-STATUS');
@@ -142,7 +157,20 @@ export default class PageStatus {
 
     PageStatus._recomputeOverallState();
     PageStatus._recomputeEditingState();
-    PageStatus._tryFinishLoadTiming();
+    PageStatus._tryFinishAllPending();
+
+    // Lets anything outside this module (e.g. a control's own dock TOGGLE
+    // button — see List._bindPageStatusToggle) mirror one specific grid's
+    // freshness without polling or reaching into PageStatus's internals.
+    document.dispatchEvent(new CustomEvent('ts:page-status:change', { detail: { id, state } }));
+  }
+
+  // On-demand read for a single grid's current state — for a caller that
+  // starts observing after register() already ran (e.g. a control wiring up
+  // its own TOGGLE mid-construction) and needs today's state before the next
+  // change event fires.
+  static getState(id) {
+    return PageStatus._items.get(id)?.dataset.state ?? null;
   }
 
   // Orthogonal to the fresh/stale/fetching lifecycle above: any grid with a
@@ -300,19 +328,38 @@ export default class PageStatus {
     return samples.reduce((sum, ms) => sum + ms, 0) / samples.length;
   }
 
-  // Call once, as early as possible in the initial page-load mount — starts
-  // the clock and shows both rolling-average estimates this page (path +
-  // grid-type combination) has on this device: one for a cache-bust load,
-  // one for a cached reload. Which one actually applies isn't known until
-  // completeLoadTiming() — see the header comment.
+  // Call once per load, as early as possible — starts that key's clock and
+  // (if this key currently owns the shared widget — see _displayKey) shows
+  // both rolling-average estimates this page (path + grid-type combination)
+  // has on this device: one for a cache-bust load, one for a cached reload.
+  // Which one actually applies isn't known until completeLoadTiming() — see
+  // the header comment.
+  //
+  // ids: the pageStatusIds this load will make 'fetching' — used only to
+  // know when THIS key's load is actually done (see _tryFinishLoadTiming);
+  // required for correct completion detection whenever more than one load
+  // can be in flight at once, which is the normal case since mountAllGrids()
+  // fires every grid's fetch concurrently.
   //
   // defaultMs is the cache-bust countdown's starting point when this page
   // has no 'miss' history yet — callers with domain knowledge of which grid
   // types tend to run slow cold queries (e.g. ScoopAPI, for DateActivity/
   // BatchHistory) can pass a larger one than the generic ETA_DEFAULT_MS.
-  static beginLoadTiming(key, defaultMs = ETA_DEFAULT_MS) {
-    PageStatus._loadStart = performance.now();
-    PageStatus._loadKey = key;
+  static beginLoadTiming(key, defaultMs = ETA_DEFAULT_MS, ids = []) {
+    // Same key beginning again before its prior load finished (e.g. a
+    // delete's own pre-emptive countdown — see ScoopAPI.beginLoadTiming's
+    // doc comment — followed shortly by the real fetch's own call) restarts
+    // the clock rather than running two timers for one key.
+    const existing = PageStatus._loads.get(key);
+    if (existing?.timer != null) clearInterval(existing.timer);
+
+    PageStatus._loads.set(key, {
+      loadStart: performance.now(),
+      ids: new Set(ids),
+      timer: null,
+      pendingCacheStatus: undefined,
+    });
+    PageStatus._displayKey = key;
 
     const LI = PageStatus._ensureEtaLi();
     LI.classList.remove('estimating', 'measured');
@@ -331,70 +378,89 @@ export default class PageStatus {
     // this load actually turns out to be a cache hit, completeLoadTiming()
     // stops the countdown well before it reaches zero.
     BUST.dataset.etaSource = (missAvg != null) ? 'history' : 'default';
-    PageStatus._startBustCountdown(BUST, missAvg != null ? missAvg : defaultMs);
+    PageStatus._startCountdown(key, missAvg != null ? missAvg : defaultMs);
   }
 
-  static _startBustCountdown(EM, durationMs) {
-    PageStatus._stopBustCountdown();
+  // Runs this key's own interval independently of any other in-flight
+  // load's — see the _loads doc comment. Only touches the shared
+  // PAGE-STATUS-ETA <em> DOM while this key is the current _displayKey;
+  // every load, display owner or not, still dispatches its own
+  // 'ts:page-status:progress' tick so a button whose grid belongs to this
+  // key (see List._bindPageStatusToggle) stays in sync even while some
+  // *other* load owns the shared widget.
+  static _startCountdown(key, durationMs) {
+    const load = PageStatus._loads.get(key);
+    if (!load) return;
 
     const deadline = performance.now() + durationMs;
-    EM.classList.add('counting-down');
     // Global hook so any page chrome (not just the PAGE-STATUS list itself)
-    // can react while a cache-busting refresh is in flight.
+    // can react while any cache-busting refresh is in flight.
     document.body.classList.add('counting-down');
 
     const tick = () => {
+      // The load may have finished (and been deleted from _loads) between
+      // one tick and the next — bail rather than resurrect stale DOM state.
+      if (PageStatus._loads.get(key) !== load) {
+        clearInterval(load.timer);
+        return;
+      }
+
       const remainingMs = deadline - performance.now();
       const overtime = remainingMs < 0;
 
-      // Counting down: decimal seconds, same precision as before. Once the
-      // estimate elapses, the display doesn't just freeze at 0 — it starts
-      // counting back up from 0 to show how far past the estimate this
-      // fetch has run, whole seconds only (floor, so it starts at 0 exactly
-      // as remainingMs crosses zero).
-      const displayText = overtime
-        ? String(Math.floor(-remainingMs / 1000))
-        : (remainingMs / 1000).toFixed(1);
-
-      // Drives the CSS ring (see css.css's .cache-bust.counting-down rules)
-      // — 0 at start, 100 once the estimate elapses, held at 100 through
-      // overtime. Pure custom-property update, no DOM nodes added.
+      // Drives the CSS ring (see css.css's .cache-bust.counting-down and
+      // .gridToggle.fetching rules) — 0 at start, 100 once the estimate
+      // elapses, held at 100 through overtime. Pure custom-property update,
+      // no DOM nodes added.
       const progressPct = durationMs > 0 ? Math.min(100, (Math.max(0, durationMs - remainingMs) / durationMs) * 100) : 100;
-      EM.style.setProperty('--eta-progress', progressPct.toFixed(2));
-      EM.textContent = displayText;
-      EM.dataset.etaRemainingMs = String(Math.round(remainingMs));
-      EM.classList.toggle('overtime', overtime);
+
+      if (PageStatus._displayKey === key) {
+        const LI = PageStatus._ensureEtaLi();
+        const BUST = LI.querySelector('em.cache-bust');
+        BUST.classList.add('counting-down');
+
+        // Counting down: decimal seconds, same precision as before. Once
+        // the estimate elapses, the display doesn't just freeze at 0 — it
+        // starts counting back up from 0 to show how far past the estimate
+        // this fetch has run, whole seconds only (floor, so it starts at 0
+        // exactly as remainingMs crosses zero).
+        const displayText = overtime
+          ? String(Math.floor(-remainingMs / 1000))
+          : (remainingMs / 1000).toFixed(1);
+
+        BUST.style.setProperty('--eta-progress', progressPct.toFixed(2));
+        BUST.textContent = displayText;
+        BUST.dataset.etaRemainingMs = String(Math.round(remainingMs));
+        BUST.classList.toggle('overtime', overtime);
+      }
+
+      document.dispatchEvent(new CustomEvent('ts:page-status:progress', {
+        detail: { key, ids: [...load.ids], progressPct, overtime },
+      }));
     };
 
     tick();
-    PageStatus._countdownTimer = setInterval(tick, COUNTDOWN_TICK_MS);
+    load.timer = setInterval(tick, COUNTDOWN_TICK_MS);
   }
 
-  static _stopBustCountdown() {
-    if (PageStatus._countdownTimer != null) {
-      clearInterval(PageStatus._countdownTimer);
-      PageStatus._countdownTimer = null;
-    }
-    document.body.classList.remove('counting-down');
-  }
-
-  // Call once, when the fetch that beginLoadTiming() timed has resolved.
-  // cacheStatus ('hit'|'miss') is which bucket this particular fetch landed
-  // in (see refreshPageDomain, which reads it straight off the bundle
-  // response's own _cache flag).
+  // Call once, when the fetch that beginLoadTiming(key, ...) timed has
+  // resolved. cacheStatus ('hit'|'miss') is which bucket this particular
+  // fetch landed in (see refreshPageDomain, which reads it straight off the
+  // bundle/analytics response's own _cache flag).
   //
   // Doesn't necessarily finish the timer immediately — the network response
   // landing isn't the same moment the page is done "fetching" as far as
   // anyone looking at the screen is concerned; every grid still has its own
   // synchronous rebuild to run off the ts:domain:updated event this call
   // typically precedes. So this only stashes the outcome and defers to
-  // _tryFinishLoadTiming(), which actually stops the countdown once no
-  // registered grid is still reporting 'fetching' — re-checked every time
+  // _tryFinishLoadTiming(), which actually stops this key's countdown once
+  // none of ITS ids are still reporting 'fetching' — re-checked every time
   // any grid's state changes (see setState()).
-  static completeLoadTiming(cacheStatus) {
-    if (PageStatus._loadStart == null || !PageStatus._loadKey) return;
-    PageStatus._pendingCacheStatus = cacheStatus;
-    PageStatus._tryFinishLoadTiming();
+  static completeLoadTiming(key, cacheStatus) {
+    const load = PageStatus._loads.get(key);
+    if (!load) return;
+    load.pendingCacheStatus = cacheStatus;
+    PageStatus._tryFinishLoadTiming(key);
   }
 
   static _anyGridFetching() {
@@ -404,16 +470,35 @@ export default class PageStatus {
     return false;
   }
 
-  static _tryFinishLoadTiming() {
-    if (PageStatus._pendingCacheStatus === undefined) return; // nothing awaiting finish
-    if (PageStatus._anyGridFetching()) return; // still visibly fetching — keep the countdown running
+  static _anyIdsFetching(ids) {
+    for (const id of ids) {
+      if (PageStatus._items.get(id)?.dataset.state === 'fetching') return true;
+    }
+    return false;
+  }
 
-    const cacheStatus = PageStatus._pendingCacheStatus;
-    PageStatus._pendingCacheStatus = undefined;
-    PageStatus._stopBustCountdown();
+  // Re-checked from setState()/remove() for every load still awaiting
+  // completion — cheap, since a page rarely has more than a couple of loads
+  // in flight at once.
+  static _tryFinishAllPending() {
+    for (const key of [...PageStatus._loads.keys()]) {
+      PageStatus._tryFinishLoadTiming(key);
+    }
+  }
 
-    const elapsedMs = performance.now() - PageStatus._loadStart;
-    const key = PageStatus._loadKey;
+  static _tryFinishLoadTiming(key) {
+    const load = PageStatus._loads.get(key);
+    if (!load || load.pendingCacheStatus === undefined) return; // nothing awaiting finish
+    if (PageStatus._anyIdsFetching(load.ids)) return; // still visibly fetching — keep the countdown running
+
+    const cacheStatus = load.pendingCacheStatus;
+    PageStatus._loads.delete(key);
+    if (load.timer != null) clearInterval(load.timer);
+    if (![...PageStatus._loads.values()].some(l => l.timer != null)) {
+      document.body.classList.remove('counting-down');
+    }
+
+    const elapsedMs = performance.now() - load.loadStart;
     const bucket = (cacheStatus === 'hit' || cacheStatus === 'miss') ? cacheStatus : 'unknown';
 
     if (bucket !== 'unknown') {
@@ -422,6 +507,20 @@ export default class PageStatus {
       entry[bucket] = [...(entry[bucket] ?? []), elapsedMs].slice(-ETA_SAMPLE_LIMIT);
       all[key] = entry;
       PageStatus._writeEtaHistory(all);
+    }
+
+    if (PageStatus._displayKey !== key) return; // some other load owns the shared widget now
+
+    // This key was the display owner, but another load (e.g. Analytics
+    // still self-fetching while the bundle fetch already landed) is still
+    // genuinely in flight — hand the widget off to it instead of freezing
+    // on this finished key's summary while the real one keeps ticking
+    // unseen. Its own next tick (at most COUNTDOWN_TICK_MS away) repaints
+    // the widget for real, so no need to synthesize a paint here.
+    const remainingKeys = [...PageStatus._loads.keys()];
+    if (remainingKeys.length) {
+      PageStatus._displayKey = remainingKeys.at(-1);
+      return;
     }
 
     const LI = PageStatus._ensureEtaLi();
@@ -440,9 +539,6 @@ export default class PageStatus {
     const seconds = `${(elapsedMs / 1000).toFixed(1)}s`;
     if (bucket === 'hit') CACHED.textContent = `cached ${seconds}`;
     else if (bucket === 'miss') BUST.textContent = seconds;
-
-    PageStatus._loadStart = null;
-    PageStatus._loadKey = null;
   }
 
   static remove(id) {
@@ -457,6 +553,6 @@ export default class PageStatus {
     PageStatus._items.delete(id);
     PageStatus._recomputeOverallState();
     PageStatus._recomputeEditingState();
-    PageStatus._tryFinishLoadTiming();
+    PageStatus._tryFinishAllPending();
   }
 }

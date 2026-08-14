@@ -128,6 +128,51 @@ export default class List extends El{
 
     this._attachCoreDom();
     this._bindEvents();
+    this._bindPageStatusToggle();
+  }
+
+  // Mirrors this control's PageStatus freshness onto its own TOGGLE button —
+  // dockToggle() moves TOGGLE into the shared dock toolbar, so this is what
+  // makes a collapsed panel's loading/fetching state visible without opening
+  // it. Falls back to this.target's id (PopularPlot borrows this method but
+  // never sets this.pageStatusId — see popular-plot.js) since that's the
+  // same id ScoopAPI registered the host under either way.
+  _bindPageStatusToggle() {
+    const id = this.pageStatusId ?? this.target?.id;
+    if (!id || !this.TOGGLE) return;
+
+    const apply = (state) => {
+      this.TOGGLE.classList.toggle('loading', state === 'unknown');
+      this.TOGGLE.classList.toggle('fetching', state === 'fetching');
+      // Leaving 'fetching' mid-countdown (fresh/stale landing) — clear the
+      // ring rather than leave it stuck at whatever % it last reached.
+      if (state !== 'fetching') {
+        this.TOGGLE.style.removeProperty('--eta-progress');
+        this.TOGGLE.classList.remove('overtime');
+      }
+    };
+    apply(PageStatus.getState(id));
+
+    this._onPageStatusChange = (e) => {
+      if (e.detail?.id === id) apply(e.detail.state);
+    };
+    document.addEventListener('ts:page-status:change', this._onPageStatusChange);
+
+    // Same conic-gradient ring PAGE-STATUS's own cache-bust <em> shows (see
+    // css.css's .cache-bust.counting-down and this TOGGLE's own .fetching
+    // rules). PageStatus can time more than one load concurrently now (see
+    // page-status.js's _loads map — analytics types self-fetch alongside the
+    // shared bundle fetch, not sequentially before it), so a tick's own
+    // e.detail.ids is what scopes this to THIS grid's load specifically —
+    // checking only the 'fetching' class isn't enough on its own, since a
+    // *different* concurrent load's ticks would otherwise paint this ring
+    // with the wrong grid's progress.
+    this._onPageStatusProgress = (e) => {
+      if (!e.detail.ids.includes(id)) return;
+      this.TOGGLE.style.setProperty('--eta-progress', e.detail.progressPct.toFixed(2));
+      this.TOGGLE.classList.toggle('overtime', e.detail.overtime);
+    };
+    document.addEventListener('ts:page-status:progress', this._onPageStatusProgress);
   }
 
   init(state = this.state) {
@@ -2119,6 +2164,14 @@ export default class List extends El{
       document.removeEventListener("ts:domain:updated", this._onDomainUpdated);
       this._onDomainUpdated = null;
       this._docListenerBound = false;
+    }
+    if (this._onPageStatusChange) {
+      document.removeEventListener("ts:page-status:change", this._onPageStatusChange);
+      this._onPageStatusChange = null;
+    }
+    if (this._onPageStatusProgress) {
+      document.removeEventListener("ts:page-status:progress", this._onPageStatusProgress);
+      this._onPageStatusProgress = null;
     }
     if (this.pageStatusId) PageStatus.remove(this.pageStatusId);
     this.FORM?.remove();
