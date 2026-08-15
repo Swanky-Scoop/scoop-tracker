@@ -153,25 +153,55 @@ export default class ShiftReportForm extends El {
 
   // Pods has field-level conditional logic but not group-level (checked
   // directly against live field/group data 2026-08-11 — none configured
-  // anyway), so this is a small explicit rule, not a generic system: the
-  // "End of day" group (tempering_cabinet_photo + final_tasks) only makes
-  // sense for a closing shift, so it stays hidden unless shift = Late.
+  // anyway), so this is a small explicit rule, not a generic system:
+  // tempering_cabinet_photo and final_tasks only make sense for a closing
+  // shift, so they stay hidden unless shift = Late. Targeted by field name
+  // (data-field, set in _buildGenericField/_buildPhotoField's WRAP), not by
+  // group — the two fields sit in DIFFERENT field groups today
+  // (tempering_cabinet_photo lives in "flavors_changes" alongside
+  // cake_orders/flavors_changed, which stay visible either way; final_tasks
+  // is alone in "end_of_day"), and Pods group membership is something
+  // that's edited independently of this file, so hiding by group name
+  // silently stopped covering tempering_cabinet_photo the moment it ended
+  // up outside "end_of_day". Hiding by field name can't drift the same way.
+  //
   // Hiding via the native `hidden` attribute (not a CSS-only class) matters
   // for tempering_cabinet_photo's required-ness — per the HTML5 spec, a
   // form control excluded from rendering by an ancestor's `display: none`
   // (which `hidden` applies by default) is also excluded from constraint
   // validation, so the required file input doesn't block submission while
-  // its group is hidden. _submit()'s own explicit photo check mirrors this
-  // by checking the section's actual hidden state rather than a separate
-  // flag, so the two can't drift apart.
+  // hidden. _submit()'s own explicit photo check mirrors this by checking
+  // the field's actual hidden state rather than a separate flag, so the two
+  // can't drift apart.
   //
-  // If another group ever needs the same treatment, this is the place to
-  // add a second rule — not worth a generic engine for one instance.
+  // If another field ever needs the same treatment, add its name to
+  // LATE_ONLY_FIELDS — not worth a generic engine for two instances.
+  //
+  // final_tasks is currently alone in its group ("End of day") — hiding
+  // only the field would leave that group's <h3> heading showing above an
+  // empty section. After toggling, also hide any group section left with
+  // no visible .field children (and re-show one that gains its first
+  // visible field back, e.g. switching from Late to Early to Late again).
+  // Harmless no-op for "flavors_changes" (tempering_cabinet_photo's group),
+  // which always keeps cake_orders/flavors_changed visible regardless.
   _wireConditionalGroups() {
-    const endOfDay = this.ROOT.querySelector('[data-group="end_of_day"]');
-    if (!endOfDay || !this._shiftRadios) return;
+    const LATE_ONLY_FIELDS = ['tempering_cabinet_photo', 'final_tasks'];
+    const nodes = LATE_ONLY_FIELDS
+      .map(name => this.ROOT.querySelector(`[data-field="${name}"]`))
+      .filter(Boolean);
+    if (!nodes.length || !this._shiftRadios) return;
 
-    const toggle = () => { endOfDay.hidden = !this._shiftRadios.no.checked; };
+    const groups = [...this.ROOT.querySelectorAll('.field-group')];
+
+    const toggle = () => {
+      const late = this._shiftRadios.no.checked;
+      nodes.forEach(node => { node.hidden = !late; });
+
+      groups.forEach(group => {
+        const fields = [...group.querySelectorAll('.field')];
+        group.hidden = fields.length > 0 && fields.every(f => f.hidden);
+      });
+    };
     this._shiftRadios.yes.addEventListener('change', toggle);
     this._shiftRadios.no.addEventListener('change', toggle);
     toggle(); // neither radio checked yet on first build — starts hidden
@@ -292,7 +322,7 @@ export default class ShiftReportForm extends El {
         break;
     }
 
-    const WRAP = el('div', { classes: ['field', `field-type-${field.type}`] });
+    const WRAP = el('div', { classes: ['field', `field-type-${field.type}`], data: { field: field.name } });
     if (!skipOwnLabel) WRAP.append(el('label', { classes: ['field-label'], text: field.label }));
     WRAP.append(control);
     if (field.description) WRAP.append(el('p', { text: field.description, classes: ['field-description'] }));
@@ -307,7 +337,7 @@ export default class ShiftReportForm extends El {
   // ── Tempering cabinet photo (required, single) ──────────────────────
   _buildPhotoField(field) {
     const el = this.el;
-    const WRAP = el('div', { classes: ['field', 'field-type-file'] });
+    const WRAP = el('div', { classes: ['field', 'field-type-file'], data: { field: field.name } });
     WRAP.append(el('label', { classes: ['field-label'], text: field.label }));
     
     // capture="environment" biases mobile/tablet browsers toward opening the
@@ -575,18 +605,18 @@ export default class ShiftReportForm extends El {
 
   // ── Submit ────────────────────────────────────────────────────────
   async _submit() {
-    // tempering_cabinet_photo is only required while its group ("End of
-    // day") is actually visible (see _wireConditionalGroups) — checking the
-    // section's own hidden state here, rather than a separate tracked flag,
-    // means this can't drift out of sync with what the user can actually see.
-    const endOfDay = this.ROOT.querySelector('[data-group="end_of_day"]');
-    const photoRequired = !endOfDay || !endOfDay.hidden;
+    // tempering_cabinet_photo is only required while it's actually visible
+    // (see _wireConditionalGroups) — checking the field's own hidden state
+    // here, rather than a separate tracked flag, means this can't drift out
+    // of sync with what the user can actually see.
+    const photoField = this.ROOT.querySelector('[data-field="tempering_cabinet_photo"]');
+    const photoRequired = !photoField || !photoField.hidden;
     if (photoRequired && !this._photoId) {
       Toast.addMessage({ title: 'Photo required', message: 'Upload the tempering cabinet photo before submitting.' });
       return;
     }
 
-    // Omit the key entirely when there's no photo (an early shift, group
+    // Omit the key entirely when there's no photo (an early shift, field
     // hidden) rather than sending an explicit null — matches how a
     // never-filled-in field would arrive, not a distinct "clear it" signal.
     const payload = {};

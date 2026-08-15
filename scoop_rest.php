@@ -52,11 +52,13 @@ scoop_require('includes/analytics.php');
 scoop_require('includes/audit.php');
 scoop_require('includes/audit-ui.php');
 scoop_require('includes/republish-tubs-ui.php');
+scoop_require('includes/supply-import-ui.php');
 /**
  * UI glue (shortcode/admin/enqueue) last
  */
 scoop_require('includes/enqueue.php');
 scoop_require('includes/shortcode.php');
+scoop_require('includes/dock-template.php');
 scoop_require('includes/admin-page.php');
 
 /**
