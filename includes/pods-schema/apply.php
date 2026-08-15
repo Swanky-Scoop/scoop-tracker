@@ -48,7 +48,34 @@ function scoop_schema_apply_additive(array $schema, array $diff): array {
     }
     $result['created_pods'][] = $pod_name;
 
+    // save_pod() above already creates any field nested inside a 'groups'
+    // entry, as part of that same call — Pods threads each group's
+    // freshly-resolved (THIS environment's own) id straight onto its
+    // nested fields (PodsAPI::save_pod(), ~line 2394 in classes/PodsAPI.php),
+    // never consulting that field's own 'group' value at all on that path.
+    // Unconditionally re-processing every field again below via the flat
+    // 'fields' dict is redundant when 'groups' covered it, AND fragile —
+    // that path DOES need each field's own 'group' to resolve as a real
+    // slug on its own. Confirmed on a real OPS run 2026-08-16: 'groups' was
+    // present, save_pod() alone correctly created all 14 shift_report
+    // fields in their right groups, and the then-unconditional loop below
+    // still re-ran save_field() on every one of them and reported 21 fake
+    // "errors" for work that had already succeeded (harmless in that case
+    // only because Pods didn't corrupt the already-good result).
+    //
+    // Fix: check what's ACTUALLY live after save_pod() and only attempt
+    // save_field() for whatever's still missing — correct whether the
+    // schema used 'groups' (nothing left to do), was flat-only (everything
+    // left to do), or mixed (only the uncovered fields left to do).
+    $live_pod = $api->load_pod(['name' => $pod_name]);
+    $live_field_names = is_array($live_pod['fields'] ?? null) ? array_keys($live_pod['fields']) : [];
+
     foreach ($fields as $field_name => $field_def) {
+      if (in_array($field_name, $live_field_names, true)) {
+        $result['created_fields'][] = "{$pod_name}.{$field_name}";
+        continue;
+      }
+
       $field_params = $field_def;
       $field_params['pod'] = $pod_name;
       $field_params['name'] = $field_name;
