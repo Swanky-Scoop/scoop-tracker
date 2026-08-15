@@ -200,28 +200,68 @@ next attempt doesn't have to re-discover all of this from scratch.
      for. In the one clean run that reached this point, it did not corrupt
      the outcome, but it's a genuine additional actor in the race that
      needs ruling in or out, not assumed harmless from one observation.
-   - Attempted the same repro against an **actual freshly-batch-created**
-     tub (the real scenario — step 1's batch creates tubs via
-     `scoop_create_batch_tubs_direct()`'s raw-SQL bulk-insert path, bypassing
-     Pods entirely for creation; everything above was checked against an
-     older, normally-created tub) — this hit a *different*, already-known
-     flakiness first: the `flavor_picker` modal blocked the "Change Plan"
-     click (`<div class="modal flavor_picker show">…</div> intercepts
-     pointer events`, same failure mode as item 3 above), never reaching
-     the actual write/reload check. **The freshly-created-tub scenario is
-     still unconfirmed.**
+   - First attempt at reproducing against an **actual freshly-batch-created**
+     tub hit what looked like the modal-blocking flakiness from item 3
+     (`<div class="modal flavor_picker show">…</div> intercepts pointer
+     events`) — but turned out to be a **false alarm caused by the repro's
+     own target slot**, not real flakiness: that slot's `current_flavor`
+     was a leftover from an earlier repro run with no tub actually linked
+     (see "Known gaps" above — a legitimate, `Confirm Cabinet`-resolvable
+     state, not a bug), so `add-next` had no current occupant to offer a
+     quick "same flavor" screen for and jumped straight to the full picker,
+     where a stray screenshot then revealed a second, separate false alarm:
+     the picker's own "no duplicate flavor per cabinet" rule
+     (`_siblingFlavorIds` in `cabinet-workflow-grid-model.js`) correctly
+     excluded the fixture flavor because *another* slot in the same
+     cabinet — also polluted by an earlier repro run — still had it as
+     `current_flavor`. Both were artifacts of repro scripts not cleaning up
+     after themselves on early failure, not the mystery itself.
+   - Once a properly-occupied target slot was used and both of those
+     leftovers cleaned up, a **third, real finding** surfaced: the picker
+     can be interacted with while a background bundle refetch (triggered by
+     the batch save moments earlier) is still in flight — visually
+     confirmed via an empty flavor tile and a "Fetching" status indicator
+     at the moment of failure. Waiting for `ScoopAPI`'s own in-flight-fetch
+     promise (`_domainInflight`) to clear before interacting fixed this.
+   - With all three of the above resolved, **the actual mystery reproduces
+     cleanly and repeatably against a real freshly-batch-created tub**:
+     both writes report `{"ok": true, ...}`, a hard reload after still
+     reads `Freezing`/unlinked. This is now captured in a standalone,
+     minimal, git-committed script —
+     `tests/diagnostic-swap-write-revert.spec.js` — instead of only living
+     in the full 8-step lifecycle test, so the next attempt can iterate on
+     just this without paying for steps 1/2/5-8 every run. Skipped by
+     default (`test.skip` unless `RUN_DIAGNOSTIC=1`) since it briefly
+     displaces a tub from a real, currently-in-service cabinet slot — see
+     that file's own header for run instructions and full context.
+   - Side note, investigated but inconclusive: creating a batch via a raw
+     PHP CLI call to `scoop_handle_request()` (rather than through a real
+     browser/REST request) left the created tubs' `wp_pods_tub` scalar
+     fields (`amount`, `state`) `NULL` — `scoop_create_tubs_for_new_batch`
+     presumably bailed at one of its early guards
+     (`includes/hooks/batch-tub.php:230-259`) in that context. Real
+     browser-driven batch creation is unaffected (confirmed repeatedly with
+     correct `amount`/`state` values throughout this session) — this
+     looked like an artifact of the CLI repro environment, not a production
+     bug, and was **not chased further** because it was a tangent from the
+     actual mystery, not a lead on it. Worth a quick look if anyone
+     revisits CLI-based repros of batch creation specifically.
 
 **Current read:** the server-side write/hook/cache logic is solid — ruled
 out by direct, in-process, DB-verified testing, not just by reasoning about
-the code. Two real leads remain open, neither yet confirmed as *the* cause:
-(a) whether a freshly-batch-created tub (raw-SQL creation path) behaves
-differently under this exact write than an older, normally-created one —
-the one case not yet actually tested end-to-end; (b) the newly-found bulk
-`confirm_state` write racing the swap — observed, not yet stress-tested
-across multiple runs or proven harmless. Next attempt should fix the
-modal-blocking flakiness first (it blocks getting a clean repro at all for
-the freshly-created-tub case), then repeat item 7's in-process checks
-specifically against a same-request batch tub.
+the code. The mystery is real, reproduces reliably now via
+`diagnostic-swap-write-revert.spec.js`, and is specifically tied to a
+freshly-batch-created tub (an older, normally-created tub never showed the
+problem, across several separate checks). The next session should start
+from that diagnostic script directly — no need to re-derive any of the
+above — and dig into what's actually different about a tub created via
+`scoop_create_batch_tubs_direct()`'s raw-SQL bulk-insert path (bypassing
+Pods entirely at creation) versus one created normally, when it's updated
+moments later through the normal `pods_api()->save_pod_item()` path. The
+previously-suspected bulk `confirm_state` write turned out to fire on
+CabinetWorkflow's initial page mount, not from clicking through the swap UI
+— so it's very unlikely to be the cause, but wasn't stress-tested enough to
+rule out with full confidence.
 
 **Ruled out, don't re-check:** the tub id being wrong (verified correct via
 raw SQL, same process, immediately after write); `scoop_coerce_value`
