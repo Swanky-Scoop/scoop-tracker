@@ -754,7 +754,23 @@ export default class ScoopAPI {
       const model = grid?.modelInstance;
       if (typeof model?.getServerFilterParams !== 'function') return;
 
-      Object.assign(params, model.getServerFilterParams());
+      const gridParams = model.getServerFilterParams() ?? {};
+      for (const [key, value] of Object.entries(gridParams)) {
+        // 'date_filters' is a comma-joined list of filter KEYS (see
+        // scoop_parse_date_filter_keys in bundle-fetch.php) that more than
+        // one on-page grid can legitimately contribute to (e.g. EmptiedLog's
+        // 'activity' and BatchHistory's 'created') — union them instead of
+        // letting whichever grid merges last silently wipe out the other's
+        // filter key, which otherwise makes the server fall back to "no
+        // rows" for the type that lost (see the 'batch' 1=0 fallback).
+        if (key === 'date_filters' && params.date_filters) {
+          const existing = String(params.date_filters).split(',').filter(Boolean);
+          const incoming = String(value).split(',').filter(Boolean);
+          params.date_filters = [...new Set([...existing, ...incoming])].join(',');
+        } else {
+          params[key] = value;
+        }
+      }
     });
 
     return params;

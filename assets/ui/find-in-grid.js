@@ -27,7 +27,18 @@ export default class FindInGrid {
   }
 
   targets() {
-    return [...this.root.querySelectorAll(this.targetSelector)];
+    const groups = [...this.root.querySelectorAll(this.targetSelector)];
+    if (groups.length) return groups;
+
+    // Flat/ungrouped grids (e.g. BatchHistory) never render a tr.group
+    // header row at all (see Grid.buildGroupDom's "synthetic ungrouped
+    // container" case) — the default target list is always empty for them,
+    // so the filter accepted input but silently narrowed nothing. Fall back
+    // to filtering individual data rows directly. getText/setVisible
+    // already handle a non-group element correctly (getText uses the
+    // element's own text instead of its group body's; setVisible only
+    // hides a collapsible parent, which a flat grid's shared tbody isn't).
+    return [...this.root.querySelectorAll('tr.row')];
   }
 
   getText(el) {
