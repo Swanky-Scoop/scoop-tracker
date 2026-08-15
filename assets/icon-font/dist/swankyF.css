@@ -1,10 +1,10 @@
 @font-face {
     font-family: "swankyF";
-    src: url("./swankyF.eot?7dbf3aa4692beaaf6095d19b293e058f?#iefix") format("embedded-opentype"),
-url("./swankyF.woff2?7dbf3aa4692beaaf6095d19b293e058f") format("woff2"),
-url("./swankyF.woff?7dbf3aa4692beaaf6095d19b293e058f") format("woff"),
-url("./swankyF.ttf?7dbf3aa4692beaaf6095d19b293e058f") format("truetype"),
-url("./swankyF.svg?7dbf3aa4692beaaf6095d19b293e058f#swankyF") format("svg");
+    src: url("./swankyF.eot?975d60fd3e9a56de1d8a4877e6249e19?#iefix") format("embedded-opentype"),
+url("./swankyF.woff2?975d60fd3e9a56de1d8a4877e6249e19") format("woff2"),
+url("./swankyF.woff?975d60fd3e9a56de1d8a4877e6249e19") format("woff"),
+url("./swankyF.ttf?975d60fd3e9a56de1d8a4877e6249e19") format("truetype"),
+url("./swankyF.svg?975d60fd3e9a56de1d8a4877e6249e19#swankyF") format("svg");
 }
 
 i[class^="si-"]:before, i[class*=" si-"]:before {
@@ -54,30 +54,33 @@ i[class^="si-"]:before, i[class*=" si-"]:before {
 .si-plus:before {
     content: "\f10c";
 }
-.si-s:before {
+.si-q:before {
     content: "\f10d";
 }
-.si-Shooting-Star--Streamline-Phosphor:before {
+.si-s:before {
     content: "\f10e";
 }
-.si-t:before {
+.si-Shooting-Star--Streamline-Phosphor:before {
     content: "\f10f";
 }
-.si-Trash--Streamline-Phosphor:before {
+.si-t:before {
     content: "\f110";
 }
-.si-Trash-Bold--Streamline-Phosphor:before {
+.si-Trash--Streamline-Phosphor:before {
     content: "\f111";
 }
-.si-u:before {
+.si-Trash-Bold--Streamline-Phosphor:before {
     content: "\f112";
 }
-.si-User-List--Streamline-Phosphor:before {
+.si-u:before {
     content: "\f113";
 }
-.si-x:before {
+.si-User-List--Streamline-Phosphor:before {
     content: "\f114";
 }
-.si-z:before {
+.si-x:before {
     content: "\f115";
+}
+.si-z:before {
+    content: "\f116";
 }

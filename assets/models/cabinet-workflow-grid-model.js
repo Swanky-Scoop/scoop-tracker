@@ -64,6 +64,13 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
   constructor(name = 'CabinetWorkflow', domain, attrs = {}) {
     super(name, domain, attrs);
 
+    // No _config.php entry (see this file's header comment) means
+    // BaseGridModel's icon fallback never gets a server-driven value to use
+    // — set it directly here rather than adding a _config.php entry just
+    // for this, which would flip the `if (this.metaData)` buildCols() gate
+    // on and break the "no server-driven metaData" design on purpose.
+    this.icon = 'if:c';
+
     // This model ships no columns (see this file's header comment), so
     // List._onDomainUpdated's additive _patchRefresh path — which patches
     // existing rows by iterating a model's columns — has nothing to work

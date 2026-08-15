@@ -66,17 +66,19 @@ function scoop_routes_config(string $batch_key = ''): array {
       'icon'         => 'if:m',
       'canvas_mode'  => 'full-nostack',
     ],
-    // Read-only "what got emptied, by day" log — see
-    // assets/models/emptied-log-grid-model.js. No path/methods/mode/
-    // envelope_key here (same as ItemPivot above): it has no write endpoint
-    // of its own, it's read purely through the /bundle endpoint, which is
-    // open to any authenticated user rather than gated per-route (see
-    // includes/_routes.php) — that's what makes it visible to every logged-in
-    // role without a _policy.php entry.
+    // "What got emptied, by day" log — see assets/models/emptied-log-grid-model.js.
+    // No path/methods/mode/envelope_key here (same as ItemPivot above): it's
+    // read purely through the /bundle endpoint, open to any authenticated
+    // user rather than gated per-route (see includes/_routes.php) — that's
+    // what makes it visible to every logged-in role without a _policy.php
+    // entry of its own. Its state/use cells ARE inline-editable (so a closed
+    // tub can be undone from here) but that writes through FlavorTub's own
+    // route/permissions, not a route of this type's — see
+    // EmptiedLogGridModel's writeEnvelope and List.writeType in _list.js.
     'EmptiedLog' => [
       'display_title' => 'Emptied Log',
-      'icon'         => 'if:e',
-      'canvas_mode'  => 'full-nostack',
+      'icon'         => 'if:q',
+      'canvas_mode'  => 'half-stack',
     ],
     'Flavors' => [
       'display_title' => 'Flavor History',

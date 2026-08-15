@@ -50,6 +50,14 @@ export default class List extends El{
     target._dockListInstance = this;
     this.name = name;
     this.modelInstance = config?.modelInstance ?? null;
+    // Entity/envelope writes actually POST under — normally same as
+    // this.name, but a model can set `writeEnvelope` to route its saves
+    // through a DIFFERENT type's write endpoint/permissions entirely (e.g.
+    // EmptiedLogGridModel's inline tub.state edit reuses FlavorTub's own
+    // route rather than needing one of its own — see _config.php's
+    // EmptiedLog comment). Read-side identity (this.name — DOM input names,
+    // dock icon, SCOOP.routes GET lookup) is untouched by this.
+    this.writeType = config?.modelInstance?.writeEnvelope ?? name;
     this.location = config?.modelInstance?.location ?? 0;
     this.formCodec = config?.formCodec;
     this.msgManager = config?.msgManager;
@@ -1690,7 +1698,7 @@ export default class List extends El{
     this._reportEditingState();
 
     try {
-      const r = await this.api.postJson(changes, this.name);
+      const r = await this.api.postJson(changes, this.writeType);
 
       if (!r.ok || !r.data?.ok) {
         Toast.addMessage({
@@ -1735,7 +1743,7 @@ export default class List extends El{
       // full-page refetch PERFORMANCE-REFACTOR.md #2 flagged as the worst
       // offender. Falls back to the full page union on its own for any
       // type not covered by SCOOP.refreshScope.
-      const types = this.api?.scopedRefreshTypes?.(this.name) ?? null;
+      const types = this.api?.scopedRefreshTypes?.(this.writeType) ?? null;
       this.api?.refreshPageDomain({ force: true, info: { name: this.name }, types }).catch(err =>
         console.error('Background domain refresh failed:', err)
       );
@@ -1940,7 +1948,7 @@ export default class List extends El{
         if (this._filter) this._filter.clear();
         if (this._filter?.inp) this._filter.inp.focus();
 
-        const r = await this.api.postJson(changes, this.name);
+        const r = await this.api.postJson(changes, this.writeType);
 
         if (!r.ok) {
           Toast.addMessage({title:'no POST', message:`HTTP ${r.status}`});
@@ -1982,7 +1990,7 @@ export default class List extends El{
           // Scope to just the on-page types this save could plausibly
           // affect (see ScoopAPI.scopedRefreshTypes) — same reasoning as
           // _scheduleBackgroundDomainRefresh above.
-          const savedTypes = this.api.scopedRefreshTypes?.(this.name) ?? null;
+          const savedTypes = this.api.scopedRefreshTypes?.(this.writeType) ?? null;
           this.api.refreshPageDomain({ force: true, toast:TOAST, info:{name:this.name, response:r}, types: savedTypes })
             .then(() => {
               // Usually consumed by the ts:domain:updated listener already;
