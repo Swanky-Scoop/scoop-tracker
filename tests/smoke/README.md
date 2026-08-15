@@ -169,18 +169,65 @@ next attempt doesn't have to re-discover all of this from scratch.
    independent read, is not explained by anything found so far (not a
    click-timing issue, not a stale-DOM issue, not an obvious client-side
    cache/merge issue, since the read was a genuine fresh page load).
+7. **(2026-08-14, GUI-SMOKE branch) Isolated the write path from the browser
+   entirely** via a PHP CLI script that calls the exact same code the REST
+   route calls (`scoop_pods_api_save` / `scoop_handle_request`), then reads
+   the DB back in-process, no HTTP/client involved. This **conclusively
+   clears the server-side write/hook/cache logic**:
+   - A single tub write (`state` + `slot` together) lands correctly and
+     instantly — confirmed via raw SQL on `wp_pods_tub`/`wp_podsrel`, not
+     just via `pods()->field()` (rules out a Pods-object-cache-only false
+     positive).
+   - None of the `pods_api_pre_save_pod_item_tub` hooks
+     (`scoop_enforce_tub_rules` etc. — see `includes/hooks/tub-state.php`)
+     touch or revert a `Freezing`→`Opened`+`slot` transition; the state-
+     transition guard only has branches for `old_state === 'Emptied'` and
+     `old_state === 'Opened'`, nothing for `Freezing`.
+   - `save_post`/`save_post_tub` fire correctly for this write and
+     `scoop_cache_version` bumps (confirmed by reading the option
+     before/after in the same request) — the bundle transient cache is
+     **not** stale-serving this.
+   - The **full two-write sequence** `swapSlotToFlavor` performs (tub write,
+     then the slot's `current_flavor` write) — run twice via the real
+     `scoop_handle_request()` dispatcher, in-process — left the tub
+     correctly `Opened` and linked both times. The second write does not
+     revert the first.
+   - New finding: clicking through the swap UI (`add-next` → `Change Plan`)
+     fires a previously-undocumented **bulk write** to `/wp-json/scoop/v1/planning`
+     setting `confirm_state: "filled"` across every slot in the cabinet
+     (~30 slots in one request, `source: "workflow"`) — a real background
+     write racing the two intentional ones that nothing here had accounted
+     for. In the one clean run that reached this point, it did not corrupt
+     the outcome, but it's a genuine additional actor in the race that
+     needs ruling in or out, not assumed harmless from one observation.
+   - Attempted the same repro against an **actual freshly-batch-created**
+     tub (the real scenario — step 1's batch creates tubs via
+     `scoop_create_batch_tubs_direct()`'s raw-SQL bulk-insert path, bypassing
+     Pods entirely for creation; everything above was checked against an
+     older, normally-created tub) — this hit a *different*, already-known
+     flakiness first: the `flavor_picker` modal blocked the "Change Plan"
+     click (`<div class="modal flavor_picker show">…</div> intercepts
+     pointer events`, same failure mode as item 3 above), never reaching
+     the actual write/reload check. **The freshly-created-tub scenario is
+     still unconfirmed.**
 
-**Plausible next things to check, not yet checked:** whether the specific
-tub id captured in step 1 is actually correct at the moment it's used
-(add a raw DB check immediately after the "successful" write, in the same
-process, before any more page navigation, to rule out simply grabbing the
-wrong id); whether some *other* write (a background/scheduled refresh,
-another concurrent test artifact) is racing the REST write at the database
-level; whether the specific REST payload shape silently fails validation
-for a reason that still returns `ok: true` (check `scoop_tubs_allowed_fields`
-and whatever hook runs on `pods_api_pre_save_pod_item_tub` for a rule that
-might reject or silently drop the `slot`/`state` fields together under some
-condition not exercised by this exact tub's prior history).
+**Current read:** the server-side write/hook/cache logic is solid — ruled
+out by direct, in-process, DB-verified testing, not just by reasoning about
+the code. Two real leads remain open, neither yet confirmed as *the* cause:
+(a) whether a freshly-batch-created tub (raw-SQL creation path) behaves
+differently under this exact write than an older, normally-created one —
+the one case not yet actually tested end-to-end; (b) the newly-found bulk
+`confirm_state` write racing the swap — observed, not yet stress-tested
+across multiple runs or proven harmless. Next attempt should fix the
+modal-blocking flakiness first (it blocks getting a clean repro at all for
+the freshly-created-tub case), then repeat item 7's in-process checks
+specifically against a same-request batch tub.
+
+**Ruled out, don't re-check:** the tub id being wrong (verified correct via
+raw SQL, same process, immediately after write); `scoop_coerce_value`
+mis-coercing `state`/`slot`; any `pods_api_pre_save_pod_item_tub` hook
+rejecting or silently dropping the fields; the bundle cache not
+invalidating (`save_post` fires, `scoop_cache_version` bumps).
 
 ## Extending this suite
 
