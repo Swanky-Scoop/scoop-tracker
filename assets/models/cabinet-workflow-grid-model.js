@@ -71,6 +71,12 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     // on and break the "no server-driven metaData" design on purpose.
     this.icon = 'if:c';
 
+    // Find-in-list text filter, narrowing by cabinet (this grid groups
+    // slots by cabinet — see buildRows below). Works via find-in-list.js's
+    // class-only .group/.row selectors, so it needs no changes on this
+    // model's side beyond opting in.
+    this.filter = true;
+
     // This model ships no columns (see this file's header comment), so
     // List._onDomainUpdated's additive _patchRefresh path — which patches
     // existing rows by iterating a model's columns — has nothing to work

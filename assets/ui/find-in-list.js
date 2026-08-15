@@ -1,14 +1,19 @@
 ///////////////////////////////////
-// Filter input that narrows elements
-// shown in a table
-// designed GIRD forms in mind
-// depends on UTIL_Find.js
+// Filter input that narrows the .group elements shown in a List (Grid's
+// tr.group or Tile's div.group — selected by class only, not tag, so this
+// one implementation serves both renderers; see tile.js's buildGroupDom
+// comment on why they share class hooks). Falls back to filtering
+// individual .row elements directly for a grid with no groups at all.
 //////////////////////////////////
 
-export default class FindInGrid {
+export default class FindInList {
   constructor(host, {
     root = host,
-    targetSelector = "tr.group",
+    // Class-only, not tag-qualified — Grid (tr.group) and Tile (div.group)
+    // deliberately share this class so shared logic like this one file
+    // works for both renderers without a per-List-subclass copy (see
+    // tile.js's buildGroupDom comment).
+    targetSelector = ".group",
     textKey = "groupLabel",       // use data-group-label
     typeKey = "groupType",        // use data-group-type
     defaultType = null,           // e.g. if only one type present
@@ -30,20 +35,20 @@ export default class FindInGrid {
     const groups = [...this.root.querySelectorAll(this.targetSelector)];
     if (groups.length) return groups;
 
-    // Flat/ungrouped grids (e.g. BatchHistory) never render a tr.group
-    // header row at all (see Grid.buildGroupDom's "synthetic ungrouped
-    // container" case) — the default target list is always empty for them,
-    // so the filter accepted input but silently narrowed nothing. Fall back
-    // to filtering individual data rows directly. getText/setVisible
-    // already handle a non-group element correctly (getText uses the
-    // element's own text instead of its group body's; setVisible only
-    // hides a collapsible parent, which a flat grid's shared tbody isn't).
-    return [...this.root.querySelectorAll('tr.row')];
+    // Flat/ungrouped grids (e.g. BatchHistory) never render a .group header
+    // at all (see Grid.buildGroupDom's "synthetic ungrouped container"
+    // case) — the default target list is always empty for them, so the
+    // filter accepted input but silently narrowed nothing. Fall back to
+    // filtering individual data rows directly. getText/setVisible already
+    // handle a non-group element correctly (getText uses the element's own
+    // text instead of its group body's; setVisible only hides a collapsible
+    // parent, which a flat grid's shared group container isn't).
+    return [...this.root.querySelectorAll('.row')];
   }
 
   getText(el) {
     const label = (el?.dataset?.[this.textKey] ?? "").toString();
-    const groupBody = el?.matches?.('tr.group') ? el.parentElement : el;
+    const groupBody = el?.matches?.(this.targetSelector) ? el.parentElement : el;
     const rowText = (groupBody?.innerText ?? groupBody?.textContent ?? "").toString();
     return `${label} ${rowText}`;
   }
@@ -54,7 +59,7 @@ export default class FindInGrid {
 
   setVisible(el, visible) {
     const p = el.parentElement;
-    if( p.matches('tbody.collapsible') ) p.hidden = !visible;
+    if( p.matches('.collapsible') ) p.hidden = !visible;
     el.hidden = !visible;
   }
 
@@ -74,7 +79,7 @@ export default class FindInGrid {
     return String(s ?? "")
       .normalize("NFKC")
       .toLowerCase()
-      .replace(/[\u2018\u2019\u201B\u2032]/g, "'")
+      .replace(/[‘’‛′]/g, "'")
       .trim();
   }
 
@@ -121,7 +126,7 @@ export default class FindInGrid {
 
   setGroupOpen(groupRow, open) {
     const tb = groupRow?.parentElement;
-    if (!tb || !tb.matches?.("tbody.collapsible")) return;
+    if (!tb || !tb.matches?.(".collapsible")) return;
     tb.classList.toggle("opened", open);
     tb.classList.toggle("closed", !open);
   }

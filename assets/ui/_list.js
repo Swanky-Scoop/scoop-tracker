@@ -26,7 +26,7 @@
 import El         from "./_el.js";
 import FindIt     from "./find-it.js";
 import TextIt     from "./text-it.js";
-import FindInGrid from "./find-in-grid.js";
+import FindInList from "./find-in-list.js";
 import Toast      from "./toast.js";
 import Details    from "./details.js";
 import PageStatus from "./page-status.js";
@@ -195,7 +195,7 @@ export default class List extends El{
 
     this._buildFilters(state);
     this._rebuildBodies(state);
-    this._filter = (state?.filter) ? new FindInGrid(this.FORM, { root: this.FRAME }) : this.filter;
+    this._filter = (state?.filter) ? new FindInList(this.FORM, { root: this.FRAME }) : this.filter;
 
     this._captureBaseline();
     this._applyAutosaveUI();
@@ -581,9 +581,9 @@ export default class List extends El{
     });
   }
 
-  // Re-runs the active FindInGrid filter (if this grid has one and its
+  // Re-runs the active FindInList filter (if this grid has one and its
   // query is non-empty) against whatever's now rendered. Needed after any
-  // patch/reconcile: FindInGrid (find-in-grid.js) only re-evaluates on its
+  // patch/reconcile: FindInList (find-in-list.js) only re-evaluates on its
   // own input event, so it has no way to know the DOM changed underneath it
   // — without this, a group patched or newly created after the user already
   // typed a filter query would show up unfiltered instead of respecting it.
@@ -1631,7 +1631,7 @@ export default class List extends El{
     return !fields || fields.has(colKey);
   }
 
-  // Also the single place that reconciles SUBMIT/the find-in-grid text
+  // Also the single place that reconciles SUBMIT/the find-in-list text
   // filter against the current render — called right after every
   // _rebuildBodies/_patchBodies (init/refresh/_patchRefresh), so this.items
   // and this.fields both already reflect what's on screen.
@@ -1667,7 +1667,7 @@ export default class List extends El{
         : (on && !partial) || !hasWriteableFields || !hasItems;
     }
 
-    // The find-in-grid text filter only ever narrows an existing list —
+    // The find-in-list text filter only ever narrows an existing list —
     // nothing to narrow with zero items, so hide it along with SUBMIT.
     if (this._filter?.inp) this._filter.inp.hidden = !hasItems;
   }
@@ -1930,7 +1930,7 @@ export default class List extends El{
           return;
         }
 
-        // Move focus to the find-in-grid filter right now — synchronously,
+        // Move focus to the find-in-list filter right now — synchronously,
         // tied to the user's own action (Ctrl+Enter or clicking Save), with
         // no `await` between here and the call. Deliberately NOT tied to the
         // POST's response (below) or the refresh that follows it — both are

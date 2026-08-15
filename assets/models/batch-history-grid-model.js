@@ -29,7 +29,7 @@ import Indexer       from "../data/indexer.js";
 export default class BatchHistoryGridModel extends BaseGridModel {
   constructor(name = 'BatchHistory', domain, attrs = {}, metaData = null) {
     super(name, null, attrs, metaData);
-    this.filter = true;                                  // enable find-in-grid text filter
+    this.filter = true;                                  // enable find-in-list text filter
     this.dateFilters  = this._normalizeDateFilters(attrs?.dateFilters);
     this.filterValues = this._initialFilterValues(attrs?.filterValues);
     this._build();

@@ -188,3 +188,116 @@ function scoop_cabinet_post_save_create_slots($pieces, $is_new_item, $id) {
     scoop_guard_leave($guard_key);
   }
 }
+
+/* ------------------------------------------------------------
+ * Slot: current_flavor/immediate_flavor/next_flavor uniqueness
+ * ------------------------------------------------------------
+ * A flavor may hold at most one designation (current/immediate/next)
+ * across the whole slot table at a time. Assigning a flavor to one slot's
+ * designation field clears it from wherever else it was already
+ * designated: a different field on the SAME slot (pre-save, by mutating
+ * $pieces before it's written) or any OTHER slot (post-save, once this
+ * slot's own save is confirmed, since that's a genuinely separate row).
+ *
+ * Pods-level hooks, not REST-layer logic — applies regardless of write
+ * path: the Cabinet grid's /planning route, CabinetWorkflow's tub-swap/
+ * promote writes (Confirm Cabinet, flavor picker), WP admin, or a direct
+ * Pods call.
+ * ------------------------------------------------------------ */
+
+function scoop_slot_designation_fields(): array {
+  return ['current_flavor', 'immediate_flavor', 'next_flavor'];
+}
+
+add_filter('pods_api_pre_save_pod_item_slot', 'scoop_slot_pre_save_dedupe_own_fields', 10, 2);
+function scoop_slot_pre_save_dedupe_own_fields($pieces, $is_new_item) {
+  $fields  = scoop_slot_designation_fields();
+  $this_id = !empty($pieces['id']) ? (int) $pieces['id'] : 0;
+
+  // Which designation fields is THIS save actually setting, and to what
+  // flavor? Only positive incoming values matter — clearing a field to 0
+  // has nothing to dedupe.
+  $incoming = [];
+  foreach ($fields as $f) {
+    if (!isset($pieces['fields'][$f]['value'])) continue;
+    $fid = function_exists('scoop_rel_id')
+      ? (int) scoop_rel_id($pieces['fields'][$f]['value'])
+      : (int) $pieces['fields'][$f]['value'];
+    if ($fid > 0) $incoming[$f] = $fid;
+  }
+  if (!$incoming) return $pieces;
+
+  $slot_pod = null; // lazy DB lookup, at most once per save
+  foreach ($fields as $f) {
+    if (!isset($incoming[$f])) continue;
+    $fid = $incoming[$f];
+
+    foreach ($fields as $other) {
+      if ($other === $f) continue;
+
+      if (array_key_exists($other, $incoming)) {
+        // Both fields set in THIS SAME save to the SAME flavor — field
+        // priority order (current > immediate > next) decides which one
+        // keeps it; the later field is cleared.
+        if ($incoming[$other] === $fid && array_search($f, $fields, true) < array_search($other, $fields, true)) {
+          $pieces['fields'][$other]['value'] = 0;
+        }
+        continue;
+      }
+
+      // $other isn't part of this save (unchanged) — check its current DB
+      // value instead.
+      if (!$this_id) continue;
+      $slot_pod ??= pods('slot', $this_id);
+      if ($slot_pod && $slot_pod->exists() && (int) $slot_pod->field($other . '.ID') === $fid) {
+        $pieces['fields'][$other] = ['value' => 0];
+        scoop_mark_active($pieces, $other);
+      }
+    }
+  }
+
+  return $pieces;
+}
+
+add_filter('pods_api_post_save_pod_item_slot', 'scoop_slot_post_save_dedupe_other_slots', 10, 3);
+function scoop_slot_post_save_dedupe_other_slots($pieces, $is_new_item, $id) {
+  $slot_id = (int) $id;
+  if (!$slot_id) return $pieces;
+  if (!function_exists('pods_api') || !is_object(pods_api())) return $pieces;
+
+  $fields = scoop_slot_designation_fields();
+  $slot   = pods('slot', $slot_id);
+  if (!$slot || !$slot->exists()) return $pieces;
+
+  foreach ($fields as $f) {
+    $fid = (int) $slot->field($f . '.ID');
+    if (!$fid) continue;
+
+    $where_parts = [];
+    foreach ($fields as $of) $where_parts[] = "{$of}.ID = {$fid}";
+    $where = '(' . implode(' OR ', $where_parts) . ") AND t.ID != {$slot_id}";
+
+    $matches = pods('slot', ['where' => $where, 'limit' => -1]);
+    if (!$matches) continue;
+
+    while ($matches->fetch()) {
+      $other_id  = (int) $matches->field('ID');
+      $guard_key = "slot:dedupe:{$other_id}";
+      if (!scoop_guard_enter($guard_key)) continue;
+
+      try {
+        $clear = [];
+        foreach ($fields as $of) {
+          if ((int) $matches->field($of . '.ID') === $fid) $clear[$of] = 0;
+        }
+        if ($clear) {
+          pods_api()->save_pod_item(['pod' => 'slot', 'id' => $other_id, 'data' => $clear]);
+        }
+      } finally {
+        scoop_guard_leave($guard_key);
+      }
+    }
+  }
+
+  return $pieces;
+}

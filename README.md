@@ -372,7 +372,7 @@ assets/
   ui/
     grid.js                 ← The table renderer + sort/filter/edit UI
     popular-plot.js         ← Custom SVG view for the Popular type
-    find-in-grid.js         ← Text filter widget
+    find-in-list.js         ← Text filter widget (Grid + Tile)
   css.css                   ← All styles
 ```
 

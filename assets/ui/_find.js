@@ -1,6 +1,6 @@
 ///////////////////////////////////
 // Static untility  
-// Consumed by FindIt and FindInGrid
+// Consumed by FindIt and FindInList
 //////////////////////////////////
 
 export default class Find{

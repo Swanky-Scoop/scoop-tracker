@@ -17,7 +17,7 @@ export default class PopularGridModel extends AnalyticsGridModel {
     this.canvasMode = 'full-nostack';
 
     // Allergen select is rendered via getFilterDefs(); no need to set
-    // this.filter = true (that flag enables Grid's built-in FindInGrid text
+    // this.filter = true (that flag enables List's built-in FindInList text
     // widget, which would duplicate PopularPlot._mountFilter()'s input).
     // _allergenOptions is populated from the data each time buildRows runs.
     this.filterValues = { allergen: 'all' };

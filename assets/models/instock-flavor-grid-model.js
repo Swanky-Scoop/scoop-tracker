@@ -4,7 +4,7 @@ import Indexer       from "../data/indexer.js";
 export default class InstockFlavorGridModel extends BaseGridModel {
   constructor(name = 'InstockFlavor', domain, attrs = {}) {
     super(name, domain, attrs);
-    this.filter = true; // enables text find-in-grid
+    this.filter = true; // enables text find-in-list
 
     // From the shortcode's data-group/data-filter (see includes/shortcode.php).
     // No attributes => show every flavor, flat/ungrouped.

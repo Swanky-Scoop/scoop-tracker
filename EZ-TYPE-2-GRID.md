@@ -102,7 +102,7 @@ import Indexer       from "../data/indexer.js";
 export default class MyViewGridModel extends BaseGridModel {
   constructor(name = 'MyView', domain, attrs = {}, metaData = null) {
     super(name, null, attrs, metaData);
-    this.filter = true;            // enables text find-in-grid
+    this.filter = true;            // enables text find-in-list
     this._build();
     if (domain) this.setDomain(domain);
   }
