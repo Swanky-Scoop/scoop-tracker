@@ -67,7 +67,83 @@ an error and skips rather than throwing, so before re-running after a
 `[smoke:cleanup]` failure line, verify the target slot/tub and fixture-flavor
 batches by hand.
 
-## What `cabinet-workflow-lifecycle.spec.js` covers
+## Test files in this suite
+
+- **`cabinet-workflow-lifecycle.spec.js`** — "Mother Script." The original,
+  ambitious 8-step full lifecycle (batch → cabinet swap → delete →
+  restore) in one linear chain. Steps 1, 2, 5, 6, 7, 8 are reliable; step
+  3/4 (swap-write verification) is an open, unresolved bug — see its own
+  section below. Kept as-is and not being abandoned, but its size makes it
+  slow to iterate on any one piece.
+- **`diagnostic-swap-write-revert.spec.js`** — standalone, skip-by-default
+  repro of just the step 3/4 mystery, carved out of Mother Script so that
+  one bug can be iterated on without paying for the rest of the lifecycle
+  every run. Run explicitly with `RUN_DIAGNOSTIC=1`.
+- **`batch-create.spec.js`**, **`batch-delete.spec.js`** — smaller,
+  independent scenarios carved out of Mother Script's *reliable* steps (1
+  and 5), added 2026-08-14 to get real, currently-passing coverage without
+  waiting on Mother Script's open bug(s) to be resolved. Each is
+  self-contained (own login, own setup batch, own cleanup in a `finally`
+  block) and imports shared helpers from `_shared.js` rather than
+  duplicating Mother Script's inline copies — Mother Script itself was
+  deliberately left untouched so this refactor carries zero risk to it.
+  Neither touches CabinetWorkflow or slot-linking at all.
+- **`_shared.js`** — helpers (`login`, `openGrid`, `getDomain`,
+  `forceFreshDomain`, `waitForFetchIdle`, `createFixtureBatch`,
+  `deleteBatch`, etc.) shared by the scenario tests above. Not used by
+  Mother Script or the diagnostic script, both of which predate it and
+  keep their own inline copies.
+- A third scenario, a plain FlavorTub state edit (Mother Script's step 6,
+  also marked "Reliable" there), was attempted the same day and **pulled
+  back out** — see "The mystery isn't CabinetWorkflow-specific" below. It
+  hit a real, reproducible version of the same open write-ordering
+  problem, on a completely different grid with no cabinet/slot involved.
+  Forcing it to pass with a retry/poll would have hidden a real bug rather
+  than tested the capability, so it wasn't shipped.
+
+### The mystery isn't CabinetWorkflow-specific
+
+While building the FlavorTub state-edit scenario above, the exact
+symptom from the step 3/4 investigation reproduced on a **plain grid edit
+with no cabinet, no slot, no swap** — just clicking a dropdown to
+`Tempering` and hitting Save. Sequence observed on a real, existing
+(not freshly-created) tub:
+
+1. Edit via the grid UI, `page.waitForResponse` resolves ok, hard reload
+   — read back state hadn't changed (edit "lost").
+2. A direct REST write set state explicitly back to its original value —
+   succeeded per its own response.
+3. Another hard reload — read back showed the *edit's* value
+   (`Tempering`), not the direct write's value (`Freezing`) that had just
+   supposedly landed.
+4. Checked again several minutes later (unprompted, no further writes):
+   the tub had settled to the correct original value on its own.
+
+That's a genuine **out-of-order write** — the earlier edit's request
+committed to the DB *after* the later, explicit restore write did — not a
+dropped write (it did eventually land) and not a client-side cache issue
+(every read here was a hard reload). It's also not simply "autosave
+racing manual save": `flavor-tub-grid-model.js` already disables autosave
+entirely (`this.autosave = false`) specifically because of *documented
+prior history* of a similarly-shaped race ("full autosave raced a
+background domain refresh... as soon as its own autosave POST resolved" —
+see that file's own comment). So whatever this is, it predates this
+session's investigation and isn't fixed by the autosave/manual-save
+separation that was already put in place for a related-looking symptom.
+
+**This should be the starting point for the next investigation**, not the
+CabinetWorkflow-specific framing item 7 (below) used — the bug is broader
+than one grid, so the fix is likely somewhere more central (the REST write
+path, a WordPress/Pods-level write queue or race, or the hosting
+environment's PHP-FPM/DB connection handling), not in
+`cabinet-workflow-tile.js` or `confirm-swap-modal.js` specifically.
+
+More scenarios can be carved out the same way as confidence grows —
+Confirm Cabinet's own `confirm_state` bookkeeping (step 7's non-swap half)
+is a reasonable next candidate, since it's marked reliable in Mother
+Script but isn't covered standalone yet.
+
+## What `cabinet-workflow-lifecycle.spec.js` ("Mother Script") covers
 
 One full lifecycle, encoded as `test.step()`s so a failure points at
 exactly which stage broke, not just "the test failed":
