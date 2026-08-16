@@ -67,6 +67,9 @@ function scoop_access_policy(): array {
         'InstockFlavor' => ['GET' => true, 'POST' => true],
         'Analytics'     => ['GET' => true],
         'ShiftReport'   => ['POST' => true],
+        'Task'          => ['GET' => true, 'POST' => true],
+        'Prep'          => ['GET' => true, 'POST' => true, 'DELETE' => true],
+        'RecipeCount'   => ['GET' => true, 'POST' => true, 'DELETE' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
@@ -131,6 +134,9 @@ function scoop_access_policy(): array {
         'Closeout'      => ['GET' => false, 'POST' => false],
         'Analytics'     => ['GET' => false],
         'ShiftReport'   => ['POST' => true],
+        'Task'          => ['GET' => true, 'POST' => true],
+        'Prep'          => ['GET' => true, 'POST' => true, 'DELETE' => true],
+        'RecipeCount'   => ['GET' => true, 'POST' => true, 'DELETE' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],

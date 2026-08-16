@@ -418,11 +418,23 @@ export default class BaseGridModel {
             }));
     }
     
-    if (fieldKey === 'flavor' || fieldKey === 'current_flavor' || 
+    if (fieldKey === 'flavor' || fieldKey === 'current_flavor' ||
         fieldKey === 'immediate_flavor' || fieldKey === 'next_flavor') {
         return this.flavorMeta?.optionsAll || [];  // ← Safe access
     }
-    
+
+    // Generic domain-backed fallback: any domain[fieldKey] array not already
+    // special-cased above (e.g. 'recipe'/'ingredient'/'unit' for the Task
+    // form's embedded add-grids — see assets/ui/task-form.js) becomes a
+    // plain id/title picker list for free, as long as the bundle need-list
+    // includes that entity and fieldKey matches its domain key.
+    if (Array.isArray(this.domain?.[fieldKey])) {
+        return this.domain[fieldKey].map(item => ({
+            key: item.id,
+            label: item._title || item.title?.rendered || '',
+        }));
+    }
+
     return [];
   }
   

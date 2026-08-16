@@ -14,7 +14,19 @@ function scoop_planning_allowed_slot_fields(\WP_User $u): array {
 }
 
 function scoop_batches_allowed_fields(\WP_User $u): array {
-  return [ 'flavor','count' ];
+  return [ 'flavor','count','task','done' ];
+}
+
+function scoop_preps_allowed_fields(\WP_User $u): array {
+  return [ 'ingredient','other','count','units','task' ];
+}
+
+function scoop_recipe_counts_allowed_fields(\WP_User $u): array {
+  return [ 'recipe','count','task' ];
+}
+
+function scoop_tasks_allowed_fields(\WP_User $u): array {
+  return [ 'target','other' ];
 }
 
 function scoop_tubs_allowed_fields(\WP_User $u): array {
@@ -73,6 +85,10 @@ function scoop_create_pod_item(string $pod_name, array $allowed_fields, array $d
     $clean[$k] = scoop_coerce_value($k, $v);
   }
 
+  if (empty($clean)) {
+    return new WP_Error('create_empty_payload', 'Create failed: no writeable fields were provided.');
+  }
+
   if ($pod_name === 'batch') {
     $flavor_id = function_exists('scoop_rel_id') ? scoop_rel_id($clean['flavor'] ?? 0) : (int)($clean['flavor'] ?? 0);
     $count = isset($clean['count']) && is_numeric($clean['count']) ? (float)$clean['count'] : 0;
@@ -92,11 +108,35 @@ function scoop_create_pod_item(string $pod_name, array $allowed_fields, array $d
       if ($title !== '') {
         $clean['post_title'] = $title;
         $clean['post_name'] = sanitize_title($title);
-        $clean['post_status'] = 'publish';
       }
     }
-  } elseif (empty($clean)) {
-    return new WP_Error('create_empty_payload', 'Create failed: no writeable fields were provided.');
+  }
+
+  // Task supports a user-supplied title (assets/ui/task-form.js's optional
+  // "Title" field) in place of the auto-generated one. 'post_title' is a WP
+  // post object field, not a Pods field, so it's read straight off the raw
+  // $data here (same as 'flavor'/'count' aren't gated by $allowed_fields for
+  // batch above) rather than added to scoop_tasks_allowed_fields(). The flag
+  // tells scoop_set_task_title() (includes/hooks/task-titles.php) to skip
+  // auto-generation entirely for this save — unset by that filter once read,
+  // single-request-lifetime only.
+  if ($pod_name === 'task') {
+    $custom_title = sanitize_text_field(trim((string)($data['post_title'] ?? '')));
+    if ($custom_title !== '') {
+      $clean['post_title'] = $custom_title;
+      $clean['post_name'] = sanitize_title($custom_title);
+      $GLOBALS['scoop_task_custom_title'] = true;
+    }
+  }
+
+  // Pods relationship pick fields default to pick_post_status=publish, so a
+  // draft child (wp_insert_post()'s own default when post_status isn't set
+  // explicitly) is silently invisible to any relationship pointing at it —
+  // e.g. a task's batches/preps/recipe_counts list would just look empty.
+  // Applied to every pod created through this helper, not just batch, unless
+  // a per-pod block above (or the caller) already set one explicitly.
+  if (!isset($clean['post_status'])) {
+    $clean['post_status'] = 'publish';
   }
 
   $params = ['pod' => $pod_name, 'data' => $clean];

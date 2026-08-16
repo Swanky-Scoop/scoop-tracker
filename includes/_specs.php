@@ -37,6 +37,31 @@ function scoop_bundle_specs(): array {
     // generic per-type create dispatch (exactly one row, one pod) can't
     // express.
     'ShiftReport' => ['needs' => ['flavor','location','supply','cabinet','slot']],
+    // Task creation GUI — see assets/ui/task-form.js. Task itself is
+    // create-only (no entity spec below, same reasoning as shift_report/
+    // cake_order — it's never read back through the bundle). flavor/recipe/
+    // ingredient/unit feed the create-line pickers; batch/recipe_count/prep
+    // feed each widget's task-scoped "attached" history grid (filtered
+    // client-side by their 'task' field) — see
+    // assets/models/task-component-history-grid-model.js. Including them
+    // here is also what makes scoop_client_refresh_scope()'s needs-overlap
+    // check pull a fresh 'Task'-scoped refetch whenever a Batch/Prep/
+    // RecipeCount create-grid saves (see that function's own comment on
+    // writesPods vs needs), which is what makes the history grids repaint
+    // with the newly-created row.
+    'Task' => ['needs' => ['flavor','recipe','ingredient','unit','batch','recipe_count','prep']],
+    // Prep/RecipeCount need no entities of their own here (their pickers'
+    // domain rides in on Task's bundle need-list above — they're embedded
+    // inside the Task form, never mounted as their own [scoop_grid] host) —
+    // these entries exist purely so scoop_client_refresh_scope() gives each
+    // type a real SCOOP.refreshScope entry, which is what lets
+    // ScoopAPI.scopedRefreshTypes() correctly scope their own post-submit
+    // refresh (the same "blank row resets after a successful create" reset
+    // Batch's standalone grid already relies on) — without an entry here,
+    // scopedRefreshTypes() falls back to the full page-wide type union,
+    // which doesn't include 'Prep'/'RecipeCount' and the reset never fires.
+    'Prep' => ['needs' => []],
+    'RecipeCount' => ['needs' => []],
   ];
   
   return $specs;
@@ -278,7 +303,9 @@ function scoop_entity_specs(string $key = ''): array {
         'writeable' => []
       ],
 
-      // Read-only batch entity used by the BatchHistory grid.
+      // Read-only batch entity used by the BatchHistory grid, and (via its
+      // 'task' field) the Task form's per-widget "attached" history grids —
+      // see assets/ui/task-form.js / assets/models/task-component-history-grid-model.js.
       // Date filter on t.post_date is applied in scoop_fetch_entities() below
       // when BatchHistory is among the requested grid types.
       'batch' => [
@@ -288,10 +315,43 @@ function scoop_entity_specs(string $key = ''): array {
         'fields'    => [
           'count'  => ['data_type' => 'float'],
           'flavor' => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'flavor'],
+          'task'   => ['data_type' => 'int', 'control' => 'find', 'hidden' => true],
         ],
         'post_fields' => [
           'author_name' => 'string',
           'post_date'   => 'datetime',
+        ],
+        'writeable' => []
+      ],
+
+      // Read-only — feed the Task form's "Recipe production"/"Ingredient
+      // prep" attached-history grids (scoped to a task via their 'task'
+      // field client-side), same shape/reasoning as 'batch' above. Writes go
+      // through the RecipeCount/Prep create routes, not this spec.
+      'recipe_count' => [
+        'post_type' => 'recipe_count',
+        'pod'       => 'recipe_count',
+        'title'     => true,
+        'fields'    => [
+          'count'  => ['data_type' => 'float'],
+          'recipe' => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'recipe'],
+          'task'   => ['data_type' => 'int', 'control' => 'find', 'hidden' => true],
+          'done'   => ['data_type' => 'bool', 'hidden' => true],
+        ],
+        'writeable' => []
+      ],
+
+      'prep' => [
+        'post_type' => 'prep',
+        'pod'       => 'prep',
+        'title'     => true,
+        'fields'    => [
+          'count'      => ['data_type' => 'float'],
+          'ingredient' => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'ingredient'],
+          'units'      => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'unit'],
+          'other'      => ['data_type' => 'string'],
+          'task'       => ['data_type' => 'int', 'control' => 'find', 'hidden' => true],
+          'done'       => ['data_type' => 'bool', 'hidden' => true],
         ],
         'writeable' => []
       ],
@@ -376,6 +436,33 @@ function scoop_entity_specs(string $key = ''): array {
         'post_fields' => [
           'post_name' => 'string',
         ],
+        'writeable' => [],
+      ],
+
+      // Reference-only lookups for the Task form's batch/prep/recipe_count
+      // create-line pickers (assets/ui/task-form.js) — id + title only, not
+      // writeable/editable anywhere in this app.
+      'recipe' => [
+        'post_type' => 'recipe',
+        'pod'       => 'recipe',
+        'title'     => true,
+        'fields'    => [],
+        'writeable' => [],
+      ],
+
+      'ingredient' => [
+        'post_type' => 'ingredient',
+        'pod'       => 'ingredient',
+        'title'     => true,
+        'fields'    => [],
+        'writeable' => [],
+      ],
+
+      'unit' => [
+        'post_type' => 'unit',
+        'pod'       => 'unit',
+        'title'     => true,
+        'fields'    => [],
         'writeable' => [],
       ],
     ];

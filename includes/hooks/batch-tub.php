@@ -245,6 +245,19 @@ function scoop_create_tubs_for_new_batch($pieces, $is_new_item, $id) {
       return $pieces;
     }
 
+    // Task-linked batches (created via the Task form — see
+    // assets/ui/task-form.js) are a PLAN to make a batch, not a real one
+    // yet — the client explicitly sends done=false for these. Skip cascading
+    // tub creation until it's actually marked done. Scoped to task-linked
+    // batches only (task_id > 0) so the standalone Batch GUI's batches —
+    // which never set `task` or `done` — are completely unaffected and keep
+    // creating tubs immediately, exactly as before.
+    $task_id = (int) scoop_rel_id($batch->field('task'));
+    if ($task_id > 0 && !$batch->field('done')) {
+      scoop_log("scoop_create_tubs_for_new_batch: batch {$batch_id} is task-linked (task={$task_id}) and not done — skipping tub creation");
+      return $pieces;
+    }
+
     $count     = (float)$batch->field('count');
     $flavor_id = (int)$batch->field('flavor.ID');
     scoop_batch_debug("batch {$batch_id}: loaded batch count={$count} flavor={$flavor_id} in " . scoop_batch_elapsed_ms($lap_start) . "ms");

@@ -22,6 +22,8 @@ import ItemPivotGridModel       from "../models/item-pivot-grid-model.js";
 import ItemPivotGrid            from "../ui/item-pivot-grid.js";
 import ShiftReportGridModel     from "../models/shift-report-grid-model.js";
 import ShiftReportForm          from "../ui/shift-report-form.js";
+import TaskGridModel            from "../models/task-grid-model.js";
+import TaskForm                 from "../ui/task-form.js";
 import HashState                from "./hash-state.js";
 
 // Some grid types run visibly heavier cold-cache queries than the rest of
@@ -158,6 +160,7 @@ export default class ScoopAPI {
       "CabinetWorkflow": CabinetWorkflowGridModel,
       "ItemPivot"      : ItemPivotGridModel,
       "ShiftReport"    : ShiftReportGridModel,
+      "Task"           : TaskGridModel,
     };
   }
 
@@ -171,6 +174,7 @@ export default class ScoopAPI {
       "CabinetWorkflow": CabinetWorkflowTile,
       "ItemPivot"      : ItemPivotGrid,
       "ShiftReport"    : ShiftReportForm,
+      "Task"           : TaskForm,
     };
   }
 
@@ -263,6 +267,24 @@ export default class ScoopAPI {
   // server registers it as one fixed path per type (see includes/_routes.php).
   async deleteBatch(id) {
     const url = new URL(this.route('Batch').toString());
+    url.pathname = url.pathname.replace(/\/?$/, `/${id}`);
+
+    const r = await this._fetch(url, { method: 'DELETE' });
+    return { ok: r.ok, status: r.status, data: r.data };
+  }
+
+  // Used by the Task form's "attached" history grids — see
+  // assets/models/task-component-history-grid-model.js.
+  async deleteRecipeCount(id) {
+    const url = new URL(this.route('RecipeCount').toString());
+    url.pathname = url.pathname.replace(/\/?$/, `/${id}`);
+
+    const r = await this._fetch(url, { method: 'DELETE' });
+    return { ok: r.ok, status: r.status, data: r.data };
+  }
+
+  async deletePrep(id) {
+    const url = new URL(this.route('Prep').toString());
     url.pathname = url.pathname.replace(/\/?$/, `/${id}`);
 
     const r = await this._fetch(url, { method: 'DELETE' });

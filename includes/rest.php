@@ -422,6 +422,72 @@
   }
 
   /**
+   * DELETE /scoop/v1/recipe-counts/{id} and DELETE /scoop/v1/preps/{id} —
+   * used by each widget's "attached" history grid in the Task form (see
+   * assets/models/task-component-history-grid-model.js). Simpler than
+   * scoop_handle_batch_delete(): neither pod cascades to any child records,
+   * so there's nothing to clean up beyond the row itself, and no
+   * inventory_change log entry — recipe_count/prep are planned-production
+   * counts, not tub inventory, so they aren't part of that audit trail.
+   */
+  function scoop_handle_recipe_count_delete(\WP_REST_Request $req) {
+    return scoop_handle_simple_pod_delete($req, 'recipe_count');
+  }
+
+  function scoop_handle_prep_delete(\WP_REST_Request $req) {
+    return scoop_handle_simple_pod_delete($req, 'prep');
+  }
+
+  function scoop_handle_simple_pod_delete(\WP_REST_Request $req, string $pod_name) {
+    $id = (int)$req->get_param('id');
+    if ($id <= 0) {
+      return new \WP_REST_Response(['ok' => false, 'error' => 'Invalid id.'], 400);
+    }
+
+    $post = get_post($id);
+    if (!$post || $post->post_type !== $pod_name) {
+      return new \WP_REST_Response(['ok' => false, 'error' => ucfirst($pod_name) . ' not found.'], 404);
+    }
+
+    if (!function_exists('pods_api') || !is_object(pods_api())) {
+      return new \WP_REST_Response(['ok' => false, 'error' => 'Pods API not available.'], 500);
+    }
+
+    $deleted = pods_api()->delete_pod_item(['pod' => $pod_name, 'id' => $id]);
+    if (!$deleted) {
+      error_log("scoop_handle_simple_pod_delete: failed to delete {$pod_name} {$id}");
+      return new \WP_REST_Response(['ok' => false, 'error' => ucfirst($pod_name) . ' delete failed.'], 500);
+    }
+
+    scoop_cache_bust();
+
+    return new \WP_REST_Response(['ok' => true, 'deleted' => ['id' => $id]], 200);
+  }
+
+  /**
+   * GET /scoop/v1/kitchen-staff — role-filtered staff list for the Task
+   * form's 'target' picker (assets/ui/task-form.js). Task.target is a Pods
+   * pick_object=user field, which isn't a Pods pod and doesn't fit
+   * scoop_fetch_entities()/the bundle pattern — hence its own small endpoint.
+   * Scoped to the same kitchen-role set that can actually be assigned a
+   * task in practice, not every WP user on the install.
+   */
+  function scoop_kitchen_staff_handler(\WP_REST_Request $req) {
+    $roles = ['administrator', 'kitchen_manager', 'shift_lead', 'ice_cream_maker'];
+
+    $users = get_users([
+      'role__in' => $roles,
+      'orderby'  => 'display_name',
+      'order'    => 'ASC',
+      'fields'   => ['ID', 'display_name'],
+    ]);
+
+    $staff = array_map(fn($u) => ['id' => (int)$u->ID, 'title' => $u->display_name], $users);
+
+    return new \WP_REST_Response(['ok' => true, 'staff' => $staff], 200);
+  }
+
+  /**
    * Slot writes are only a real inventory event when they change the tub
    * link (slot.tub — renamed from slot.tubs; see change-tub.md). As of the
    * tub.slot<->slot.tub bidirectional rewrite, the Confirm Cabinet/add-next/

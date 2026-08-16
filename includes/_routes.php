@@ -130,4 +130,38 @@ add_action('rest_api_init', function () {
     },
     'permission_callback' => 'scoop_require_authenticated_user_read_only',
   ]);
+
+  // Delete a recipe count / prep row — used by each widget's "attached"
+  // history grid in the Task form (see
+  // assets/models/task-component-history-grid-model.js). Siblings of their
+  // own create routes (/recipe-counts, /preps) rather than
+  // scoop_routes_config() entries, same reasoning as Batch's own DELETE
+  // route above. Reuse RecipeCount/Prep's own permission matrix keyed on
+  // the 'DELETE' method — see includes/_policy.php.
+  register_rest_route('scoop/v1', '/recipe-counts/(?P<id>\d+)', [
+    'methods'  => ['DELETE'],
+    'callback' => function(\WP_REST_Request $req) {
+      return scoop_handle_recipe_count_delete($req);
+    },
+    'permission_callback' => scoop_write_permission('RecipeCount'),
+  ]);
+
+  register_rest_route('scoop/v1', '/preps/(?P<id>\d+)', [
+    'methods'  => ['DELETE'],
+    'callback' => function(\WP_REST_Request $req) {
+      return scoop_handle_prep_delete($req);
+    },
+    'permission_callback' => scoop_write_permission('Prep'),
+  ]);
+
+  // Staff list for the Task form's 'target' picker (assets/ui/task-form.js).
+  // Its own endpoint because WP Users aren't a Pods pod and don't fit
+  // scoop_fetch_entities()/the bundle pattern. Read-only, same permission
+  // tier as /bundle — gating who can actually create a Task happens at the
+  // 'Task' route itself (see includes/_policy.php), not here.
+  register_rest_route('scoop/v1', '/kitchen-staff', [
+    'methods'  => ['GET'],
+    'callback' => 'scoop_kitchen_staff_handler',
+    'permission_callback' => 'scoop_require_authenticated_user_read_only',
+  ]);
 });

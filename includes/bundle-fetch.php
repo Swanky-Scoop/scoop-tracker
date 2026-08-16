@@ -640,6 +640,16 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
   if ( $key === 'tub' ) {
     $requesting_types = $ctx['requesting_types'] ?? [];
 
+    // DateActivity-only (or EmptiedLog-only — same date-scoped tub fetch,
+    // see _specs.php's tub filter comment) tub bundles should not scan every
+    // historical tub. When other grids are present, keep active tubs in
+    // scope for their views.
+    $has_date_activity = in_array( 'DateActivity', $requesting_types, true ) || in_array( 'EmptiedLog', $requesting_types, true );
+    $has_other_grids   = ! empty( array_diff( $requesting_types, [ 'DateActivity', 'EmptiedLog' ] ) );
+    $date_filters      = $ctx['date_filters'] ?? [];
+    $date_ranges       = $ctx['date_filter_ranges'] ?? [];
+    $is_date_scoped    = $has_date_activity && ! $has_other_grids;
+
     // Exclude emptied tubs at the DB level unless the caller explicitly wants them.
     // This is the biggest single filter on the tub table and saves the most work.
     //
@@ -661,23 +671,23 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     // history" query that crashed things before. The cutoff is computed from
     // current_time('mysql') (not SQL NOW()) to match the clock emptied_at was
     // actually stamped with — see scoop_touch_tub_post_modified.
+    //
+    // Skipped entirely for a date-scoped fetch ($is_date_scoped below): that
+    // path already ANDs in its own OR(opened_on/emptied_at/created_on) range
+    // clause, which is the real, caller-chosen bound (EmptiedLog's 7-day
+    // window, DateActivity's picker — up to last_30_days). ANDing this fixed
+    // 96h revert-window clause on top silently clipped every Emptied-tub
+    // result to whichever window is tighter, so EmptiedLog/DateActivity never
+    // showed an emptied tub older than SCOOP_TUB_EMPTIED_REVERT_HOURS no
+    // matter how wide a range was requested.
     $include_empty = ! empty( $ctx['include_empty_tubs'] );
-    if ( ! $include_empty ) {
+    if ( ! $include_empty && ! $is_date_scoped ) {
       $revert_hours = defined( 'SCOOP_TUB_EMPTIED_REVERT_HOURS' ) ? (int) SCOOP_TUB_EMPTIED_REVERT_HOURS : 0;
       $cutoff_sql   = esc_sql( date( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) - ( $revert_hours * HOUR_IN_SECONDS ) ) );
       $where_clauses[] = "(state != 'Emptied' OR emptied_at >= '{$cutoff_sql}')";
     }
 
-    // DateActivity-only (or EmptiedLog-only — same date-scoped tub fetch,
-    // see _specs.php's tub filter comment) tub bundles should not scan every
-    // historical tub. When other grids are present, keep active tubs in
-    // scope for their views.
-    $has_date_activity = in_array( 'DateActivity', $requesting_types, true ) || in_array( 'EmptiedLog', $requesting_types, true );
-    $has_other_grids   = ! empty( array_diff( $requesting_types, [ 'DateActivity', 'EmptiedLog' ] ) );
-    $date_filters      = $ctx['date_filters'] ?? [];
-    $date_ranges       = $ctx['date_filter_ranges'] ?? [];
-
-    if ( $has_date_activity && ! $has_other_grids ) {
+    if ( $is_date_scoped ) {
       $date_clauses = scoop_tub_date_filter_sql_clauses( $date_filters, $date_ranges );
       if ( $date_clauses ) {
         $where_clauses[] = '(' . implode( ' OR ', $date_clauses ) . ')';
