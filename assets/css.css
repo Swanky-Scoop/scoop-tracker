@@ -2197,6 +2197,14 @@ body > .modal.flavor_picker {
     padding: 0;
     vertical-align: top;
 
+    /* Equal-specificity tie with the UA [hidden]{display:none} rule
+       otherwise leaves a filter-hidden tile visible — this class's own
+       `display: inline-block` above wins the cascade tie by source order
+       without this. */
+    &[hidden] {
+      display: none;
+    }
+
     & > img {
       position: absolute;
       inset: 0;
@@ -2253,7 +2261,17 @@ body > .modal.flavor_picker {
       box-shadow: inset 0 10rem 10rem -5rem rgba(0,0,0,.5);
       padding:1rem;
       border-radius: .25rem;
-      
+
+      /* This selector's own `display: flex` above outranks the UA
+         [hidden]{display:none} rule on specificity alone (class+tag chain
+         beats a single attribute selector), so find-in-list.js's
+         item.hidden = true otherwise leaves a filtered-out card fully
+         visible — see the .flavor-tile[hidden] override for the same
+         pattern elsewhere in this file. */
+      &[hidden] {
+        display: none;
+      }
+
       &:hover,
       &:focus-within {
         box-shadow: inset 0 10rem 10rem -5rem rgba(0,0,0,.33), 0 0 0 3px green;

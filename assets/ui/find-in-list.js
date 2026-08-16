@@ -1,28 +1,26 @@
 ///////////////////////////////////
-// Filter input that narrows the .group elements shown in a List (Grid's
-// tr.group or Tile's div.group — selected by class only, not tag, so this
-// one implementation serves both renderers; see tile.js's buildGroupDom
-// comment on why they share class hooks). Falls back to filtering
-// individual .row elements directly for a grid with no groups at all.
+// Filter input that narrows the .row elements shown in a List (Grid's tr.row
+// or Tile's li.row — selected by class only, not tag, so this one
+// implementation serves both renderers; see tile.js's buildItemDom comment
+// on why they share class hooks). For a grouped list, a group with zero
+// surviving rows hides itself too (its .group header + shared .groupBody
+// container); a flat/ungrouped list has no .group headers to hide and this
+// simply narrows individual rows.
 //////////////////////////////////
 
 export default class FindInList {
   constructor(host, {
     root = host,
-    // Class-only, not tag-qualified — Grid (tr.group) and Tile (div.group)
-    // deliberately share this class so shared logic like this one file
-    // works for both renderers without a per-List-subclass copy (see
-    // tile.js's buildGroupDom comment).
-    targetSelector = ".group",
-    textKey = "groupLabel",       // use data-group-label
-    typeKey = "groupType",        // use data-group-type
+    itemSelector = ".row",
+    groupSelector = ".group",
+    typeKey = "groupType",        // read off the shared .groupBody container
     defaultType = null,           // e.g. if only one type present
     placeholder = "Filter…",
   } = {}) {
     this.host = host;
     this.root = root;
-    this.targetSelector = targetSelector;
-    this.textKey = textKey;
+    this.itemSelector = itemSelector;
+    this.groupSelector = groupSelector;
     this.typeKey = typeKey;
     this.defaultType = defaultType;
     this.placeholder = placeholder;
@@ -31,40 +29,38 @@ export default class FindInList {
     this.bind();
   }
 
-  targets() {
-    const groups = [...this.root.querySelectorAll(this.targetSelector)];
-    if (groups.length) return groups;
-
-    // Flat/ungrouped grids (e.g. BatchHistory) never render a .group header
-    // at all (see Grid.buildGroupDom's "synthetic ungrouped container"
-    // case) — the default target list is always empty for them, so the
-    // filter accepted input but silently narrowed nothing. Fall back to
-    // filtering individual data rows directly. getText/setVisible already
-    // handle a non-group element correctly (getText uses the element's own
-    // text instead of its group body's; setVisible only hides a collapsible
-    // parent, which a flat grid's shared group container isn't).
-    return [...this.root.querySelectorAll('.row')];
+  items() {
+    return [...this.root.querySelectorAll(this.itemSelector)];
   }
 
-  getText(el) {
-    const label = (el?.dataset?.[this.textKey] ?? "").toString();
-    const groupBody = el?.matches?.(this.targetSelector) ? el.parentElement : el;
-    const rowText = (groupBody?.innerText ?? groupBody?.textContent ?? "").toString();
-    return `${label} ${rowText}`;
+  groups() {
+    return [...this.root.querySelectorAll(this.groupSelector)];
   }
 
-  getType(el) {
-    return (el?.dataset?.[this.typeKey] ?? "").toString();
+  // .groupBody is the one ancestor shared by both renderers' group shapes —
+  // Grid keeps tr.group/tr.row as direct tbody.groupBody siblings; Tile
+  // nests its li.row items one level deeper, inside a <ul> that's itself a
+  // sibling of div.group inside section.groupBody (see grid.js/tile.js
+  // buildGroupDom). closest() finds either shape the same way. A flat/
+  // ungrouped list still has a synthetic groupBody wrapper (no .group header
+  // inside it) — see buildGroupDom's "group.label falsy" case.
+  containerFor(el) {
+    return el.closest('.groupBody');
   }
 
-  setVisible(el, visible) {
-    const p = el.parentElement;
-    if( p.matches('.collapsible') ) p.hidden = !visible;
-    el.hidden = !visible;
+  getType(container) {
+    return (container?.dataset?.[this.typeKey] ?? "").toString();
+  }
+
+  // textContent, not innerText — innerText is render-dependent and reads as
+  // "" for an element apply() itself already hid on a previous keystroke, so
+  // narrowing "cook" then backspacing to "co" would find nothing to re-show.
+  getItemText(el) {
+    return (el?.textContent ?? "").toString();
   }
 
   inferSingleType() {
-    const types = new Set(this.targets().map(t => this.getType(t)).filter(Boolean));
+    const types = new Set(this.groups().map(g => this.getType(this.containerFor(g))).filter(Boolean));
     return types.size === 1 ? [...types][0] : null;
   }
 
@@ -83,33 +79,53 @@ export default class FindInList {
       .trim();
   }
 
+  // Per-item text match narrows individual rows (a CabinetWorkflow slot, a
+  // Grid tr, ...) rather than all-or-nothing on whichever group they live
+  // in — a cabinet with 8 slots and 1 matching flavor now shows that 1 slot,
+  // not all 8 or none. Groups left with zero surviving rows hide too, so an
+  // empty cabinet header doesn't linger on screen.
   apply(q) {
     const { type, term } = this.parseQuery(q);
-    const targets = this.targets();
     const impliedType = type ?? this.defaultType ?? this.inferSingleType();
+    const items = this.items();
+    const visibleCountByContainer = new Map();
 
-    // Use your static Find matcher (ranking optional; boolean match is enough)
-    for (const el of targets) {
-      const tOk = !impliedType || this.getType(el) === impliedType;
-      const hay = this.normSearch( this.getText(el) );
+    for (const item of items) {
+      const container = this.containerFor(item);
+      const tOk = !impliedType || !container || this.getType(container) === impliedType;
+      const hay = this.normSearch(this.getItemText(item));
       const hit = !term || hay.includes(term);
-      this.setVisible(el, tOk ? hit : true);
+      const visible = tOk ? hit : true;
+
+      item.hidden = !visible;
+      if (visible && container) {
+        visibleCountByContainer.set(container, (visibleCountByContainer.get(container) ?? 0) + 1);
+      }
     }
 
-    // QoL: when the filter narrows to exactly one group, open it so its child
-    // rows show without an extra click. Groups auto-opened this way are
-    // collapsed again once they're no longer the sole match; groups the user
-    // toggled by hand are left alone.
-    const visible = targets.filter(el => !el.hidden);
-    if (visible.length === 1) {
-      this.setGroupOpen(visible[0], true);
-      visible[0].dataset.autoOpened = "1";
-    } else {
-      for (const el of targets) {
-        if (el.dataset?.autoOpened) {
-          this.setGroupOpen(el, false);
-          delete el.dataset.autoOpened;
-        }
+    const groups = this.groups();
+    for (const group of groups) {
+      const container = this.containerFor(group);
+      const count = container ? (visibleCountByContainer.get(container) ?? 0) : 0;
+      this.setVisible(group, count > 0);
+    }
+
+    // QoL: auto-open any group narrowed to a surviving match, so its rows
+    // are actually visible instead of hidden behind a still-collapsed
+    // header. Reversed once no longer matching / filter cleared. Applies to
+    // every matching group now, not just when narrowed to exactly one —
+    // that used to be an incidental limit of matching whole groups, not a
+    // deliberate one.
+    for (const group of groups) {
+      const container = this.containerFor(group);
+      const count = container ? (visibleCountByContainer.get(container) ?? 0) : 0;
+
+      if (term && count > 0) {
+        this.setGroupOpen(group, true);
+        group.dataset.autoOpened = "1";
+      } else if (group.dataset.autoOpened) {
+        this.setGroupOpen(group, false);
+        delete group.dataset.autoOpened;
       }
     }
   }
@@ -122,6 +138,12 @@ export default class FindInList {
   clear() {
     this.inp.value = "";
     this.apply("");
+  }
+
+  setVisible(el, visible) {
+    const p = el.parentElement;
+    if (p?.matches?.('.collapsible')) p.hidden = !visible;
+    el.hidden = !visible;
   }
 
   setGroupOpen(groupRow, open) {

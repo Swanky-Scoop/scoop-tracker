@@ -53,9 +53,15 @@ export default class FlavorPickerModal extends El {
 
     this.TITLE = el('h2', { text: 'Pick new flavor' });
 
+    this.FILTER = el('input', {
+      classes: ['gridFilterInput'],
+      attrs: { type: 'text', autocomplete: 'off', placeholder: 'Filter…' },
+    });
+    this.FILTER.addEventListener('input', () => this._applyFilter());
+
     this.GRID = el('div', { classes: ['flavor-grid'] });
 
-    this.FORM.append(this.CLOSE, this.TITLE, this.GRID);
+    this.FORM.append(this.CLOSE, this.TITLE, this.FILTER, this.GRID);
     this.ROOT.append(this.FORM);
     document.body.append(this.ROOT);
   }
@@ -63,8 +69,24 @@ export default class FlavorPickerModal extends El {
   open(row, onPick = this.onPick) {
     this._row = row;
     this._activeOnPick = onPick;
+    this.FILTER.value = '';
     this._render();
     this.ROOT.classList.add('show');
+  }
+
+  // Plain text-contains match against each tile's title (same string the
+  // tile's own title attr/label already show) — this list is a flat button
+  // grid, not a List-based grid/tile with the .group/.row markup
+  // find-in-list.js (assets/ui/find-in-list.js) depends on, so it gets its
+  // own small filter here rather than forcing that component onto a shape
+  // it wasn't built for (see popular-plot.js's _applyFilter for the same
+  // precedent elsewhere in this codebase).
+  _applyFilter() {
+    const term = this.FILTER.value.normalize('NFKC').toLowerCase().trim();
+    for (const tile of this.GRID.children) {
+      const title = (tile.dataset.flavorTitle ?? '').toLowerCase();
+      tile.hidden = !!term && !title.includes(term);
+    }
   }
 
   close() {
@@ -80,7 +102,7 @@ export default class FlavorPickerModal extends El {
       const TILE = el('button', {
         classes: ['flavor-tile'],
         attrs: { type: 'button', title: flavor.title },
-        data: { flavorId: flavor.id },
+        data: { flavorId: flavor.id, flavorTitle: flavor.title },
       });
 
       if (flavor.photo) TILE.append(el('img', { attrs: { src: flavor.photo, alt: flavor.title } }));

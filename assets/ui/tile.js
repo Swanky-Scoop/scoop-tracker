@@ -105,7 +105,7 @@ export default class Tile extends List {
     const slug = this._slug(row?._title?.display ?? row?.id ?? '');
 
     const LI = this.el('li', {
-      classes: [primary, slug, ...this._rowClasses(row)],
+      classes: ['row', primary, slug, ...this._rowClasses(row)],
       data: { rowId: row?.id?.rowId ?? row?.id ?? 0 },
     });
 

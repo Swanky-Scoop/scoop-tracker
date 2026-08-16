@@ -438,7 +438,11 @@ export default class CabinetWorkflowTile extends Tile {
       : null;
 
     const LI = el('li', {
-      classes: ['slot', row.empty ? 'empty' : this._slug(row.flavorTitle), statusClass],
+      // 'row' — not just 'slot' — so find-in-list.js (assets/ui/find-in-list.js)
+      // can filter individual slots the same way it filters any other List's
+      // rows; see its own header comment for why that class is shared
+      // across renderers rather than tag-qualified.
+      classes: ['row', 'slot', row.empty ? 'empty' : this._slug(row.flavorTitle), statusClass],
       data: { rowId: row.slotId ?? 0, slotId: row.slotId ?? 0 },
     });
 

@@ -26,7 +26,6 @@ export default class RecipeCountGridModel extends BaseGridModel {
 
   buildRows() {
     const rowId = 0;
-    console.log('[DEBUG RecipeCountGridModel.buildRows]', { domain: this.domain, recipeLen: this.domain?.recipe?.length, opts: this.getOptions(0,'recipe') });
 
     this.rows = [
       {
