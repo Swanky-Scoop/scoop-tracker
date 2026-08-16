@@ -151,25 +151,25 @@ function scoop_require_login_for_homepage() {
 }
 
 /**
- * Landing page per role after wp-login.php — ice_cream_maker only ever works
- * the Batch/Cabinet docks (see _policy.php's role reference comment: "Makes
- * tubs, doesn't touch them afterwards"), so the default wp-admin destination
- * is useless to them. Unconditional, not just a fallback for an empty
- * $requested_redirect_to — an expired-session bounce-back
- * (ScoopAPI._redirectToLogin) already lands them back on a dock page anyway,
- * so overriding it doesn't cost anything for this role.
+ * Landing page after wp-login.php. Originally ice_cream_maker-only (they
+ * only ever work the Batch/Cabinet docks — see _policy.php's role reference
+ * comment: "Makes tubs, doesn't touch them afterwards" — so the default
+ * wp-admin destination was useless to them); temporarily widened to every
+ * role per explicit request while the dock-hash restore-on-load bug (see
+ * DOCKING.md's "Dock open/closed state") is being verified across roles —
+ * narrow the role_redirects map back down (or gate scoop_dock_login_url()
+ * per role again) once that's confirmed. Unconditional, not just a fallback
+ * for an empty $requested_redirect_to — an expired-session bounce-back
+ * (ScoopAPI._redirectToLogin) already lands people back on a dock page
+ * anyway, so overriding it doesn't cost anything.
  */
 add_filter('login_redirect', 'scoop_role_login_redirect', 10, 3);
 function scoop_role_login_redirect($redirect_to, $requested_redirect_to, $user) {
     if (!($user instanceof WP_User)) return $redirect_to;
 
-    $role_redirects = [
-        'ice_cream_maker' => home_url('/dock/#dock=Batch,Cabinet'),
-    ];
+    return scoop_dock_login_url();
+}
 
-    foreach ($role_redirects as $role => $url) {
-        if (in_array($role, (array) $user->roles, true)) return $url;
-    }
-
-    return $redirect_to;
+function scoop_dock_login_url(): string {
+    return home_url('/dock/#dock=Batch,Cabinet');
 }
