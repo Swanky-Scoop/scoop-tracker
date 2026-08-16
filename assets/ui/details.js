@@ -196,9 +196,20 @@ export default class Details {
   // --- URL hash state, so back/forward steps through panel history ---
 
   static _pushHash() {
-    const params = new URLSearchParams();
+    // Start from whatever's already in the hash (#dock=, #loc.*=, #bust —
+    // see HashState) rather than a blank URLSearchParams — building fresh
+    // here silently dropped every other hash key the moment a Details panel
+    // opened or closed. Still hand-rolled rather than routed through
+    // HashState itself: this needs history.pushState (so back/forward steps
+    // through panel history), not HashState.set's always-replaceState.
+    const raw = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+    const params = new URLSearchParams(raw);
+
     if (Details._state1) params.set('details', `${Details._state1.entity}:${Details._state1.id}`);
+    else params.delete('details');
+
     if (Details._state2) params.set('details2', `${Details._state2.entity}:${Details._state2.id}`);
+    else params.delete('details2');
 
     const hash = params.toString();
     const url = hash ? `#${hash}` : (location.pathname + location.search);

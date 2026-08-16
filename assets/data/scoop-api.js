@@ -1043,6 +1043,21 @@ export default class ScoopAPI {
       }
     }
 
+    // Every control has now restored its own open/closed state from the
+    // ORIGINAL #dock= hash via its own dockToggle() call above — that method
+    // deliberately does NOT resync the hash itself anymore (see its own
+    // comment): doing so per-control, mid-loop, re-derived #dock= from only
+    // whichever controls had mounted so far, silently dropping any control
+    // still later in this same loop (#dock=A,B collapsed to #dock=A the
+    // instant A restored, before B ever got to read the original value). One
+    // resync here, after the whole pass has settled (including any
+    // exclusivity self-correction _setToggled triggered along the way),
+    // replaces all of those. Calling it on every grid rather than just the
+    // first is belt-and-suspenders (_syncDockHash no-ops outside a dock) —
+    // negligible cost, no assumption that the first grid built is the one
+    // that happens to sit inside .in-dock.
+    for (const grid of allGrids) grid._syncDockHash?.();
+
     // ── Phase 2: every grid's own fetch, all started together ──
     // Each analytics type self-fetches independently of the others AND of
     // the bundle fetch below — previously these ran one at a time, in a

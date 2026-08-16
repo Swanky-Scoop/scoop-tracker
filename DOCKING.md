@@ -107,18 +107,35 @@ whatever's currently `.toggled` inside the `.in-dock` root (rather than
 patching the hash incrementally) — a single click can close OTHER controls
 too via the existing slot/`nostack` exclusivity rules, so a full resync is
 the only way to keep the hash matching reality without duplicating that
-logic. Called from both the TOGGLE click handler and `dockToggle()`'s
-mount-time restore, through the shared `_setToggled(isOpen)` helper so a
-restored-from-hash open state runs through the identical exclusivity path a
-real click would.
+logic.
 
 Restore-on-load happens in `dockToggle()`, synchronously, before this
 control's rows are ever painted (no flash of the default/closed state): if
-this control's ID is listed in `#dock=`, it opens via `_setToggled(true)`;
+this control's ID is listed in `#dock=`, it opens via `_setToggled(true)`,
+the same shared helper the TOGGLE click handler uses, so a restored-from-hash
+open state runs through the identical exclusivity path a real click would;
 otherwise it's left at its default (closed), same as any fresh mount. A
 stale or hand-edited hash listing two same-slot controls self-corrects to
 whichever mounts last, since `_setToggled()`'s exclusivity rules still run
 during restore.
+
+`dockToggle()` deliberately does NOT call `_syncDockHash()` itself as part of
+that restore — `mountAllGrids()` (scoop-api.js) calls `dockToggle()` on every
+host in one synchronous pass, in shortcode/document order, before any of
+their data loads (see that method's own Phase 1 comment); resyncing the hash
+after each control's own restore re-derived `#dock=` from only whichever
+controls had mounted so far, silently dropping every control still later in
+that same pass the instant an earlier one restored (`#dock=A,B` collapsed to
+`#dock=A` before B ever got a chance to read the original value — a real bug,
+not hypothetical: a 2-control shared link only ever restored the first).
+`mountAllGrids()` instead calls `_syncDockHash()` once, on every mounted
+grid, right after that whole pass finishes — by then every control's restore
+(and any exclusivity self-correction it triggered) has actually settled, so
+one resync captures the true final state instead of a series of
+increasingly-wrong intermediate ones. The TOGGLE click handler still calls
+`_syncDockHash()` itself, immediately after `_setToggled()` — that's a single
+real-time user action, not part of the batch-restore sequence, so it isn't
+affected by any of the above.
 
 Only ever *opens* from the hash, never force-closes — there's no case yet
 where a page needs to override a control's default-closed state to

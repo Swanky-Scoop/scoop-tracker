@@ -1066,7 +1066,18 @@ export default class List extends El{
       this._setToggled(true);
     }
 
-    this._syncDockHash();
+    // Deliberately NOT calling _syncDockHash() here. mountAllGrids() calls
+    // dockToggle() on every host sequentially, in one synchronous pass
+    // (scoop-api.js's Phase 1) — resyncing the hash after EACH control's own
+    // restore would re-derive #dock= from only the controls mounted so far,
+    // dropping any control later in that same pass (e.g. #dock=A,B would
+    // collapse to #dock=A the instant A restores, before B ever gets a
+    // chance to read it). mountAllGrids does one _syncDockHash() call after
+    // the whole pass finishes instead, once every control's restore (and any
+    // exclusivity self-correction it triggered) has actually settled. The
+    // click handler in _bindEvents still calls _syncDockHash() itself right
+    // after _setToggled() — that path is a single real-time user action, not
+    // part of this batch-restore sequence, so it isn't affected.
   }
 
   // Shared by the TOGGLE click handler and dockToggle()'s hash-restore path
