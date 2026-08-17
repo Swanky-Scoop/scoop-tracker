@@ -37,6 +37,15 @@ export default class ShiftReportGridModel extends BaseGridModel {
     // grid on the page saved something (same reasoning as Closeout's
     // repaintOnRefresh — see closeout-grid-model.js).
     this.repaintOnRefresh = false;
+
+    // No _config.php route entry (see this model's own bundle spec comment
+    // in includes/_specs.php) means BaseGridModel never gets a server-driven
+    // displayTitle/icon to fall back on — set them directly here instead,
+    // same as CabinetWorkflowGridModel's own this.icon for the same reason.
+    // 'r' -> assets/icon-font/svg/r.svg -> the .si-r class (see
+    // Dockable._buildToggleButton in assets/ui/_dockable.js).
+    this.displayTitle = "Shift Report";
+    this.icon = "if:r";
   }
 
   // BaseGridModel ships no columns for this model (no _config.php entry —

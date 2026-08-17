@@ -363,9 +363,19 @@ export default class ScoopAPI {
   // pageStatusIds for every bundle grid whose type is in `types` — shared by
   // beginLoadTiming/completeLoadTiming above (for PageStatus's per-load
   // tracking) so both always compute the identical id set for a given fetch.
+  //
+  // Excludes one-shot forms (reactsToScopedRefresh===false) on any fetch
+  // that isn't the genuine initial page load — same reasoning and same
+  // this._domain===null check as _startDomainFetch's 'fetching' marking
+  // (see that method). Called BEFORE this._domain is updated for the fetch
+  // in progress (beginLoadTiming always runs ahead of the actual request —
+  // see _startDomainFetch), so this still reads as "was there ever a prior
+  // completed fetch" at the moment it matters.
   _idsForTypes(types = this._pageTypes) {
+    const isInitialLoad = this._domain === null;
     return (this._bundleGrids ?? [])
       .filter(g => types.includes(g.name))
+      .filter(g => isInitialLoad || g.reactsToScopedRefresh !== false)
       .map(g => g.pageStatusId)
       .filter(Boolean);
   }
@@ -400,6 +410,24 @@ export default class ScoopAPI {
   // writes through a different type's route entirely and so never appears
   // here as a trigger identity). Under-scoping silently is worse than one
   // extra fetch. See PERFORMANCE-REFACTOR.md item #2.
+  //
+  // One-shot forms (ShiftReportForm, TaskForm — bespoke non-List views that
+  // deliberately never rebuild off a refresh they didn't cause themselves,
+  // same "don't repaint mid-fill" reasoning as Batch's own
+  // repaintOnRefresh=false) are excluded from this needs-overlap pull-in,
+  // even when their own `needs` genuinely overlaps writesPods. Their
+  // setDomain() only ever runs once, at mountAllGrids()'s initial fetch (see
+  // that method — it's the only caller); nothing re-invokes it on later
+  // ts:domain:updated events, since these views don't bind that listener at
+  // all. Including them here used to mark their PageStatus id 'fetching' for
+  // a fetch whose result they'd never apply or report back on — stalling
+  // the whole page's load-timing countdown forever (see
+  // PageStatus._anyIdsFetching/_tryFinishLoadTiming, which wait on every id
+  // leaving 'fetching'). Checked via the bundleGrid instance's own
+  // reactsToScopedRefresh flag (see ShiftReportForm/TaskForm's
+  // constructors), not a hardcoded type-name list, so a future one-shot
+  // view opts in/out the same way. Doesn't affect the initial page load —
+  // that call never goes through this method at all.
   scopedRefreshTypes(triggerType) {
     const scope = SCOOP?.refreshScope ?? {};
     const entry = scope[triggerType];
@@ -410,6 +438,10 @@ export default class ScoopAPI {
     const out = new Set([triggerType]);
     for (const type of this._pageTypes) {
       if (type === triggerType) continue;
+
+      const grid = this._bundleGrids?.find((g) => g.name === type);
+      if (grid?.reactsToScopedRefresh === false) continue;
+
       const needs = scope[type]?.needs;
       if (Array.isArray(needs) && needs.some((n) => writesPods.includes(n))) out.add(type);
     }
@@ -545,6 +577,17 @@ export default class ScoopAPI {
     const fetchTypes = (Array.isArray(types) && types.length) ? types : this._pageTypes;
     const fetchSet = new Set(fetchTypes);
 
+    // True only for the genuine first-ever fetch this page makes (this._domain
+    // starts null and is only ever set below, once a bundle actually lands) —
+    // NOT the same thing as "types is the full page union", which also
+    // happens for any later UNSCOPED forced refresh (e.g.
+    // CabinetWorkflowTile/ConfirmSwapModal's own refreshPageDomain({force:true})
+    // calls, which pass no `types` at all and so bypass scopedRefreshTypes()
+    // entirely — see that method's own comment for why a *scoped* trigger
+    // already excludes reactsToScopedRefresh===false views, and why this
+    // second, lower check is still needed for the unscoped case).
+    const isInitialLoad = this._domain === null;
+
     // Only the grids actually part of THIS fetch flip to 'fetching' — an
     // out-of-scope grid's last real state (fresh/stale) is still accurate,
     // nothing about its data is changing (see the merge below). Each grid
@@ -552,8 +595,19 @@ export default class ScoopAPI {
     // List.init/refresh/_onDomainUpdated in _list.js). info.name identifies
     // which grid's action (Save submit, autosave, filter change) caused
     // this refresh — absent only for the initial page-load call.
+    //
+    // One-shot forms (reactsToScopedRefresh===false — ShiftReportForm,
+    // TaskForm) only ever get marked 'fetching' on that genuine initial
+    // load, which is the one time their own setDomain() actually runs and
+    // reports back 'fresh' (see mountAllGrids()). Marking them 'fetching'
+    // for ANY later fetch — scoped or, as here, unscoped — would stall this
+    // whole page's overall PageStatus (_recomputeOverallState picks the
+    // worst state across every registered item, unconditionally) forever,
+    // since nothing ever calls their setDomain() again to clear it.
     this._bundleGrids.forEach(g => {
-      if (g.pageStatusId && fetchSet.has(g.name)) PageStatus.setState(g.pageStatusId, 'fetching');
+      if (!g.pageStatusId || !fetchSet.has(g.name)) return;
+      if (!isInitialLoad && g.reactsToScopedRefresh === false) return;
+      PageStatus.setState(g.pageStatusId, 'fetching');
     });
     PageStatus.setTrigger(info?.name ?? 'page load');
 
@@ -1091,7 +1145,15 @@ export default class ScoopAPI {
       this._bundleGrids = bundleGrids;
       this._bundleFilterParams = this._bundleFilterParamsForGrids(bundleGrids);
       bundleFetch = this.refreshPageDomain({ force: true }).then(() => {
-        bundleGrids.forEach(g => g.setDomain(this._domain));
+        // Promise.all, not a fire-and-forget forEach: every List-based
+        // grid's own setDomain() is synchronous in practice (no real
+        // awaits), so this was never observably different for them — but a
+        // bespoke non-List view whose setDomain() genuinely awaits its own
+        // extra work (ShiftReportForm's field-schema fetch, TaskForm's
+        // kitchen-staff fetch) needs its promise actually awaited here, or
+        // this whole mount is considered "done" before that view has
+        // finished setting itself up.
+        return Promise.all(bundleGrids.map(g => g.setDomain(this._domain)));
       });
     }
 

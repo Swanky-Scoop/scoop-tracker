@@ -6,6 +6,13 @@
 // surviving rows hides itself too (its .group header + shared .groupBody
 // container); a flat/ungrouped list has no .group headers to hide and this
 // simply narrows individual rows.
+//
+// A row's match text is its own content PLUS its group's label (see
+// getGroupLabelText) — FlavorTub groups rows by flavor and only shows the
+// flavor name on the group header, not repeated per tub row underneath, so
+// row-only matching found nothing for any flavor search and filtered every
+// row away. CabinetWorkflow (each slot already shows its own flavor name)
+// doesn't need the fallback but isn't hurt by it either.
 //////////////////////////////////
 
 export default class FindInList {
@@ -59,6 +66,20 @@ export default class FindInList {
     return (el?.textContent ?? "").toString();
   }
 
+  // A row's own text is enough for CabinetWorkflow (each slot's card already
+  // shows its flavor name), but FlavorTub groups rows BY flavor and doesn't
+  // repeat the flavor name on every tub row underneath — only the group
+  // header carries it (.group's data-group-label, set in grid.js/tile.js's
+  // buildGroupDom). Without folding that in, typing a flavor name matched
+  // zero rows in every group and the list filtered down to nothing. Empty
+  // string for a row whose container has no .group header at all (a flat/
+  // ungrouped list, or the item argument passed straight in) — harmless, it
+  // just contributes nothing to the row's own haystack.
+  getGroupLabelText(container) {
+    const header = container?.querySelector?.(`:scope > ${this.groupSelector}`);
+    return (header?.dataset?.groupLabel ?? "").toString();
+  }
+
   inferSingleType() {
     const types = new Set(this.groups().map(g => this.getType(this.containerFor(g))).filter(Boolean));
     return types.size === 1 ? [...types][0] : null;
@@ -93,7 +114,7 @@ export default class FindInList {
     for (const item of items) {
       const container = this.containerFor(item);
       const tOk = !impliedType || !container || this.getType(container) === impliedType;
-      const hay = this.normSearch(this.getItemText(item));
+      const hay = this.normSearch(`${this.getGroupLabelText(container)} ${this.getItemText(item)}`);
       const hit = !term || hay.includes(term);
       const visible = tOk ? hit : true;
 

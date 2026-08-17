@@ -121,6 +121,19 @@ export default class TaskForm extends Dockable {
     this.formCodec = formCodec;
     this.pageStatusId = pageStatusId;
 
+    // setDomain() only ever runs once, at mountAllGrids()'s initial fetch —
+    // this view deliberately never rebuilds off a later refresh it didn't
+    // cause itself, and binds no ts:domain:updated listener at all to do
+    // so. ScoopAPI.scopedRefreshTypes() reads this flag to keep this view
+    // OUT of a scoped refresh's PageStatus tracking even though its own
+    // `needs` (flavor/recipe/ingredient/unit/batch/recipe_count/prep)
+    // genuinely overlaps plenty of other types' writesPods — otherwise a
+    // later Batch/RecipeCount/Prep/Cabinet/etc. save marks this host
+    // 'fetching' again for a fetch it will never report back on, stalling
+    // the page's load-timing countdown forever (same bug ShiftReportForm
+    // had — see that file). Doesn't affect the initial page load.
+    this.reactsToScopedRefresh = false;
+
     this.domain = null;
     this.taskId = null;
     this._built = false;
@@ -148,17 +161,27 @@ export default class TaskForm extends Dockable {
   // forEach(g => g.setDomain(...))). First call: fetches kitchen-staff and
   // builds the real form. Once the component grids are mounted, they're
   // independent List instances and handle their own domain refreshes.
+  //
+  // The final setState is in `finally` — same reasoning as ShiftReportForm's
+  // identical guard (see that file): mountAllGrids() calls this
+  // fire-and-forget (never awaited), so an exception partway through
+  // _buildForm() would otherwise leave this host's PageStatus stuck at
+  // 'fetching' forever, which also stalls the page-wide load-timing
+  // countdown (see PageStatus._anyIdsFetching/_tryFinishLoadTiming — it
+  // waits on every registered id leaving 'fetching').
   async setDomain(domain) {
     this.modelInstance.setDomain(domain);
     this.domain = domain;
 
-    if (!this._built) {
-      this._staff = await this._fetchKitchenStaff();
-      this._buildForm();
-      this._built = true;
+    try {
+      if (!this._built) {
+        this._staff = await this._fetchKitchenStaff();
+        this._buildForm();
+        this._built = true;
+      }
+    } finally {
+      if (this.pageStatusId) PageStatus.setState(this.pageStatusId, "fresh");
     }
-
-    if (this.pageStatusId) PageStatus.setState(this.pageStatusId, "fresh");
   }
 
   async _fetchKitchenStaff() {

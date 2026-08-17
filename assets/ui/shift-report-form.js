@@ -46,6 +46,19 @@ export default class ShiftReportForm extends Dockable {
     this.modelInstance = modelInstance;
     this.pageStatusId = pageStatusId;
 
+    // setDomain() only ever runs once, at mountAllGrids()'s initial fetch —
+    // this view deliberately never rebuilds off a later refresh it didn't
+    // cause itself (same "don't repaint mid-fill" reasoning as Batch's own
+    // repaintOnRefresh=false), and binds no ts:domain:updated listener at
+    // all to do so. ScoopAPI.scopedRefreshTypes() reads this flag to keep
+    // this view OUT of a scoped refresh's PageStatus tracking even when its
+    // own `needs` genuinely overlaps the trigger's writesPods — otherwise a
+    // later Cabinet/FlavorTub/Batch save marks this host 'fetching' again
+    // for a fetch it will never report back on, stalling the page's
+    // load-timing countdown forever. Doesn't affect the initial page load,
+    // which is what actually needs this view's setDomain() to run.
+    this.reactsToScopedRefresh = false;
+
     this._photoId = null;
     this._cakeOrderRows = []; // [{ li, orderName, cakePieFlavor, pickupDate, details }]
     this._fieldGetters = {};  // name -> () => value, for every field except tempering_cabinet_photo/cake_orders
@@ -85,20 +98,30 @@ export default class ShiftReportForm extends Dockable {
   // (_reportFresh) but this standalone view doesn't inherit. Without this,
   // the shimmer never clears, AND — worse — PageStatus's page-wide
   // indicator shows the WORST state across every registered grid, so a
-  // stuck ShiftReport host holds the entire page at 'unknown' forever, not
-  // just its own <li>.
+  // stuck ShiftReport host holds the entire page (and the load-timing
+  // countdown — see PageStatus._anyIdsFetching/_tryFinishLoadTiming, which
+  // wait on every id's state leaving 'fetching') at 'unknown'/'fetching'
+  // forever, not just its own <li>. The setState call below is in `finally`
+  // specifically so this reporting can never be skipped by an exception
+  // partway through _buildForm()/the checklist renders — a broken render is
+  // still better than a page-wide load indicator that never finishes and a
+  // countdown that runs forever, and this view's own setDomain() is called
+  // fire-and-forget (not awaited) by mountAllGrids(), so nothing else
+  // surfaces that failure either.
   async setDomain(domain) {
     this.modelInstance.setDomain(domain);
 
-    if (!this._fieldSchema) {
-      this._fieldSchema = await this._fetchFieldSchema();
-      this._buildForm();
-    } else {
-      this._renderFlavorsChangedChecklist();
-      this._renderSuppliesLowChecklist();
+    try {
+      if (!this._fieldSchema) {
+        this._fieldSchema = await this._fetchFieldSchema();
+        this._buildForm();
+      } else {
+        this._renderFlavorsChangedChecklist();
+        this._renderSuppliesLowChecklist();
+      }
+    } finally {
+      if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'fresh');
     }
-
-    if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'fresh');
   }
 
   async _fetchFieldSchema() {
@@ -120,6 +143,17 @@ export default class ShiftReportForm extends Dockable {
     const el = this.el;
     this.ROOT.replaceChildren();
     this.ROOT.append(el('h2', { text: 'End-of-shift report' }));
+
+    // Un-editable record of who was actually logged in when this form was
+    // filled out — separate from shift_lead below, which is a plain text
+    // field pre-filled with the same name but still free-text/editable
+    // (someone can fill this in on another person's behalf). Same identity
+    // string enqueue.php already puts on every page (window.SCOOP.user.name
+    // — user_nicename, not a Pods field, so it's DOM-only, not part of the
+    // submitted payload built in _submit()).
+    this.ROOT.append(el('input', {
+      attrs: { type: 'hidden', name: 'authenticated_user', value: window.SCOOP?.user?.name ?? '' },
+    }));
 
     this._fieldGetters = {};
     this.LOCATION_SELECT = null;
@@ -322,12 +356,22 @@ export default class ShiftReportForm extends Dockable {
 
       case 'text':
       default:
-        control = el('input', { 
-          attrs: { 
+        control = el('input', {
+          attrs: {
             type: 'text', ...(field.required ? { required: true } : {}) ,
             ...(field.description ? { placeholder: field.description } : {}),
-          } 
+          }
         });
+        // shift_lead ("Who are you?") defaults to whoever's actually logged
+        // in — still a plain editable text field (someone else may be
+        // filling this in on their behalf), just pre-filled instead of
+        // blank. Same identity string as the hidden field at the top of the
+        // form (see AUTH_USER in the constructor) — window.SCOOP.user.name
+        // is the one client-side identity value every page already carries
+        // (see enqueue.php's wp_localize_script, 'name' => user_nicename).
+        if (field.name === 'shift_lead' && window.SCOOP?.user?.name) {
+          control.value = window.SCOOP.user.name;
+        }
         this._fieldGetters[field.name] = () => control.value || '';
         break;
     }
