@@ -464,7 +464,7 @@ html body {
      view" below) — otherwise every toast is fully masked while docked.
      Still below body > .modal.show's 999999, so a confirm/picker modal
      stays on top of toasts. */
-  z-index: 100000;
+  z-index: 1000000;
 
   /* No panel chrome of its own — now that this sits above .in-dock (see
      the z-index comment above), a visible background/border would cover
