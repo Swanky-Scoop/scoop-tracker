@@ -131,22 +131,31 @@ export default class FindInList {
       this.setVisible(group, count > 0);
     }
 
-    // QoL: auto-open any group narrowed to a surviving match, so its rows
-    // are actually visible instead of hidden behind a still-collapsed
-    // header. Reversed once no longer matching / filter cleared. Applies to
-    // every matching group now, not just when narrowed to exactly one —
-    // that used to be an incidental limit of matching whole groups, not a
-    // deliberate one.
-    for (const group of groups) {
+    // QoL: when the filter narrows to exactly one matching group, open it so
+    // its surviving rows show without an extra click. Deliberately NOT "any
+    // matching group" — a manual click on a group's own .oc toggle
+    // (_showHide in _list.js) re-applies the active filter afterward
+    // (_flushGroup -> _reapplyActiveFilter, so a freshly-opened group's rows
+    // get caught up), and forcing every match open on that same pass fought
+    // the click that had just closed it, making toggling read as broken
+    // while a term was active. Only ever force-CLOSES a group this filter
+    // itself force-opened (the autoOpened marker) — a group the user opened
+    // or closed by hand never carries that marker, so a manual toggle is
+    // never fought either way, matching pre-item-level-filtering behavior.
+    const matchingGroups = groups.filter(group => {
       const container = this.containerFor(group);
-      const count = container ? (visibleCountByContainer.get(container) ?? 0) : 0;
+      return !!container && (visibleCountByContainer.get(container) ?? 0) > 0;
+    });
 
-      if (term && count > 0) {
-        this.setGroupOpen(group, true);
-        group.dataset.autoOpened = "1";
-      } else if (group.dataset.autoOpened) {
-        this.setGroupOpen(group, false);
-        delete group.dataset.autoOpened;
+    if (term && matchingGroups.length === 1) {
+      this.setGroupOpen(matchingGroups[0], true);
+      matchingGroups[0].dataset.autoOpened = "1";
+    } else {
+      for (const group of groups) {
+        if (group.dataset.autoOpened) {
+          this.setGroupOpen(group, false);
+          delete group.dataset.autoOpened;
+        }
       }
     }
   }
