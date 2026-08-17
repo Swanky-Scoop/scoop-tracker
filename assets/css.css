@@ -1100,7 +1100,8 @@ body.dock-resizing {
 }
 
 /* see css.md#in-dock-aside-scoop-grid-form */
-.in-dock aside > .scoop-grid > form {
+.in-dock aside > .scoop-grid > form,
+.in-dock aside > .scoop-grid > .task-form {
   transform: none;
 }
 
@@ -1156,15 +1157,21 @@ body.dock-resizing {
   pointer-events: auto;
 }
 
-/* see css.md#in-dock-scoop-grid-form */
-.in-dock .scoop-grid > form {
+/* see css.md#in-dock-scoop-grid-form — ".task-form" alongside "form" since
+   TaskForm's content root is a plain <div> (can't be a real <form> — it
+   holds several independent Grid <form>s as children, and HTML forbids
+   nesting forms; see task-form.js's file-level comment). Every dockable
+   view's content root matches one of these two selectors. */
+.in-dock .scoop-grid > form,
+.in-dock .scoop-grid > .task-form {
   transition: transform 0.2s ease-in, opacity 0.2s ease-in;
   transform: translateY(100%) scale(0.9);
   opacity: 0;
   pointer-events: none;
 }
 
-.in-dock .scoop-grid.toggled > form {
+.in-dock .scoop-grid.toggled > form,
+.in-dock .scoop-grid.toggled > .task-form {
   transform: translateY(0) scale(1);
   opacity: 1;
   pointer-events: auto;

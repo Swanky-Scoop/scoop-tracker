@@ -10,9 +10,9 @@
 // independence precedent as PopularPlot (see scoop-api.js's analytics-grid
 // branch) — but bundle-fed like every other grid, not self-fetching, so it
 // only needs to satisfy the same external contract ScoopAPI actually calls
-// on a bundle-fed view: setDomain(domain), and an optional dockToggle()
-// (omitted here — no dock button for a one-time submit form, it just
-// renders inline).
+// on a bundle-fed view: setDomain(domain), and dockToggle() — every
+// shortcode is expected to be dockable (see DOCKING.md), so this extends
+// Dockable (assets/ui/_dockable.js) for that piece instead of List.
 //
 // Schema-driven, not hand-coded: the field list used to be hardcoded here,
 // which meant every field added in Pods admin needed a matching code change
@@ -30,16 +30,17 @@
 // Everything else, including location, renders generically off field
 // metadata (type/label/options) the server already resolved.
 //////////////////////////////////
-import El from "./_el.js";
+import Dockable from "./_dockable.js";
 import Toast from "./toast.js";
 import PageStatus from "./page-status.js";
 
 const BESPOKE_FIELD_NAMES = new Set(['tempering_cabinet_photo', 'flavors_changed', 'supplies_low', 'cake_orders']);
 
-export default class ShiftReportForm extends El {
+export default class ShiftReportForm extends Dockable {
   constructor(dom, type, { api, modelInstance, pageStatusId = null } = {}) {
     super();
     this.dom = dom;
+    this.target = dom; // Dockable's methods key off this.target — see _dockable.js.
     this.name = type;
     this.api = api;
     this.modelInstance = modelInstance;
@@ -58,7 +59,16 @@ export default class ShiftReportForm extends El {
       e.preventDefault();
       this._submit();
     });
-    this.dom.replaceChildren(this.ROOT);
+
+    // Every shortcode is expected to be dockable (see DOCKING.md) — TOGGLE
+    // is a sibling of ROOT, same as List's FORM+TOGGLE under target (see
+    // _attachCoreDom() in _list.js). ROOT is a real <form>, which already
+    // matches css.css's ".in-dock .scoop-grid > form" show/hide rule, so no
+    // CSS changes were needed for this one.
+    this.TOGGLE = this._buildToggleButton();
+    this.dom.replaceChildren(this.ROOT, this.TOGGLE);
+    this._bindDockToggle();
+    this._bindPageStatusToggle();
   }
 
   // External contract ScoopAPI actually calls (see scoop-api.js's

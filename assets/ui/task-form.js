@@ -4,8 +4,10 @@
 // task's own target/other fields aren't spreadsheet columns, and the three
 // batches/preps/recipe_counts widgets each need their OWN independent Grid
 // instances (see below) rather than one shared table. Bundle-fed like every
-// other grid (setDomain(domain), optional dockToggle() — omitted, no dock
-// button for this view), just not built on List itself.
+// other grid (setDomain(domain), dockToggle()), just not built on List
+// itself — extends Dockable (assets/ui/_dockable.js) for the dock-toggle
+// piece instead, same as ShiftReportForm; every shortcode is expected to be
+// dockable (see DOCKING.md).
 //
 // Each of the three widgets (Batch/RecipeCount/Prep) is a PAIR of real Grid
 // instances, same shape as the standalone [scoop_grid type="Batch" history="true"]
@@ -48,7 +50,7 @@
 // document-level ts:domain:updated mechanism every other List already uses
 // — no bespoke event wiring needed.
 //////////////////////////////////
-import El from "./_el.js";
+import Dockable from "./_dockable.js";
 import Toast from "./toast.js";
 import PageStatus from "./page-status.js";
 import Grid from "./grid.js";
@@ -108,10 +110,11 @@ const COMPONENTS = [
   },
 ];
 
-export default class TaskForm extends El {
+export default class TaskForm extends Dockable {
   constructor(dom, type, { api, modelInstance, formCodec, pageStatusId = null } = {}) {
     super();
     this.dom = dom;
+    this.target = dom; // Dockable's methods key off this.target — see _dockable.js.
     this.name = type;
     this.api = api;
     this.modelInstance = modelInstance;
@@ -128,7 +131,17 @@ export default class TaskForm extends El {
     this.ROOT = this.el("div", { classes: ["task-form"] });
     this.ROOT.append(this.el("h2", { text: "New Task" }));
     this.ROOT.append(this.el("p", { text: "Loading…", classes: ["loading-note"] }));
-    this.dom.replaceChildren(this.ROOT);
+
+    // Every shortcode is expected to be dockable (see DOCKING.md) — TOGGLE
+    // is a sibling of ROOT, same as List's FORM+TOGGLE under target (see
+    // _attachCoreDom() in _list.js). ROOT is a plain <div> (not <form> — see
+    // the file-level comment on why it can't be), so css.css needs its own
+    // ".in-dock .scoop-grid > .task-form" show/hide rule alongside the
+    // generic "> form" one List's FORM already matches.
+    this.TOGGLE = this._buildToggleButton();
+    this.dom.replaceChildren(this.ROOT, this.TOGGLE);
+    this._bindDockToggle();
+    this._bindPageStatusToggle();
   }
 
   // External contract ScoopAPI actually calls (mountAllGrids' bundleGrids
