@@ -170,7 +170,9 @@ add_shortcode('scoop_dock', function ($raw_atts, $content = null) {
     <div class="in-dock"<?php if (!empty($atts['location'])) : ?> data-default-location="<?php echo esc_attr($atts['location']); ?>"<?php endif; ?>>
       <div class="action-target"></div>
       <div class="toolbar">
+        <?php if (current_user_can('manage_options')) : ?>
         <a href="../wp-admin/edit.php?post_type=tub" class="gridToggle wp"><i class="ab-icon"></i><span class="dockTitle">WP Admin</span></a>
+        <?php endif; ?>
         <div class="PAGE-STATUS">
             <h3>Status</h3>
             <em></em>
