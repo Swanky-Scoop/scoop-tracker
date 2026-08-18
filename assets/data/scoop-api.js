@@ -14,6 +14,7 @@ import EmptiedLogGridModel   from "../models/emptied-log-grid-model.js";
 import AnalyticsGridModel    from "../models/analytics-grid-model.js";
 import PopularGridModel      from "../models/popular-grid-model.js";
 import PopularPlot           from "../ui/popular-plot.js";
+import IframePanel           from "../ui/iframe-panel.js";
 import FlavorsGridModel      from "../models/flavors-grid-model.js";
 import InstockFlavorGridModel from "../models/instock-flavor-grid-model.js";
 import CabinetWorkflowGridModel from "../models/cabinet-workflow-grid-model.js";
@@ -979,13 +980,21 @@ export default class ScoopAPI {
     });
 
     const analyticsTypes = new Set(["Analytics", "Popular", "Flavors"]);
+    // "Iframe" (see iframe-panel.js) has no bundle entity, no model, no
+    // fetch at all — it renders entirely off its own shortcode attributes
+    // (data-title/data-url). Excluded from the bundle scope below for the
+    // same reason as analyticsTypes: the bundle endpoint 400s on unknown
+    // types.
+    const staticTypes = new Set(["Iframe"]);
     const modelsBom = this.getModelsBom();
 
     // getTypesFromGridHosts() stuffed every grid type into this.gridTypes,
-    // including the analytics ones. The bundle endpoint 400s on unknown
-    // types like "Popular", so re-scope to only the bundle hosts before
-    // refreshPageDomain() (phase 2) builds the request URL.
-    const bundleTypeHosts = this._hosts.filter(dom => !analyticsTypes.has(dom.dataset.gridType));
+    // including the analytics/static ones. The bundle endpoint 400s on
+    // unknown types like "Popular"/"Iframe", so re-scope to only the bundle
+    // hosts before refreshPageDomain() (phase 2) builds the request URL.
+    const bundleTypeHosts = this._hosts.filter(dom =>
+      !analyticsTypes.has(dom.dataset.gridType) && !staticTypes.has(dom.dataset.gridType)
+    );
     this.gridTypes = new Set(bundleTypeHosts.map(dom => dom.dataset.gridType).filter(Boolean));
 
     // A Batch host with data-history="1" embeds BatchHistory's <form>
@@ -1006,6 +1015,17 @@ export default class ScoopAPI {
     for (const dom of this._hosts) {
       const type     = dom.dataset.gridType;
       const location = this._resolveLocation(dom);
+
+      if (staticTypes.has(type)) {
+        // No fetch phase at all — render() runs synchronously inside the
+        // constructor (see iframe-panel.js), so this control is "fresh" the
+        // instant it's built, unlike every fetch-driven type below.
+        const panel = new IframePanel(dom, type, { api: this });
+        panel.dockToggle?.();
+        PageStatus.setState(dom.id, 'fresh');
+        allGrids.push(panel);
+        continue;
+      }
 
       if (analyticsTypes.has(type)) {
         const days = Number(dom.dataset.days || 30);

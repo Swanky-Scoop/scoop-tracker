@@ -606,12 +606,17 @@ html > body.TS_GRID-UPDATING .scoop-grid {
 }
 
 /* see css.md#scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id */
-.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not([data-grid-type="Task"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zList-form {
+.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not([data-grid-type="Task"]):not([data-grid-type="Iframe"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zList-form {
   min-height: 13.5rem;
 }
 
-/* see css.md#scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id-2 */
-.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not([data-grid-type="Task"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state))::after {
+/* see css.md#scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id-2 —
+   "Iframe" (assets/ui/iframe-panel.js) added alongside ShiftReport/Task:
+   this loading-shimmer heuristic infers "still loading" purely from DOM
+   shape (no table rows/list items/empty-state yet), and an iframe embed's
+   content root is neither — without this exclusion the shimmer never
+   clears, same failure mode ShiftReport/Task already needed this fix for. */
+.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not([data-grid-type="Task"]):not([data-grid-type="Iframe"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state))::after {
   content: '';
   position: absolute;
   top: 0;
@@ -2805,6 +2810,36 @@ table.zList td.trend-steady {
 .popularKey table.zList td.avg_sellthrough_days.trend-falling { color: var(--color-trend-falling); }
 
 .popularEmpty {
+  padding: 1rem;
+  color: var(--color-text-base);
+}
+
+/* ============================================
+   IFRAME - Generic embed view (assets/ui/iframe-panel.js)
+   ============================================ */
+
+.scoop-grid[data-grid-type="Iframe"] {
+  width: 100%;
+}
+
+.iframeView {
+  margin: 1rem 0;
+  /* 1rem top + 1rem bottom margin above, so the content box itself is the
+     viewport height less that same 2rem — simple viewport-relative sizing
+     rather than a JS-measured pixel height (see iframe-panel.js). */
+  height: calc(100vh - 2rem);
+}
+
+.iframeEmbed {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0.25rem;
+  background: var(--color-text-white);
+}
+
+.iframeEmpty {
   padding: 1rem;
   color: var(--color-text-base);
 }

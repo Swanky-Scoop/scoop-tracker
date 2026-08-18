@@ -253,7 +253,8 @@ add_action('wp_enqueue_scripts', function () {
     if (
       !has_shortcode($post->post_content, 'scoop_grid') &&
       !has_shortcode($post->post_content, 'scoop_tile') &&
-      !has_shortcode($post->post_content, 'scoop_dock')
+      !has_shortcode($post->post_content, 'scoop_dock') &&
+      !has_shortcode($post->post_content, 'scoop_iframe')
     ) return;
 
     scoop_enqueue_assets();

@@ -127,6 +127,55 @@ add_shortcode('scoop_tile', function ($atts) {
 });
 
 /**
+ * Shortcode: [scoop_iframe title="..." url="..." slug="..."]
+ *
+ * A dockable host for an arbitrary third-party iframe embed (e.g. a
+ * published Google Doc) — see assets/ui/iframe-panel.js. Unlike
+ * [scoop_grid]/[scoop_tile], this host carries no bundle-entity contract:
+ * title/url are passed straight through as data attributes and the client
+ * renders them with zero server round-trip, no Pods entity, no REST route.
+ * General-purpose by design — every attribute is per-instance, so a page
+ * can embed as many different URLs as it wants just by writing more of this
+ * shortcode. Fixed at 'half-nostack' canvas sizing (see
+ * IframePanel's constructor) — not configurable from the shortcode.
+ */
+add_shortcode('scoop_iframe', function ($raw_atts) {
+    if (!is_user_logged_in()) {
+        return '<p>You must be logged in to view this.</p>';
+    }
+
+    $atts = shortcode_atts([
+        'title' => 'Embed',
+        'url'   => '',
+        // Disambiguates two [scoop_iframe] hosts on one page for the
+        // #dock= hash — same convention as [scoop_grid]'s own `slug` (see
+        // scoop_render_grid_host above and ScoopAPI._controlId()).
+        'slug'  => null,
+    ], is_array($raw_atts) ? $raw_atts : [], 'scoop_iframe');
+
+    if (empty($atts['url'])) {
+        return '<p>scoop_iframe: missing required "url" attribute.</p>';
+    }
+
+    $id = 'scoop-grid-' . uniqid();
+
+    ob_start();
+    ?>
+    <div
+    id="<?php echo esc_attr($id); ?>"
+    class="scoop-grid Iframe"
+    data-grid-type="Iframe"
+    data-title="<?php echo esc_attr($atts['title']); ?>"
+    data-url="<?php echo esc_url($atts['url']); ?>"
+    <?php if (!empty($atts['slug'])) : ?>
+    data-slug="<?php echo esc_attr($atts['slug']); ?>"
+    <?php endif; ?>
+    ></div>
+    <?php
+    return ob_get_clean();
+});
+
+/**
  * Shortcode: [scoop_dock] ... nested [scoop_grid]/[scoop_tile] ... [/scoop_dock]
  *
  * Enclosing wrapper, not a data host itself. Emits an .in-dock container
