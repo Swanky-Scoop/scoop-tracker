@@ -458,7 +458,16 @@ html body {
   position: fixed;
   bottom: 0;
   right: 0;
-  top: 0;
+  /* No top:0 anymore — this used to force the container to the FULL
+     viewport height regardless of how many toasts (if any) it actually
+     held. Combined with z-index:1000000 (see below) and no pointer-events
+     guard, that meant the empty, invisible (background:transparent) upper
+     portion of the box still intercepted clicks meant for whatever sat
+     underneath it — most visibly <aside>'s own right-edge content, which
+     it fully overlapped at full height. Now it only ever grows as tall as
+     its own content (capped below for the rare pile-of-toasts case). */
+  max-height: 90vh;
+  overflow: auto;
   min-width: var(--dimension-toaster-width);
   /* Above .in-dock's fixed, full-viewport z-index:99999 (see "TUBS - Docked
      view" below) — otherwise every toast is fully masked while docked.
@@ -475,6 +484,14 @@ html body {
   box-shadow: none;
   background: transparent;
 
+  /* Belt-and-suspenders alongside the height fix above and toast.js's
+     auto-hide-when-empty (see addMessage's setTimeout): even if .show ever
+     ends up stuck applied with nothing left to actually show, the
+     container and its scroller are click-through by default — only a real,
+     non-expired .TOAST card (below) re-enables pointer-events, so this
+     never blocks a click meant for whatever's underneath it. */
+  pointer-events: none;
+
   transform: translateX(100%);
   transition: transform 0.3s ease;
 
@@ -486,21 +503,14 @@ html body {
     display: none;
   }
   & .SCROLLER{
-    position:absolute;
-    bottom:0;
-    top:0;
-    left:0;
-    right:0;
     padding:1rem;
-    overflow: auto;
     display: flex;
-    vertical-align: bottom;
     flex-direction: column;
     justify-content: flex-end;
     gap: 1rem;
-  
   }
   & .TOAST {
+    pointer-events: auto;
     background-color: var(--color-bg-white);
     padding: 1rem 1.5rem 1.5rem;
     font-size: 0.9rem;
@@ -516,7 +526,9 @@ html body {
     /* Auto-hidden ~4s after it lands (see toast.js addMessage) — visual
        only, stays in the DOM (not .remove()d) so a later "review session
        activity" feature has the full history to work from. Only the
-       explicit close button actually removes a toast. */
+       explicit close button actually removes a toast. pointer-events:none
+       here wins over the plain .TOAST rule above (two classes beats one),
+       so a faded card can't block a click either. */
     &.expired {
       opacity: 0;
       pointer-events: none;
@@ -1878,7 +1890,7 @@ aside table.zList thead th {
    (Cabinet) never gets this wrapper at all (see grid.js), so this can stay
    scoped to .action-target without needing to also exclude aside by hand. */
 .action-target .zList-scroll {
-  max-height: 60vh;
+  max-height: 50vh;
   overflow-y: auto;
 }
 .action-target table.zList thead th {

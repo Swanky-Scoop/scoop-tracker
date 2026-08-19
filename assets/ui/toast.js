@@ -40,7 +40,7 @@ export default class Toast {
 
     CLOSE.addEventListener('click', (e)=>{
       e.target.closest('.TOAST').remove();
-      Toast.hide();
+      Toast._hideIfEmpty();
     });
 
     changes.forEach(element => {
@@ -61,12 +61,29 @@ export default class Toast {
     // css.css) — deliberately NOT removed from the DOM, unlike the close
     // button's handler above. Keeping it around is what a future "review
     // session activity" feature would read from.
-    setTimeout(() => TOAST.classList.add('expired'), 4000);
+    setTimeout(() => {
+      TOAST.classList.add('expired');
+      Toast._hideIfEmpty();
+    }, 4000);
 
     return TOAST;
 
   }
-  
+
+  // Retracts TOASTER (see .TOASTER.show in css.css) the moment nothing live
+  // is left in it — called after both ways a toast can stop being "live"
+  // (auto-expiring above, or the close button's own handler). Without this,
+  // .show stuck applied forever after the very first toast was the actual
+  // bug: an invisible (background:transparent) but still on-screen,
+  // z-index:1000000 container that outlived every toast inside it.
+  // .expired cards are left in the DOM on purpose (see addMessage's own
+  // comment) so this checks liveness, not presence.
+  static _hideIfEmpty(){
+    const TOASTER = Toast._ensureHost();
+    const stillLive = TOASTER.querySelector('.SCROLLER')?.querySelector('.TOAST:not(.expired)');
+    if (!stillLive) Toast.hide();
+  }
+
   static update(node, {title='title', message='This event happened', state='OK'} = {}){
     if(!(node instanceof Element)) return;
     const date    = Date.now();
