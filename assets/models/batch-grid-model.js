@@ -13,6 +13,13 @@ export default class BatchGridModel extends BaseGridModel{
     // nothing here to bring up to date, so don't let it repaint mid-typing.
     // See the repaintOnRefresh check in _list.js's _onDomainUpdated.
     this.repaintOnRefresh = false;
+    // Opt into _list.js's synchronous reset-to-blank + refocus-first-field,
+    // fired the moment Save is clicked rather than waiting on the POST —
+    // Batch is a repeat-entry workflow (add several batches in a row), so
+    // the form should go back to blank with focus on `flavor` right away
+    // instead of leaving the just-submitted values sitting there.
+    // See the saveReset branch in _list.js's FORM submit listener.
+    this.saveReset = true;
     this._build();
   }
 

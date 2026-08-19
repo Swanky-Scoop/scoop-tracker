@@ -1839,10 +1839,14 @@ table.zList tr {
 /* ============================================
    TABLE - CELLS (Editable & Read-only)
    ============================================ */
-aside table.zList thead {
+/* Sticky on the individual th's, not on thead itself — thead's default
+   display:table-header-group doesn't reliably honor position:sticky across
+   browsers, th (a normal table-cell box) does. */
+aside table.zList thead th {
   position: sticky;
   top: 0;
 }
+
 aside table.zList tr .cell {
   padding: 1rem 3rem;
   border-width: 0.5px;

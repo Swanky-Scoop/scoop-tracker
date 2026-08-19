@@ -1696,23 +1696,41 @@ export default class List extends Dockable{
           return;
         }
 
-        // Move focus to the find-in-list filter right now — synchronously,
-        // tied to the user's own action (Ctrl+Enter or clicking Save), with
-        // no `await` between here and the call. Deliberately NOT tied to the
+        // Both branches below move focus right now — synchronously, tied to
+        // the user's own action (Ctrl+Enter or clicking Save), with no
+        // `await` between here and the call. Deliberately NOT tied to the
         // POST's response (below) or the refresh that follows it — both are
         // async and can resolve at an unpredictable moment after the user
-        // has already started typing into the filter; moving focus at that
-        // point would yank the cursor out from under active typing. Doing it
+        // has already moved on; moving focus at that point would yank the
+        // cursor out from under whatever's being typed by then. Doing it
         // here means there is no gap for that race to happen in at all, and
         // it happens whether or not the POST that follows ultimately
         // succeeds — see PARTIAL-REFRESH.md.
-        //
-        // Also clears whatever query was already typed (e.g. leftover from
-        // finding the row just saved) so the grid is unfiltered and ready
-        // for the next search, rather than landing focused but still
-        // narrowed to whatever was there before.
-        if (this._filter) this._filter.clear();
-        if (this._filter?.inp) this._filter.inp.focus();
+        if (this.modelInstance?.saveReset === true) {
+          // saveReset (currently just Batch — see BatchGridModel's
+          // constructor): a repeat-entry form, so go back to blank and
+          // refocus the first field right away rather than waiting on
+          // confirmation from the server. buildRows() doesn't depend on the
+          // save's outcome (Batch's is always the same static blank row),
+          // so there's nothing worth waiting on — re-running setDomain with
+          // the domain this model already has rebuilds `rows` locally, no
+          // network round trip needed. (The eventual real post-submit
+          // refresh, once the POST actually resolves, still runs below via
+          // _postSubmitFocus, but only patches decorations in place — see
+          // _patchGroupRows's own comment — so it won't stomp on whatever's
+          // been typed into this fresh row by the time it lands.)
+          this.modelInstance.setDomain(this.modelInstance.domain);
+          await this.refresh(this.modelInstance);
+          this.FORM?.querySelector('input:not([type=hidden]), select, textarea')?.focus();
+        } else {
+          // Move focus to the find-in-list filter — also clears whatever
+          // query was already typed (e.g. leftover from finding the row
+          // just saved) so the grid is unfiltered and ready for the next
+          // search, rather than landing focused but still narrowed to
+          // whatever was there before.
+          if (this._filter) this._filter.clear();
+          if (this._filter?.inp) this._filter.inp.focus();
+        }
 
         const r = await this.api.postJson(changes, this.writeType);
 
@@ -1860,6 +1878,12 @@ export default class List extends Dockable{
             if (needsFullRebuild) {
               await this.refresh(this.modelInstance);
             } else {
+              // saveReset grids (Batch) land here too — this only patches
+              // decorations in place (see _patchGroupRows's own comment), so
+              // it won't stomp on whatever's already been typed into the
+              // fresh blank row the submit handler reset to synchronously,
+              // before this async refresh even started. See the saveReset
+              // branch in the FORM submit listener above.
               await this._patchRefresh(this.modelInstance);
             }
             this._flashResolvedMarks(resolvedKeys);
