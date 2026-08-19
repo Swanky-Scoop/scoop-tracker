@@ -219,6 +219,11 @@ function scoop_enqueue_assets() {
         'metaData'=> scoop_client_metadata(), //scoop_fetch_entities
         'entityRelations' => scoop_entity_relations(),
         'refreshScope'    => scoop_client_refresh_scope(),
+        // Assigned-to FindIt options for the Tasks grid (see
+        // tasks-grid-model.js) — same roster scoop_kitchen_staff_handler()
+        // serves live for task-form.js, but the grid needs it synchronously
+        // at render time, so it rides this localized payload instead.
+        'kitchenStaff'    => scoop_kitchen_staff_list(),
         // Baseline for the client-side stale-tab check (assets/version-watch.js).
         // Bumps whenever app.js is re-saved (SFTP-on-save touches mtime).
         'version' => filemtime($base_path . 'assets/app.js'),

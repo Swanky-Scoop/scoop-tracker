@@ -29,10 +29,19 @@ import Indexer       from "../data/indexer.js";
  * drop a stale task just because it's old; only the completed-history tail
  * needs to stay bounded so the request doesn't balloon over time.
  *
- * No delete/edit here — 'Task' is a create-only route server-side
- * (includes/_config.php), so this is pure browsing for now. See
- * INGREDIENT-TRACKING.md / GUI-planning.md for the still-open "task detail +
- * mark done" view this is meant to link out to next.
+ * Done (a checkbox styled as a toggle switch — see .toggle-switch in
+ * css.css and assets/ui/toggle-it.js) and Assigned to (a FindIt, options
+ * from SCOOP.kitchenStaff) are the only two editable columns — both POST
+ * through the 'TaskEdit' route (includes/_config.php), NOT 'Task' (which is
+ * create-only), since scoop_handle_request() dispatches on a single
+ * cfg['mode'] per route. writeEnvelope below is the same "borrow another
+ * route's write path" idiom EmptiedLogGridModel uses for tub.state/use
+ * through FlavorTub. Both fields autosave (see the constructor) — no
+ * partial-autosave here, the whole grid is autosave-or-nothing (see
+ * EmptiedLogGridModel's own comment on why a mixed grid was a bad idea).
+ * Still no delete, and no edit UI at all for the Batches/Recipe production/
+ * Ingredient prep list columns — see INGREDIENT-TRACKING.md / GUI-planning.md
+ * for the still-open task-detail view those would eventually live in.
  */
 const DATE_FILTER_PRESETS = ['last_24_hours', 'last_48_hours', 'last_7_days', 'last_30_days'];
 const DEFAULT_PRESET = 'last_7_days';
@@ -44,6 +53,14 @@ export default class TasksGridModel extends BaseGridModel {
     this.userFilter = this._normalizeUserFilter(attrs?.user);
     this._assigneeNames = new Map(); // targetId(number) -> resolved name, rebuilt per buildRows
     this.filterValues = { completed: this._normalizePreset(attrs?.filterValues?.completed) };
+    // Done/Assigned-to edits POST through 'TaskEdit', not this grid's own
+    // read type — see the module comment. Autosave, all fields (both are
+    // discrete pick/click controls, not free typing, so there's no "racing
+    // a domain refresh mid-keystroke" risk TextIt-based autosave grids
+    // guard against — see FlavorTubGridModel/EmptiedLogGridModel's own notes
+    // on that).
+    this.writeEnvelope = 'TaskEdit';
+    this.autosave = true;
     this._build();
     if (domain) this.setDomain(domain);
   }
@@ -55,15 +72,28 @@ export default class TasksGridModel extends BaseGridModel {
     return Number.isFinite(n) ? n : 0;
   }
 
+  // 'write' here mirrors EmptiedLogGridModel's _flavorTubColumn() idiom —
+  // read live off SCOOP.metaData.TaskEdit (server-computed per-role from
+  // _specs.php's task.writeable ∩ _policy.php's per-role 'task' entity
+  // grant), so who can actually toggle/reassign stays correct without this
+  // grid needing its own _config.php/_policy.php duplication to check.
+  _taskEditColumn(key) {
+    const cols = window.SCOOP?.metaData?.TaskEdit?.entities?.task ?? [];
+    return cols.find(c => c.key === key) ?? null;
+  }
+
   buildCols() {
+    const targetCol = this._taskEditColumn('target');
+    const doneCol   = this._taskEditColumn('done');
+
     this.columns = [
-      { key: "post_date",       label: "Created",            type: "datetime" },
-      { key: "_title",          label: "Task",               type: "string" },
-      { key: "other",           label: "Description",        type: "string" },
-      { key: "done",            label: "Done",               type: "string" },
-      { key: "batches",         label: "Batches",             type: "list" },
-      { key: "recipe_counts",   label: "Recipe production",   type: "list" },
-      { key: "preps",           label: "Ingredient prep",     type: "list" },
+      { key: "post_date",       label: "Created",               type: "datetime" },
+      { key: "target",          label: "Assignee",              type: "string", control: "find",   write: !!targetCol?.write },
+      { key: "_title",          label: "Task",                  type: "string", wrap: true },
+      { key: "batches",         label: "Ice-cream Production",  type: "list" },
+      { key: "recipe_counts",   label: "Recipe production",     type: "list" },
+      { key: "preps",           label: "Ingredient prep",       type: "list" },
+      { key: "done",            label: "Done",                 type: "string", control: "toggle", write: !!doneCol?.write },
     ];
 
     return this.columns;
@@ -139,11 +169,38 @@ export default class TasksGridModel extends BaseGridModel {
     ];
   }
 
+  // Assigned-to FindIt options — WP Users aren't a bundle entity, so this
+  // doesn't go through the generic domain-array fallback in
+  // _base-grid-model.js's getOptions(); SCOOP.kitchenStaff is the same
+  // roster task-form.js fetches live from /kitchen-staff, just localized at
+  // page load instead (see enqueue.php) so it's available synchronously
+  // here at render time.
+  getOptions(id, fieldKey) {
+    if (fieldKey === 'target') {
+      const staff = Array.isArray(window.SCOOP?.kitchenStaff) ? window.SCOOP.kitchenStaff : [];
+      return staff.map((s) => ({ key: s.id, label: s.title }));
+    }
+    return super.getOptions(id, fieldKey);
+  }
+
   _fillTaskRow(row, t) {
     row.post_date = { display: this._fmtDate(t.post_date), value: t.post_date ?? "" };
     row._title    = { display: t._title ?? "", value: t._title ?? "" };
-    row.other     = { display: t.other ?? "", value: t.other ?? "" };
-    row.done      = { display: t.done ? "Yes" : "No", value: t.done ? 1 : 0 };
+
+    row.target = {
+      id: Number(t.target ?? 0),
+      rowId: t.id,
+      colKey: 'target',
+      display: t.target_name || "",
+      options: this.getOptions(t.id, 'target'),
+    };
+
+    row.done = {
+      rowId: t.id,
+      colKey: 'done',
+      value: t.done ? 1 : 0,
+      display: t.done ? "Yes" : "No",
+    };
 
     // List-valued columns — see the 'list' branch _renderFieldValue() gained
     // in assets/ui/_list.js. One <li> per attached sub-item, entityType
@@ -241,6 +298,11 @@ export default class TasksGridModel extends BaseGridModel {
 
   _fmtDate(raw) {
     if (!raw) return "";
-    return String(raw).slice(0, 16); // "YYYY-MM-DD HH:MM"
+    const date = new Date(String(raw).replace(' ', 'T'));
+    if (!Number.isFinite(date.getTime())) return "";
+    // Compact m/dd, no time — this grid is a daily worklist scan, not an
+    // audit trail that needs the hour/minute (contrast BatchHistory/
+    // TaskComponentHistoryGridModel, which do show it).
+    return `${date.getMonth() + 1}/${String(date.getDate()).padStart(2, '0')}`;
   }
 }

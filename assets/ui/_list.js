@@ -26,6 +26,7 @@
 import Dockable   from "./_dockable.js";
 import FindIt     from "./find-it.js";
 import TextIt     from "./text-it.js";
+import ToggleIt   from "./toggle-it.js";
 import FindInList from "./find-in-list.js";
 import Toast      from "./toast.js";
 import Details    from "./details.js";
@@ -766,6 +767,11 @@ export default class List extends Dockable{
     // alertCase.
     EL.dataset.alertCase = alertCase;
     if (col.hidden) EL.classList.add('hidden');
+    // Opt-in per column (e.g. Tasks' Task/description column — see
+    // tasks-grid-model.js) — overrides the default nowrap every cell gets
+    // otherwise (see .cell.read-only in css.css). Model-authored flag, not
+    // server metadata-driven, so no _config.php/enqueue.php involvement.
+    if (col.wrap) EL.classList.add('wrap');
 
     // List-valued field (e.g. Tasks' Batches/Recipe production/Ingredient
     // prep columns — see tasks-grid-model.js) — d.items is an array of
@@ -794,6 +800,8 @@ export default class List extends Dockable{
         new TextIt(EL, col, this.name);
       else if (col.control === "text")
         new TextIt(EL, data, this.name);
+      else if (col.control === "toggle")
+        new ToggleIt(EL, data, this.name);
       else new FindIt(EL, data, this.name);
     } else {
       // Read-only relationship fields (currently: flavor) link to a Details

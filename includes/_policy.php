@@ -68,6 +68,7 @@ function scoop_access_policy(): array {
         'Analytics'     => ['GET' => true],
         'ShiftReport'   => ['POST' => true],
         'Task'          => ['GET' => true, 'POST' => true],
+        'TaskEdit'      => ['GET' => true, 'POST' => true],
         'Prep'          => ['GET' => true, 'POST' => true, 'DELETE' => true],
         'RecipeCount'   => ['GET' => true, 'POST' => true, 'DELETE' => true],
       ],
@@ -79,6 +80,9 @@ function scoop_access_policy(): array {
         // per-role hand-maintenance the way tub/slot's do.
         'shift_report'         => scoop_pod_field_names('shift_report'),
         'cake_order'           => scoop_pod_field_names('cake_order'),
+        // Tasks grid inline-edit (Done toggle, Assigned-to FindIt) — see
+        // 'TaskEdit' route above and tasks-grid-model.js.
+        'task'                 => ['done','target'],
       ],
     ],
 
@@ -135,6 +139,7 @@ function scoop_access_policy(): array {
         'Analytics'     => ['GET' => false],
         'ShiftReport'   => ['POST' => true],
         'Task'          => ['GET' => true, 'POST' => true],
+        'TaskEdit'      => ['GET' => true, 'POST' => true],
         'Prep'          => ['GET' => true, 'POST' => true, 'DELETE' => true],
         'RecipeCount'   => ['GET' => true, 'POST' => true, 'DELETE' => true],
       ],
@@ -146,6 +151,9 @@ function scoop_access_policy(): array {
         // per-role hand-maintenance the way tub/slot's do.
         'shift_report'         => scoop_pod_field_names('shift_report'),
         'cake_order'           => scoop_pod_field_names('cake_order'),
+        // Tasks grid inline-edit (Done toggle, Assigned-to FindIt) — see
+        // 'TaskEdit' route above and tasks-grid-model.js.
+        'task'                 => ['done','target'],
       ],
     ],
 

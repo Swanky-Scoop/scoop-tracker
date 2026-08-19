@@ -907,6 +907,19 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   border: 1px solid var(--color-border-main);
   border-radius: 0.25rem;
   cursor: pointer;
+  /* Only .wp/.logout are real <a> elements (everything else is a <button>
+     built by _dockable.js) — reset the browser's default link underline
+     off .dockTitle so both match the button-driven toggles' plain text. */
+  text-decoration: none;
+
+  /* Always the rightmost toolbar item, regardless of where it sits in the
+     DOM — dockToggle() appends each grid's own toggle button to .toolbar
+     as it mounts (see _dockable.js), landing after this link's static
+     markup position in includes/shortcode.php, so DOM order alone can't
+     put it last. */
+  &.logout {
+    order: 100;
+  }
 
   /* see css.md#and-dockicon-and-docktitle */
   & .dockIcon,
@@ -1254,7 +1267,7 @@ body.dock-resizing {
       text-align: center;
       border:1px solid rgba(255, 255, 255, 0.33);
 
-      &.wp{ order: 99; 
+      &.wp{ order: 99;
         text-decoration: none;
         & i:before {
           content: "\f120"/'';
@@ -1269,6 +1282,10 @@ body.dock-resizing {
 
         }
       }
+
+      /* Rightmost even of .wp (order: 99 above) — same reasoning as the
+         wide-viewport rule near .in-dock > .toolbar > .gridToggle. */
+      &.logout{ order: 100; text-decoration: none; }
 
       &.active{
         background-color: var(--color-green-dark);
@@ -1891,6 +1908,13 @@ table.zList tr {
     white-space: nowrap;
   }
 
+  /* Opt-in per column (col.wrap — see _list.js._renderFieldValue) — beats
+     .read-only's nowrap above via source order, same specificity. */
+  & .cell.wrap {
+    white-space: normal;
+    min-width: 16rem;
+  }
+
   & .textIt-box {
     padding: 0;
 
@@ -1902,6 +1926,14 @@ table.zList tr {
       bottom: 0;
     }
   }
+}
+
+/* Tasks grid's Task/description column (col key "_title" — see
+   tasks-grid-model.js) — scoped to .Tasks specifically since _title is also
+   InstockFlavorGridModel's column key for an unrelated column that
+   shouldn't get this width. */
+.scoop-grid.Tasks .cell._title {
+  min-width: 12rem;
 }
 
 /* ============================================
@@ -1976,6 +2008,97 @@ table.zList tr {
   }
 }
 
+/* ============================================
+   TOGGLEIT COMPONENT (editable boolean — pure-CSS switch)
+   ============================================ */
+table.zList tr .cell.toggleIt-box{
+  padding: 1.25rem 1rem;
+  & .toggleIt {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+  }
+}
+
+.toggleIt-box {
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  .toggleIt {
+    position: absolute;
+  }
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 2rem;
+  height: 1rem;
+  flex: none;
+
+  & input[type="checkbox"] {
+    opacity: 0;
+    width: 0;
+    height: 0;
+
+    &:checked + .toggle-slider {
+      background-color: var(--color-green-base);
+    }
+
+    &:checked + .toggle-slider:before {
+      transform: translateX(1.1rem);
+    }
+
+    &:focus-visible + .toggle-slider {
+      box-shadow: 0 0 0 2px var(--color-green-dark);
+    }
+  }
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: var(--color-bg-footer);
+  border-radius: 1rem;
+  transition: background-color 0.15s ease;
+
+  &:before {
+    content: "";
+    position: absolute;
+    height: .75rem;
+    width: .75rem;
+    left: 0.15rem;
+    bottom: 0.15rem;
+    background-color: var(--color-bg-white);
+    border-radius: 50%;
+    transition: transform 0.15s ease;
+  }
+}
+
+/* ============================================
+   FIELD LIST (grid cell holding a <ul> of sub-items — see the 'list'
+   column type in _list.js._renderFieldValue, e.g. Tasks' Batches/Recipe
+   production/Ingredient prep columns)
+   ============================================ */
+
+.cell.list-field {
+  white-space: normal;
+  vertical-align: top;
+}
+
+ul.field-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  & li {
+    padding: 0.05rem 0;
+    font-size: 0.85em;
+  }
+}
 
 /* ============================================
    GRID FILTER INPUT

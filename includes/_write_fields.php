@@ -29,6 +29,17 @@ function scoop_tasks_allowed_fields(\WP_User $u): array {
   return [ 'target','other' ];
 }
 
+// Inline-edit path for existing tasks (the Tasks grid's Done toggle and
+// Assigned-to FindIt — see assets/models/tasks-grid-model.js). Separate
+// route from 'Task' above (which is create-only, mode:'create') since
+// scoop_handle_request() dispatches strictly on cfg['mode'] — one route
+// can't be both. 'completed' is deliberately NOT allowed here — it's
+// system-stamped by hooks/task-state.php whenever 'done' flips, same as
+// tub.emptied_at, never a real client-writable field.
+function scoop_task_edits_allowed_fields(\WP_User $u): array {
+  return [ 'done','target' ];
+}
+
 function scoop_tubs_allowed_fields(\WP_User $u): array {
   $route_fields = scoop_entity_specs('tub')['writeable']; // what this endpoint supports
   return scoop_allowed_fields_for_entity($u, 'tub', $route_fields);

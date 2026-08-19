@@ -65,6 +65,24 @@ function scoop_routes_config(string $batch_key = ''): array {
       'pod_name'     => 'task',
       'allowed_fields_cb' => 'scoop_tasks_allowed_fields',
     ],
+    // Inline-edit route for EXISTING tasks (Tasks grid's Done toggle +
+    // Assigned-to FindIt — see assets/models/tasks-grid-model.js). Distinct
+    // from 'Task' above (create-only) since scoop_handle_request() branches
+    // on a single cfg['mode'] per route — no 'target' dock slot: this isn't
+    // its own dockable control, it rides inside the Tasks grid via
+    // writeEnvelope, same pattern as EmptiedLogGridModel writing through
+    // FlavorTub's route.
+    'TaskEdit' => [
+      'display_title' => 'Edit task',
+      'icon'         => 'if:t',
+      'path'         => '/task-edits',
+      'methods'      => ['GET','POST'],
+      'mode'         => 'update',
+      'envelope_key' => 'TaskEdit',
+      'post_type'    => 'task',
+      'pod_name'     => 'task',
+      'allowed_fields_cb' => 'scoop_task_edits_allowed_fields',
+    ],
     'Prep' => [
       'display_title' => 'Add prep',
       'icon'         => 'if:plus',

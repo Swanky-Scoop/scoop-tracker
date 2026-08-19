@@ -473,6 +473,18 @@
    * task in practice, not every WP user on the install.
    */
   function scoop_kitchen_staff_handler(\WP_REST_Request $req) {
+    return new \WP_REST_Response(['ok' => true, 'staff' => scoop_kitchen_staff_list()], 200);
+  }
+
+  /**
+   * Shared by scoop_kitchen_staff_handler() above (task-form.js's live
+   * /kitchen-staff fetch) and enqueue.php's SCOOP.kitchenStaff (the Tasks
+   * grid's Assigned-to FindIt options — see tasks-grid-model.js). The grid
+   * needs this synchronously at render time, not via an async fetch-then-
+   * repaint dance, so it rides the same wp_localize_script() payload as
+   * SCOOP.routes/metaData rather than duplicating this query client-side.
+   */
+  function scoop_kitchen_staff_list(): array {
     $roles = ['administrator', 'kitchen_manager', 'shift_lead', 'ice_cream_maker'];
 
     $users = get_users([
@@ -482,9 +494,7 @@
       'fields'   => ['ID', 'display_name'],
     ]);
 
-    $staff = array_map(fn($u) => ['id' => (int)$u->ID, 'title' => $u->display_name], $users);
-
-    return new \WP_REST_Response(['ok' => true, 'staff' => $staff], 200);
+    return array_map(fn($u) => ['id' => (int)$u->ID, 'title' => $u->display_name], $users);
   }
 
   /**
