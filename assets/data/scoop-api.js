@@ -883,6 +883,13 @@ export default class ScoopAPI {
     const modelInstance = new BatchHistoryGridModel("BatchHistory", null, {
       location,
       metaData: SCOOP.metaData?.BatchHistory,
+      // No 'target' entry of its own in scoop_routes_config() (this grid
+      // isn't independently dockable — see this method's own header
+      // comment), but it physically always ends up embedded inside Batch's
+      // .action-target-docked host, so it needs the same dockTarget Batch
+      // itself carries for Grid.buildCoreDom()'s .zList-scroll wrapper (see
+      // css.css's .action-target .zList-scroll) to apply here too.
+      dockTarget: 'action',
     });
 
     const grid = new Grid(document.createElement('div'), "BatchHistory", {

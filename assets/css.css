@@ -1355,10 +1355,14 @@ body.dock-resizing {
    FORM
    ============================================ */
 
-/* :has(> table) — was form.zGRID-form; Grid's FORM directly wraps its
-   table, Tile's wraps a div.zList instead, so this is how a Grid-only rule
-   still targets only Grid now that both share the zList-form class. */
-form.zList-form:has(> table) {
+/* :has(table) — was form.zGRID-form; Grid's FORM wraps its table (directly
+   for most grids, or inside a .zList-scroll div for .action-target-docked
+   ones — see grid.js's buildCoreDom), Tile's wraps a div.zList instead, so
+   this is how a Grid-only rule still targets only Grid now that both share
+   the zList-form class. Not :has(> table) — that would silently stop
+   matching the .zList-scroll-wrapped grids specifically, since the table
+   isn't a direct FORM child for those. */
+form.zList-form:has(table) {
   display: inline-flex;
   flex-direction: column;
   gap: 0;
@@ -1847,6 +1851,42 @@ aside table.zList thead th {
   top: 0;
 }
 
+/* .zList-scroll (see grid.js's buildCoreDom — only present for
+   .action-target-docked grids) is a flex item inside form.zList-form
+   (display:inline-flex; flex-direction:column — see the FORM rule above).
+   Explicit width:100% rather than relying on align-items:stretch's default
+   cross-axis sizing — the wrapper's own shrink-to-fit intrinsic width
+   (an overflow:auto box measures differently than the bare <table> that
+   used to occupy this flex slot) was cutting the table off short of the
+   width Batch/BatchHistory's own `width: ... !important` rules ask for.
+   Harmless outside .action-target — the class doesn't exist there. */
+.zList-scroll {
+  width: 100%;
+}
+
+/* .action-target hosts Batch/Task/Prep/RecipeCount/Closeout (see 'target' =>
+   'action' in _config.php) — a create-only form that can grow an embedded
+   table.zList (Batch's history receipt, a Task's component grid, ...) tall
+   enough to run off-screen. overflow-y/max-height don't reliably turn a
+   <table> itself into a scroll box (it keeps display:table), so this is
+   scoped to .zList-scroll — the plain block div Grid.buildCoreDom() wraps
+   the table in for exactly these grids (see grid.js) — same sticky-th
+   technique as aside above, just with .zList-scroll standing in for <aside>
+   as the scrolling ancestor. Caps and scrolls only the body rows; FILTERS
+   (a .zList-scroll sibling, not a child) and the header row stay put.
+   Deliberately NOT applied to every table.zList/.zList-scroll — <aside>
+   (Cabinet) never gets this wrapper at all (see grid.js), so this can stay
+   scoped to .action-target without needing to also exclude aside by hand. */
+.action-target .zList-scroll {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.action-target table.zList thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
 aside table.zList tr .cell {
   padding: 1rem 3rem;
   border-width: 0.5px;
@@ -1961,53 +2001,67 @@ table.zList tr {
     text-align: center;
   }
 
-  & ul.options {
-    z-index: -1;
-    overflow: hidden;
-    max-height: 0;
-    position: absolute;
-    top: 100%;
-    background-color: var(--color-bg-white);
-    box-shadow: 
-      0.125rem 0.5rem 0.5rem 1px var(--shadow-medium),
-      0 0 0 1px var(--shadow-medium);
-    margin: -0.25rem 0 0 0.125rem;
-    left: 0;
-    width: 0;
-    min-width: 0;
-    max-width: 0;
-    color: transparent;
-
-    & li {
-      display: block;
-      padding: 0.25rem 0.5rem;
-      color: var(--color-text-black);
-      white-space: nowrap;
-      text-decoration: none;
-
-      &.active {
-        background-color: var(--color-green-dark);
-        color: var(--color-text-white);
-        font-weight: 600;
-
-        & * {
-          color: var(--color-text-white);
-        }
-      }
-    }
-  }
-
   &:focus,
   &:focus-within {
     z-index: 9;
+  }
+}
 
-    & ul.options {
-      z-index: 9;
-      max-height: 12rem;
-      min-width: 100%;
-      max-width: 200%;
-      width: auto;
-      overflow: auto;
+/* FindIt's open dropdown renders here, not inside .findIt — see
+   find-it.js's static _overlayRoot()/open()/_positionOptions(). A
+   position:fixed box anchored via getBoundingClientRect() escapes any
+   scrolling ancestor's overflow clipping (e.g. .action-target's capped
+   table, <aside>'s own scroll) — position:absolute nested in the cell,
+   the old approach, could not. left/top/bottom/min-width/max-width are set
+   inline per-instance by _positionOptions(); percentages don't carry over
+   from the old nested layout since this box's containing block is no
+   longer .findIt. */
+#findit-overlay {
+  position: fixed;
+  inset: 0;
+  /* .in-dock itself is `position: fixed; z-index: 999999` (see css.css's
+     DOCKING section) — it establishes its own stacking context, so
+     everything inside it (.action-target's z-index:99, a form's z-index:1,
+     a filter input's z-index:8, ...) paints as ONE unit capped at that
+     context's z-index, regardless of how high any individual descendant's
+     own z-index looks. A lower number here (9999 originally) lost to the
+     whole .in-dock subtree outright — confirmed via
+     document.elementFromPoint() hit-testing landing on a grid's own filter
+     input instead of this overlay's dropdown. Has to clear 999999 comfortably.
+  */
+  z-index: 2000000;
+  pointer-events: none;
+}
+
+#findit-overlay ul.options {
+  position: fixed;
+  pointer-events: auto;
+  overflow: auto;
+  max-height: 12rem;
+  background-color: var(--color-bg-white);
+  box-shadow:
+    0.125rem 0.5rem 0.5rem 1px var(--shadow-medium),
+    0 0 0 1px var(--shadow-medium);
+  /* Was inherited for free from table.zList tr's generic `& li { font-size:
+     0.75rem }` while these <li>s lived nested inside a <tr> — restore it
+     explicitly now that the dropdown renders detached, in the overlay. */
+  font-size: 0.75rem;
+
+  & li {
+    display: block;
+    padding: 0.25rem 0.5rem;
+    color: var(--color-text-black);
+    white-space: nowrap;
+    text-decoration: none;
+
+    &.active {
+      background-color: var(--color-green-dark);
+      color: var(--color-text-white);
+      font-weight: 600;
+
+      & * {
+        color: var(--color-text-white);
+      }
     }
   }
 }
@@ -2143,7 +2197,7 @@ form table {
 }
 
 /* see css.md#zgrid-form-autosave-not-autosave-partial-button-save */
-.zList-form.autosave:has(> table):not(.autosave-partial) > button.save { display: none; }
+.zList-form.autosave:has(table):not(.autosave-partial) > button.save { display: none; }
 
 table.zList td.cell-saved { animation: scoopCellSaved 0.8s ease-out; }
 table.zList td.cell-error { animation: scoopCellError 0.8s ease-out; }
@@ -3256,7 +3310,7 @@ table.zList td.phase-emptied {
    scoped to this task instead of a date range), embedded as sibling
    <form class="zList-form"> elements rather than styled by hand here — see
    task-form.js's file-level comment on why they can't nest inside
-   .task-form's own <form>. form.zList-form:has(> table)'s base rule
+   .task-form's own <form>. form.zList-form:has(table)'s base rule
    (display:inline-flex) already renders them reasonably; this just keeps
    the create grid from butting up against the history grid below it. */
 .task-form .component-grid-host {

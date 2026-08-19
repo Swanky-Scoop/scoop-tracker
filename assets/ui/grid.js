@@ -27,6 +27,27 @@ export default class Grid extends List {
     this.THEAD.append(this.TRH);
     this.TABLE.append(this.THEAD);
 
+    // Only .action-target-docked grids (Batch/Task/Prep/RecipeCount/
+    // Closeout — dockTarget:'action', see _config.php's 'target' entries —
+    // and BatchHistory when embedded inside Batch, which gets dockTarget
+    // forced to 'action' for exactly this reason, see
+    // ScoopAPI._mountEmbeddedBatchHistory) get wrapped in a scrolling
+    // container (see .action-target .zList-scroll in css.css). Every other
+    // grid — critically, anything docked into <aside> (Cabinet) or sitting
+    // in .canvas — keeps the exact DOM shape it always had: <aside> already
+    // runs its own overflow/z-index/sizing system tuned against a bare
+    // <table>, and wrapping every table unconditionally broke that (cells
+    // not filling, parts of the menu becoming unreachable) the first time
+    // this was tried. FRAME stays the <table> itself either way — every
+    // append/query elsewhere reaches into FRAME directly — FRAME_HOST is
+    // only what _attachCoreDom() (_list.js) actually puts into FORM in
+    // FRAME's place, and only gets set when the wrapper exists.
+    if (this.modelInstance?.dockTarget === 'action') {
+      this.TABLE_SCROLL = el('div', { classes: ['zList-scroll'] });
+      this.TABLE_SCROLL.append(this.TABLE);
+      this.FRAME_HOST = this.TABLE_SCROLL;
+    }
+
     this.FRAME = this.TABLE;
     this.TOOLS = this.TRH;
   }

@@ -59,3 +59,13 @@ tests/smoke/blob-report/
 # browser-driven debugging, not the visual test suite above) — regenerated
 # per session, not source.
 .playwright-mcp/
+
+# Ad-hoc screenshots saved at the repo root during a session (an explicit
+# `filename` on browser_take_screenshot lands here, outside .playwright-mcp/
+# above) — debugging output, never source. Scoped to the root only (leading
+# /) so it doesn't touch flavor-photos/ or tests/visual/tests/*-snapshots/,
+# which are real tracked content.
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp

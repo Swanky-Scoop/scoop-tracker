@@ -923,7 +923,12 @@ export default class List extends Dockable{
 
   _attachCoreDom(){
     if (!this.FORM.contains(this.FILTERS)) this.FORM.append(this.FILTERS);
-    if (!this.FORM.contains(this.FRAME)) this.FORM.append(this.FRAME);
+    // Grid sets FRAME_HOST to a wrapper div around FRAME, only for
+    // .action-target-docked grids (see grid.js's buildCoreDom); every other
+    // grid — Tile always, most Grids too — has no such wrapper, so this
+    // falls back to attaching FRAME itself, same as before.
+    const frameHost = this.FRAME_HOST ?? this.FRAME;
+    if (!this.FORM.contains(frameHost)) this.FORM.append(frameHost);
     if (!this.FORM.contains(this.SUBMIT)) this.FORM.append(this.SUBMIT);
     if (!this.target.contains(this.FORM)) this.target.append(this.FORM);
     if (!this.target.contains(this.TOGGLE)) this.target.append(this.TOGGLE);
