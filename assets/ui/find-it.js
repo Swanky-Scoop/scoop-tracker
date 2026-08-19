@@ -8,6 +8,22 @@ import El from "./_el.js";
 import Find from "./_find.js";
 
 export default class FindIt extends El {
+  // Every FindIt's open dropdown renders here instead of inside .findIt
+  // itself — a shared page-level layer, lazily created once and reused by
+  // every instance. See open()/_positionOptions(): position:fixed computed
+  // from the input's getBoundingClientRect() escapes any scrolling
+  // ancestor's overflow clipping (e.g. .action-target's capped table,
+  // <aside>), which position:absolute-inside-the-cell could never do.
+  static _overlayRoot() {
+    let root = document.getElementById('findit-overlay');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'findit-overlay';
+      document.body.append(root);
+    }
+    return root;
+  }
+
   constructor(
     target,
     data = { id: 0, rowId: 0, colKey: "", display: "", type: "", options: [], badges: [] },
@@ -227,17 +243,57 @@ export default class FindIt extends El {
     if (!this.options || this.options.length === 0) return;
 
     this.isOpen = true;
-    if (!this.BASE.contains(this.UL)) this.BASE.append(this.UL);
+    const overlay = FindIt._overlayRoot();
+    if (!overlay.contains(this.UL)) overlay.append(this.UL);
 
     this._applyFilter(this.INP.value);
+    this._positionOptions();
+
+    // position:fixed can't track a scrolling ancestor continuously without
+    // a listener, and a stale-positioned dropdown floating over the wrong
+    // cell is worse than just closing it — same as how a native <select>
+    // behaves in most browsers. capture:true is required: scroll doesn't
+    // bubble, so only a capturing listener on window sees it fire on a
+    // nested scrollable ancestor (the .action-target table, <aside>, ...).
+    this._boundCloseOnScroll = () => this.close();
+    window.addEventListener('scroll', this._boundCloseOnScroll, { capture: true, passive: true });
   }
-  
+
   close() {
     if (!this.isOpen) return;
     this.isOpen = false;
     this.activeIndex = -1;
 
-    if (this.BASE.contains(this.UL)) this.UL.remove();
+    if (this.UL.parentElement) this.UL.remove();
+
+    if (this._boundCloseOnScroll) {
+      window.removeEventListener('scroll', this._boundCloseOnScroll, { capture: true });
+      this._boundCloseOnScroll = null;
+    }
+  }
+
+  // Anchors the detached (overlay-mounted) dropdown to the input's current
+  // on-screen position — must run after _applyFilter's _renderOptions() has
+  // populated the <li>s, so this.UL has a real, measurable height to flip
+  // against. Only computed once, at open() — while already open, typing
+  // narrows/widens the result count without re-measuring; the input itself
+  // doesn't move mid-type, so this is a reasonable trade against
+  // repositioning on every keystroke.
+  _positionOptions() {
+    const rect = this.INP.getBoundingClientRect();
+    this.UL.style.left     = `${rect.left}px`;
+    this.UL.style.minWidth = `${rect.width}px`;
+    this.UL.style.maxWidth = `${rect.width * 2}px`;
+    this.UL.style.top      = `${rect.bottom}px`;
+    this.UL.style.bottom   = '';
+
+    // Flip above the input instead of running off the bottom of the
+    // viewport — checked against the dropdown's own real rendered height,
+    // not an assumed/max-height guess.
+    if (this.UL.getBoundingClientRect().bottom > window.innerHeight) {
+      this.UL.style.top    = '';
+      this.UL.style.bottom = `${window.innerHeight - rect.top}px`;
+    }
   }
 
   clear() {

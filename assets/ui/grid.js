@@ -27,7 +27,19 @@ export default class Grid extends List {
     this.THEAD.append(this.TRH);
     this.TABLE.append(this.THEAD);
 
+    // Wraps just the table (FILTERS/SUBMIT stay direct FORM children) so a
+    // context that needs the table height-capped (see .action-target
+    // .zList-scroll in css.css) has a real block-level scrolling ancestor to
+    // put overflow-y/max-height on — overflow doesn't reliably turn a
+    // <table> itself into a scroll box (kept display:table by default).
+    // FRAME stays the <table> itself — every append/query elsewhere reaches
+    // into FRAME directly — FRAME_HOST is only what _attachCoreDom()
+    // (_list.js) actually puts into FORM in FRAME's place.
+    this.TABLE_SCROLL = el('div', { classes: ['zList-scroll'] });
+    this.TABLE_SCROLL.append(this.TABLE);
+
     this.FRAME = this.TABLE;
+    this.FRAME_HOST = this.TABLE_SCROLL;
     this.TOOLS = this.TRH;
   }
 
