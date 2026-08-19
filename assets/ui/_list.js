@@ -767,6 +767,28 @@ export default class List extends Dockable{
     EL.dataset.alertCase = alertCase;
     if (col.hidden) EL.classList.add('hidden');
 
+    // List-valued field (e.g. Tasks' Batches/Recipe production/Ingredient
+    // prep columns — see tasks-grid-model.js) — d.items is an array of
+    // { display, entityType }, rendered as a plain <ul><li>, one <li> per
+    // item, classed by entityType so CSS can style e.g. .batch vs .prep
+    // items differently. Always read-only (no FindIt/TextIt story here —
+    // nothing to write back to yet), and skips the single-value detail-link
+    // branch below entirely since there's no one id/display pair to link.
+    if (col.type === 'list' || col.dataType === 'list') {
+      EL.classList.add('read-only', 'list-field');
+      const items = Array.isArray(d.items) ? d.items : [];
+      const UL = this.el('ul', { classes: ['field-list'] });
+      items.forEach((item) => {
+        UL.append(this.el('li', {
+          text: String(item?.display ?? ''),
+          classes: [this._slug(item?.entityType || 'item')],
+        }));
+      });
+      EL.append(UL);
+      if (data.badges && data.badges[0]) EL.append(this._getBadgeDom(data.badges));
+      return EL;
+    }
+
     if (col.write && d.write !== false) {
       if (col.hidden)
         new TextIt(EL, col, this.name);

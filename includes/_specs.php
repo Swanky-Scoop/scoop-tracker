@@ -50,6 +50,15 @@ function scoop_bundle_specs(): array {
     // writesPods vs needs), which is what makes the history grids repaint
     // with the newly-created row.
     'Task' => ['needs' => ['flavor','recipe','ingredient','unit','batch','recipe_count','prep']],
+    // Read-only listing of all tasks — see assets/models/tasks-grid-model.js.
+    // Unlike 'Task' above, this DOES need the 'task' entity itself (see the
+    // entity spec below) since it's displaying existing tasks, not creating one.
+    // batch/recipe_count/prep + flavor/recipe/ingredient/unit feed the
+    // Batches/Recipe production/Ingredient prep list-columns (same entities
+    // 'Task' above needs for its own attached-history grids, for the same
+    // reason — each row's sub-items and their relation names).
+    // Shortcode: [scoop_grid type="Tasks" user="..." location="..."]
+    'Tasks' => ['needs' => ['task','batch','recipe_count','prep','flavor','recipe','ingredient','unit']],
     // Prep/RecipeCount need no entities of their own here (their pickers'
     // domain rides in on Task's bundle need-list above — they're embedded
     // inside the Task form, never mounted as their own [scoop_grid] host) —
@@ -299,6 +308,36 @@ function scoop_entity_specs(string $key = ''): array {
           'current_slots' => ['data_type' => 'ids', 'titleMap' => 'slot', 'display' => 'both'],
           'allergens'     => ['data_type' => 'post_names'],
           'web_id'        => ['data_type' => 'int'],
+        ],
+        'writeable' => []
+      ],
+
+      // Read-only task entity used by the Tasks grid (see
+      // assets/models/tasks-grid-model.js) — the "Task" entry above is
+      // create-only and never reads tasks back, this is the list view.
+      // 'target_name' resolves the target WP-user relationship to a display
+      // name server-side (scoop_fetch_entities' post_fields loop in
+      // bundle-fetch.php), same idiom as 'author_name'/'editor_name' — the
+      // client never talks to /kitchen-staff just to label this column.
+      'task' => [
+        'post_type' => 'task',
+        'pod'       => 'task',
+        'title'     => true,
+        'fields'    => [
+          'other'     => ['data_type' => 'string'],
+          'target'    => ['data_type' => 'int', 'control' => 'find', 'hidden' => true],
+          'done'      => ['data_type' => 'bool'],
+          // System-controlled — auto-stamped/cleared by
+          // scoop_stamp_task_completed() (hooks/task-state.php) whenever
+          // 'done' flips, same idiom as tub.emptied_at. Also the field the
+          // Tasks grid's date-range filter bounds against — see
+          // scoop_bundle_date_filter_context()/the 'task' WHERE-clause block
+          // in bundle-fetch.php.
+          'completed' => ['data_type' => 'datetime'],
+        ],
+        'post_fields' => [
+          'target_name' => 'string',
+          'post_date'   => 'datetime',
         ],
         'writeable' => []
       ],

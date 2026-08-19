@@ -169,6 +169,9 @@ function scoop_bundle_date_filter_context( \WP_REST_Request $req, array $request
   if ( empty( $keys ) && in_array( 'BatchHistory', $requesting_types, true ) ) {
     $keys = [ 'created' ];
   }
+  if ( empty( $keys ) && in_array( 'Tasks', $requesting_types, true ) ) {
+    $keys = [ 'completed' ];
+  }
 
   $ranges = [];
   foreach ( $keys as $key ) {
@@ -176,6 +179,15 @@ function scoop_bundle_date_filter_context( \WP_REST_Request $req, array $request
 
     if ( ( $preset === null || $preset === '' ) && $key === 'activity' ) {
       $preset = $req->get_param( 'modified_range' );
+    }
+
+    // Tasks defaults to a wider window than Batch/DateActivity's 24-48hr
+    // norm — open (not-done) tasks are always shown regardless of this
+    // filter (see the 'task' WHERE-clause block below), so this only
+    // governs how far back completed tasks stay visible, and a week reads
+    // more naturally there than two days.
+    if ( ( $preset === null || $preset === '' ) && $key === 'completed' ) {
+      $preset = 'last_7_days';
     }
 
     $preset = scoop_normalize_date_filter_preset( $preset );
@@ -740,6 +752,32 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     }
   }
 
+  if ( $key === 'task' ) {
+    // Open tasks (done isn't true) are ALWAYS included, unbounded by date —
+    // same "active stays visible, terminal state gets windowed" idiom as
+    // tub/emptied_at (see scoop_fetch_entities' tub handling elsewhere and
+    // hooks/task-state.php). Only done=true rows are bounded by the
+    // 'completed' date-range filter, so the Tasks grid's history doesn't
+    // balloon while the open worklist never silently drops a stale task.
+    $requesting_types = $ctx['requesting_types'] ?? [];
+    $has_tasks        = in_array( 'Tasks', $requesting_types, true );
+    $date_filters     = $ctx['date_filters'] ?? [];
+    $date_ranges      = $ctx['date_filter_ranges'] ?? [];
+
+    if ( $has_tasks ) {
+      $open_clause = '(done IS NULL OR done != 1)';
+
+      if ( in_array( 'completed', $date_filters, true ) ) {
+        $completed_clause = scoop_date_filter_sql_clause( 'completed', $date_ranges['completed'] ?? [] );
+        $where_clauses[] = $completed_clause !== ''
+          ? "({$open_clause} OR ({$completed_clause}))"
+          : $open_clause;
+      } else {
+        $where_clauses[] = $open_clause;
+      }
+    }
+  }
+
   $find_where = implode( ' AND ', $where_clauses );
 
   $find_params = [
@@ -869,6 +907,16 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
         $editor_id = $editor_id ?: (int) ( $pod->row['post_author'] ?? 0 );
         $row['editor_name'] = $editor_id
           ? scoop_text_out( get_the_author_meta( 'display_name', $editor_id ) )
+          : '';
+      } elseif ( $field === 'target_name' ) {
+        // 'target' (task -> WP User, see the 'task' entity spec above) is
+        // resolved by the needs_field loop earlier in this same fetch, so
+        // $row['target'] is already a plain user ID by the time we get here.
+        // Not a post_author — get_the_author_meta() only works for the post's
+        // own author — so this needs a real get_userdata() lookup instead.
+        $target_id = (int) ( $row['target'] ?? 0 );
+        $row['target_name'] = $target_id
+          ? scoop_text_out( get_userdata( $target_id )->display_name ?? '' )
           : '';
       } else{
         // post_modified/post_date (and any other non-author/editor

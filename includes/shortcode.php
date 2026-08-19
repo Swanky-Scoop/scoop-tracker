@@ -34,6 +34,11 @@ function scoop_render_grid_host($raw_atts, string $view) {
         // per-control key — see ScoopAPI._controlId(). Optional; most pages
         // only ever have one host per type and don't need this.
         'slug'           => null,
+        // Hardcoded assignee filter for TaskHistory (see
+        // assets/models/task-history-grid-model.js) — a WP user id, or
+        // "all"/omitted for no filter. Generic passthrough like group/filter
+        // above; only TaskHistory reads it today.
+        'user'           => null,
     ], $raw_atts, 'scoop_' . $view);
 
     if (!is_user_logged_in()) {
@@ -100,6 +105,9 @@ function scoop_render_grid_host($raw_atts, string $view) {
     <?php endif; ?>
     <?php if (!empty($atts['filter'])) : ?>
     data-filter="<?php echo esc_attr($atts['filter']); ?>"
+    <?php endif; ?>
+    <?php if (!empty($atts['user'])) : ?>
+    data-user="<?php echo esc_attr($atts['user']); ?>"
     <?php endif; ?>
     <?php if (!empty($atts['history']) && !in_array(strtolower((string)$atts['history']), ['0', 'false', 'no', 'off'], true)) : ?>
     data-history="1"

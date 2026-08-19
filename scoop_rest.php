@@ -38,6 +38,7 @@ scoop_require('includes/_cache.php');
 scoop_require('includes/hooks/cabinet-slot.php');
 scoop_require('includes/hooks/batch-tub.php');
 scoop_require('includes/hooks/task-titles.php');
+scoop_require('includes/hooks/task-state.php');
 scoop_require('includes/hooks/tub-state.php');
 scoop_require('includes/hooks/closeout.php');
 scoop_require('includes/hooks/nightly-sales.php');

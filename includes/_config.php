@@ -97,6 +97,10 @@ function scoop_routes_config(string $batch_key = ''): array {
       'display_title' => 'Batch History',
       'icon'         => 'if:t',
     ],
+    'Tasks' => [
+      'display_title' => 'Tasks',
+      'icon'         => 'if:t',
+    ],
     'ItemPivot' => [
       'display_title' => 'Flavor map',
       'icon'         => 'if:m',

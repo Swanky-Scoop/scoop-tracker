@@ -25,6 +25,7 @@ import ShiftReportGridModel     from "../models/shift-report-grid-model.js";
 import ShiftReportForm          from "../ui/shift-report-form.js";
 import TaskGridModel            from "../models/task-grid-model.js";
 import TaskForm                 from "../ui/task-form.js";
+import TasksGridModel           from "../models/tasks-grid-model.js";
 import HashState                from "./hash-state.js";
 
 // Some grid types run visibly heavier cold-cache queries than the rest of
@@ -162,6 +163,7 @@ export default class ScoopAPI {
       "ItemPivot"      : ItemPivotGridModel,
       "ShiftReport"    : ShiftReportGridModel,
       "Task"           : TaskGridModel,
+      "Tasks"          : TasksGridModel,
     };
   }
 
@@ -1088,6 +1090,9 @@ export default class ScoopAPI {
           // see includes/shortcode.php) — currently read by InstockFlavorGridModel.
           group: dom.dataset.group || null,
           filters: dom.dataset.filter || '',
+          // Hardcoded assignee filter from the shortcode (data-user) —
+          // currently only read by TasksGridModel.
+          user: dom.dataset.user || null,
       });
 
       // data-view="tile" (see includes/shortcode.php's [scoop_tile ...])
