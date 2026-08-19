@@ -18,8 +18,8 @@ export default class DateActivityGridModel extends BaseGridModel{
 
     this.dateFormat = {
       month: "numeric",
-      day:   "numeric",
-    }; 
+      day:   "2-digit",
+    };
 
     this._build();
     if (domain) this.setDomain(domain);

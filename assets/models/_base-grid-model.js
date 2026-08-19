@@ -63,9 +63,17 @@ export default class BaseGridModel {
       this.rows = [];
       this.rowGroups = [];
 
+      // Cheap m/dd mask for every 'datetime' column (see
+      // fillRowFromColumns below) — day:'2-digit' zero-pads so columns line
+      // up (8/05, not 8/5); month stays 'numeric' (unpadded) since that's
+      // the shorter, more scannable half. A model can override this in its
+      // own constructor (see date-activity-grid-model.js/
+      // emptied-log-grid-model.js) if it ever needs something else — e.g. a
+      // future user-facing time toggle would swap this out per model
+      // instead of changing this shared default.
       this.dateFormat = {
         month: "numeric",
-        day:   "numeric",
+        day:   "2-digit",
       };
       
       // Phase 1: Build columns from metadata (no domain needed)
