@@ -3335,6 +3335,9 @@ table.zList td.phase-emptied {
   box-shadow: none;
 }
 
-
-/* forms */
-
+#nsl-custom-login-form-main {
+   display: flex;
+   justify-content: center;
+   align-items: center;
+   gap: .25rem;
+}
