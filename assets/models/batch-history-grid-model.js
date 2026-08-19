@@ -80,10 +80,14 @@ export default class BatchHistoryGridModel extends BaseGridModel {
     this.rows = sorted.map((b) => {
       const flavorId   = Number(b.flavor ?? 0);
       const flavorName = this._flavorsById?.get?.(flavorId)?._title ?? "—";
+      const dateMs     = this._parseDateMs(b.post_date);
 
       return {
         id: b.id,
-        post_date:   { display: this._fmtDate(b.post_date), value: b.post_date ?? "" },
+        // display: short m/dd mask (see BaseGridModel._fmtShortDate);
+        // value: real epoch, so clicking "Created" sorts chronologically
+        // rather than lexically comparing the short display string.
+        post_date:   { display: this._fmtShortDate(dateMs), value: dateMs },
         flavor:      { display: flavorName,                  value: flavorName },
         count:       { display: this._fmtCount(b.count),     value: Number(b.count ?? 0) },
         author_name: { display: b.author_name ?? "",         value: b.author_name ?? "" },
@@ -180,11 +184,6 @@ export default class BatchHistoryGridModel extends BaseGridModel {
   _dateFilterLabel(key) {
     if (key === 'created') return 'Created in';
     return key.replace(/_/g, ' ');
-  }
-
-  _fmtDate(raw) {
-    if (!raw) return "";
-    return String(raw).slice(0, 16); // "YYYY-MM-DD HH:MM"
   }
 
   _fmtCount(raw) {

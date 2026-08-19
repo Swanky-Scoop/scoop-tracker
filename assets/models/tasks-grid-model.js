@@ -184,7 +184,11 @@ export default class TasksGridModel extends BaseGridModel {
   }
 
   _fillTaskRow(row, t) {
-    row.post_date = { display: this._fmtDate(t.post_date), value: t.post_date ?? "" };
+    // display: short m/dd mask (see BaseGridModel._fmtShortDate); value:
+    // real epoch, so clicking "Created" sorts chronologically rather than
+    // lexically comparing the short display string.
+    const dateMs = this._parseDateMs(t.post_date);
+    row.post_date = { display: this._fmtShortDate(dateMs), value: dateMs };
     row._title    = { display: t._title ?? "", value: t._title ?? "" };
 
     row.target = {
@@ -296,13 +300,4 @@ export default class TasksGridModel extends BaseGridModel {
     return DATE_FILTER_PRESETS.includes(v) ? v : DEFAULT_PRESET;
   }
 
-  _fmtDate(raw) {
-    if (!raw) return "";
-    const date = new Date(String(raw).replace(' ', 'T'));
-    if (!Number.isFinite(date.getTime())) return "";
-    // Compact m/dd, no time — this grid is a daily worklist scan, not an
-    // audit trail that needs the hour/minute (contrast BatchHistory/
-    // TaskComponentHistoryGridModel, which do show it).
-    return `${date.getMonth() + 1}/${String(date.getDate()).padStart(2, '0')}`;
-  }
 }

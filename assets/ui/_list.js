@@ -923,12 +923,7 @@ export default class List extends Dockable{
 
   _attachCoreDom(){
     if (!this.FORM.contains(this.FILTERS)) this.FORM.append(this.FILTERS);
-    // Grid sets FRAME_HOST to a wrapper div around FRAME (see grid.js's
-    // buildCoreDom) so the table can get a real scrolling ancestor; Tile has
-    // no such wrapper, so this falls back to attaching FRAME itself, same as
-    // before.
-    const frameHost = this.FRAME_HOST ?? this.FRAME;
-    if (!this.FORM.contains(frameHost)) this.FORM.append(frameHost);
+    if (!this.FORM.contains(this.FRAME)) this.FORM.append(this.FRAME);
     if (!this.FORM.contains(this.SUBMIT)) this.FORM.append(this.SUBMIT);
     if (!this.target.contains(this.FORM)) this.target.append(this.FORM);
     if (!this.target.contains(this.TOGGLE)) this.target.append(this.TOGGLE);
@@ -1228,6 +1223,17 @@ export default class List extends Dockable{
         const i = this._asFiniteNumber(cellData.id);
         if (i !== null) return i;
         return null;
+      }
+
+      // A 'datetime' column's .value is a real epoch (see
+      // BaseGridModel._parseDateMs/fillRowFromColumns) — sort on that, not
+      // .display's short m/dd mask, which would otherwise compare as text
+      // ("12/05" sorting before "8/18") and get the chronological order
+      // wrong across a month/year boundary.
+      if (col?.type === 'datetime') {
+        const n = this._asFiniteNumber(cellData.value);
+        if (n !== null) return n;
+        return cellData.display ?? cellData.id ?? null;
       }
 
       // Non-numeric: preserve the original preference order.

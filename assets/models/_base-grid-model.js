@@ -487,14 +487,36 @@ export default class BaseGridModel {
 
   titleFrom(id, col) {
     if (!col?.titleMap) return id;
-    
+
     const map = this.getTitleMap(col.titleMap);
     const title = map.get(Number(id))?._title;
-    
+
     // Return title if found, otherwise return the ID as a string
     return title ?? String(id);
   }
-  
+
+  // Real epoch (or null) from whatever a 'datetime' field arrives as. Server
+  // sends ISO-8601 with an explicit offset for real 'datetime'-typed fields
+  // (scoop_datetime_out / mysql2date('c', ...) anchored to wp_timezone()),
+  // but normalize a bare "YYYY-MM-DD HH:MM:SS" too — Date only parses that
+  // reliably with a 'T' — so this never silently misreads the moment as
+  // local-only. Shared by fillRowFromColumns below AND any subclass that
+  // builds its rows by hand instead of through it (BatchHistoryGridModel,
+  // TasksGridModel) — one parse, not one copy per model.
+  _parseDateMs(raw) {
+    if (!raw) return null;
+    const date = new Date(String(raw).replace(' ', 'T'));
+    return Number.isFinite(date.getTime()) ? date.getTime() : null;
+  }
+
+  // Formats an epoch (see _parseDateMs) using this.dateFormat's short m/dd
+  // mask — the one place that convention is spelled out, so every
+  // 'datetime' column (fillRowFromColumns-driven or hand-built) renders it
+  // identically and a future format change only happens here.
+  _fmtShortDate(ms) {
+    return ms == null ? '' : new Date(ms).toLocaleDateString('en-US', this.dateFormat);
+  }
+
   fillRowFromColumns(row, rowData, i, dateFormat = this.dateFormat) {
     for (const col of this.columns) {
       const key = col?.key;
@@ -517,17 +539,15 @@ export default class BaseGridModel {
       // _renderFieldValue for the same split) — check both, or a
       // server-metadata datetime column (e.g. FlavorTub's post_modified)
       // never hits this branch at all and shows the raw ISO string instead.
-      if ((col.type ?? col.dataType) === 'datetime') {
-        // Server sends ISO-8601 with an explicit offset for real
-        // 'datetime'-typed fields (scoop_datetime_out / mysql2date('c', ...)
-        // anchored to wp_timezone()), but normalize a bare
-        // "YYYY-MM-DD HH:MM:SS" too — Date only parses that reliably with a
-        // 'T' — so this never silently misreads the moment as local-only.
-        const date = new Date(String(raw).replace(' ', 'T'));
-        display = Number.isFinite(date.getTime())
+      const isDateCol = (col.type ?? col.dataType) === 'datetime';
+      let dateValue = null;
+
+      if (isDateCol) {
+        dateValue = this._parseDateMs(raw);
+        display = dateValue != null
           ? (this.relativeTimeFields?.includes(col.key)
-              ? this._formatTimeAgo(date)
-              : date.toLocaleDateString('en-US', this.dateFormat))
+              ? this._formatTimeAgo(new Date(dateValue))
+              : this._fmtShortDate(dateValue))
           : '';
       }
 
@@ -540,7 +560,11 @@ export default class BaseGridModel {
         options:   this.getOptions  (id, col.key),   // ← Changed from col.type
         badges:    this.getBadges   (id, col.key),   // ← Changed from col.type
         alertCase: this.getAlertCase(id, col.key),   // ← Changed from col.key
-        value:     col.value,
+        // A real epoch for a datetime column (see _list.js's _getSortValue,
+        // which sorts 'datetime' on this instead of the short display mask —
+        // "12/05" vs "8/18" would compare as text and get the chronological
+        // order wrong) — col.value otherwise, same as before.
+        value:     isDateCol ? dateValue : col.value,
         step:      col.step,
         min:       col.min,
         max:       col.max,
