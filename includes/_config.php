@@ -204,6 +204,18 @@ function scoop_routes_config(string $batch_key = ''): array {
       'url'           => 'https://forms.gle/jGpJHeU3Ss4fLBeS7',
       'window_target' => 'esr',
     ],
+    // Third "iframe topic" type — see 'esr' above for the default-vs-
+    // override mechanism comment. Unlike esr, Music has no embeddable
+    // alternative for anyone — it's external-link-only for every role that
+    // can see it, so no role ever needs its own display_mode/url override
+    // in _policy.php, just a plain 'Music' => ['GET' => true].
+    'Music' => [
+      'display_title' => 'Music',
+      'icon'          => 'if:n',
+      'display_mode'  => 'external',
+      'url'           => 'https://app.soundtrack.io/home',
+      'window_target' => 'music',
+    ],
     'FlavorTub' => [
       'display_title' => 'Curret tubs',
       'icon'         => 'if:f',

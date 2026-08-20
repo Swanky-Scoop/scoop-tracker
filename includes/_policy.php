@@ -47,6 +47,16 @@
  *                       — this supersedes the role's original "FlavorTub/
  *                       DateActivity 'state'-only tub tracking" purpose
  *                       entirely, not just narrows it.
+ *   lead             — another front-of-house kiosk-style role, distinct
+ *                       from 'kiosk'. Write capabilities mirror shift_lead
+ *                       (full tub edit, Cabinet slot-schedule write — same
+ *                       'entities' block), but view is narrowed to ONLY
+ *                       esr ("Shift Report" link, inherits the external
+ *                       default like shift_lead)/Music (new external-link
+ *                       type, see _config.php)/EmptiedLog/CabinetWorkflow/
+ *                       ItemPivot/Cabinet/FlavorTub (full read/write, same
+ *                       as shift_lead). No Batch access at all (unlike
+ *                       kiosk/ice_cream_maker) — explicit request.
  *   editor / author  — legacy WP roles, predate the kitchen-role set above;
  *                       left exactly as they were, not part of this redesign.
  *
@@ -114,6 +124,12 @@ function scoop_access_policy(): array {
         // to the embedded-iframe alternative instead (see their own blocks).
         'ProductionPlan' => ['GET' => true],
         'esr'             => ['GET' => true],
+        // New grant — see _config.php's 'Music' entry. Only 'lead' and
+        // administrator get this one; no other existing role has any use
+        // for it, so it's left undeclared (implicitly denied) everywhere
+        // else rather than backfilled the way EmptiedLog/CabinetWorkflow
+        // were (those had genuine prior unconditional access to preserve).
+        'Music'           => ['GET' => true],
         // 'ItemPivot' declared here is new — every role below gets this
         // same explicit grant so nobody who could already see the Flavor
         // map loses it now that it's actually enforced (see
@@ -372,6 +388,48 @@ function scoop_access_policy(): array {
         'slot' => [],
       ],
     ],
+
+    // Another front-of-house kiosk-style role, distinct from 'kiosk' above.
+    // Explicit request: mirrors shift_lead's WRITE capabilities (full tub
+    // edit + Cabinet slot-schedule write — see 'entities' below, copied
+    // straight from shift_lead's own block) but, like kiosk/ice_cream_maker,
+    // is narrowed to see ONLY: esr ("Shift Report" link — no display_mode/
+    // url override, inherits _config.php's external default, same as
+    // shift_lead), Music (external link — see _config.php), EmptiedLog,
+    // CabinetWorkflow, ItemPivot, Cabinet (full read/write), and FlavorTub
+    // (full read/write, same as shift_lead). Every other type is
+    // explicitly denied, not just omitted — same pattern as kiosk/
+    // ice_cream_maker's own blocks.
+    'lead' => [
+      'routes' => [
+        'Cabinet'         => ['GET' => true, 'POST' => true],
+        'esr'             => ['GET' => true],
+        'Music'           => ['GET' => true],
+        'EmptiedLog'      => ['GET' => true],
+        'CabinetWorkflow' => ['GET' => true],
+        'ItemPivot'       => ['GET' => true],
+        // Same as shift_lead — full read/write.
+        'FlavorTub'       => ['GET' => true, 'POST' => true],
+        'Batch'           => ['GET' => false, 'POST' => false],
+        'ProductionPlan'  => ['GET' => false],
+        'DateActivity'    => ['GET' => false, 'POST' => false],
+        'InstockFlavor'   => ['GET' => false, 'POST' => false],
+        'Closeout'        => ['GET' => false, 'POST' => false],
+        'Analytics'       => ['GET' => false],
+        'ShiftReport'     => ['GET' => false, 'POST' => false],
+        'Task'            => ['GET' => false],
+        'Prep'            => ['GET' => false],
+        'RecipeCount'     => ['GET' => false],
+      ],
+      'entities' => [
+        // Same write scope as shift_lead — Cabinet/CabinetWorkflow actions
+        // (add-next, leave-empty, confirm swap) write through these tub/
+        // slot fields regardless of which route the action came in
+        // through.
+        'tub'  => ['state','use','amount','slot'],
+        'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
+      ],
+    ],
   ];
 
   return $policy;
@@ -391,6 +449,7 @@ function scoop_get_user_policy(\WP_User $user): array {
     'shift_lead',
     'ice_cream_maker',
     'kiosk',
+    'lead',
     'editor',
     'author',
   ];

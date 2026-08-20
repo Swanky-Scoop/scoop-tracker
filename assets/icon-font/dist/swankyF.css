@@ -1,10 +1,10 @@
 @font-face {
     font-family: "swankyF";
-    src: url("./swankyF.eot?b41693833c333928b31075d8d14b47c0?#iefix") format("embedded-opentype"),
-url("./swankyF.woff2?b41693833c333928b31075d8d14b47c0") format("woff2"),
-url("./swankyF.woff?b41693833c333928b31075d8d14b47c0") format("woff"),
-url("./swankyF.ttf?b41693833c333928b31075d8d14b47c0") format("truetype"),
-url("./swankyF.svg?b41693833c333928b31075d8d14b47c0#swankyF") format("svg");
+    src: url("./swankyF.eot?c4d464c41bc6d49ef193910bb720c5c6?#iefix") format("embedded-opentype"),
+url("./swankyF.woff2?c4d464c41bc6d49ef193910bb720c5c6") format("woff2"),
+url("./swankyF.woff?c4d464c41bc6d49ef193910bb720c5c6") format("woff"),
+url("./swankyF.ttf?c4d464c41bc6d49ef193910bb720c5c6") format("truetype"),
+url("./swankyF.svg?c4d464c41bc6d49ef193910bb720c5c6#swankyF") format("svg");
 }
 
 i[class^="si-"]:before, i[class*=" si-"]:before {
@@ -54,42 +54,45 @@ i[class^="si-"]:before, i[class*=" si-"]:before {
 .si-m:before {
     content: "\f10c";
 }
-.si-p:before {
+.si-n:before {
     content: "\f10d";
 }
-.si-plus:before {
+.si-p:before {
     content: "\f10e";
 }
-.si-q:before {
+.si-plus:before {
     content: "\f10f";
 }
-.si-r:before {
+.si-q:before {
     content: "\f110";
 }
-.si-s:before {
+.si-r:before {
     content: "\f111";
 }
-.si-Shooting-Star--Streamline-Phosphor:before {
+.si-s:before {
     content: "\f112";
 }
-.si-t:before {
+.si-Shooting-Star--Streamline-Phosphor:before {
     content: "\f113";
 }
-.si-Trash--Streamline-Phosphor:before {
+.si-t:before {
     content: "\f114";
 }
-.si-Trash-Bold--Streamline-Phosphor:before {
+.si-Trash--Streamline-Phosphor:before {
     content: "\f115";
 }
-.si-u:before {
+.si-Trash-Bold--Streamline-Phosphor:before {
     content: "\f116";
 }
-.si-User-List--Streamline-Phosphor:before {
+.si-u:before {
     content: "\f117";
 }
-.si-x:before {
+.si-User-List--Streamline-Phosphor:before {
     content: "\f118";
 }
-.si-z:before {
+.si-x:before {
     content: "\f119";
+}
+.si-z:before {
+    content: "\f11a";
 }
