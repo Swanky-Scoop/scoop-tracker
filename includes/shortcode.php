@@ -253,7 +253,7 @@ add_shortcode('scoop_dock', function ($raw_atts, $content = null) {
       <div class="action-target"></div>
       <div class="toolbar">
         <?php if (current_user_can('manage_options')) : ?>
-        <a href="../wp-admin/edit.php?post_type=tub" class="gridToggle wp"><i class="ab-icon"></i><span class="dockTitle">WP Admin</span></a>
+        <a href="/wp-admin/post.php?post=14126&action=edit" class="gridToggle wp"><i class="ab-icon"></i><span class="dockTitle">WP Admin</span></a>
         <?php endif; ?>
         <?php
         // Same destination the JS lands people on after an expired-session
