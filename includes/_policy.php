@@ -13,20 +13,28 @@
  * tub writes at all" carve-out are one-off enough that a derivation layer
  * wouldn't have been any shorter than just writing the arrays.
  *
- *   administrator    — everything.
+ *   administrator    — everything. 'esr' route entry has no mode/url of its
+ *                       own — inherits _config.php's default (external-link
+ *                       toggle for "Shift Report"), same as shift_lead.
  *   kitchen_manager  — batch create/delete (cascades tub create/delete —
  *                       see hooks/batch-tub.php), full tub edit (state +
  *                       use + amount + slot), Cabinet slot-schedule write,
  *                       flavor edit (InstockFlavor). Full view access to
- *                       every gated type, including ProductionPlan/
- *                       KitchenReport/ItemPivot — a strict superset of
- *                       ice_cream_maker (see that role's own comment).
+ *                       every gated type, including ProductionPlan/esr/
+ *                       ItemPivot — a strict superset of ice_cream_maker
+ *                       (see that role's own comment). 'esr' route entry
+ *                       overrides _config.php's default with explicit
+ *                       embedded-iframe mode.
  *   shift_lead       — full tub edit + Cabinet slot-schedule write. No
- *                       batch create/delete, no flavor edit.
+ *                       batch create/delete, no flavor edit. 'esr' route
+ *                       entry has no mode/url override, same as
+ *                       administrator — new grant, didn't have this type's
+ *                       predecessor ('KitchenReport') at all.
  *   ice_cream_maker  — explicit request: sees ONLY Batch (full view/
  *                       create/delete — makes tubs, corrections happen by
  *                       deleting and remaking the batch, never editing one
- *                       directly), ProductionPlan, KitchenReport,
+ *                       directly), ProductionPlan, esr ("Shift Report",
+ *                       overridden to explicit embedded-iframe mode),
  *                       ItemPivot, and Cabinet (view-only). Every other
  *                       type is explicitly denied, not just omitted — see
  *                       that role's own block for why each 'false' is
@@ -34,10 +42,11 @@
  *   kiosk            — shared front-of-house tablet. Explicit request,
  *                       repointed at the exact same five-item set as
  *                       ice_cream_maker above (Batch full view/create/
- *                       delete, ProductionPlan/KitchenReport/ItemPivot,
- *                       Cabinet view-only) — this supersedes the role's
- *                       original "FlavorTub/DateActivity 'state'-only tub
- *                       tracking" purpose entirely, not just narrows it.
+ *                       delete, ProductionPlan/esr (overridden to
+ *                       embedded-iframe mode)/ItemPivot, Cabinet view-only)
+ *                       — this supersedes the role's original "FlavorTub/
+ *                       DateActivity 'state'-only tub tracking" purpose
+ *                       entirely, not just narrows it.
  *   editor / author  — legacy WP roles, predate the kitchen-role set above;
  *                       left exactly as they were, not part of this redesign.
  *
@@ -53,6 +62,16 @@
  *   from the old behavior of silently granting admin-equivalent access.
  */
 function scoop_access_policy(): array {
+
+  // Shared raw URL for 'esr' ("Shift Report") roles that OVERRIDE
+  // _config.php's default — kitchen_manager/ice_cream_maker/kiosk below
+  // each restate their own explicit mode/url so that reading any ONE
+  // role's block here tells the complete story for that button ("this
+  // user goes here, in this mode") without needing to also open
+  // _config.php. Roles that don't deviate (administrator, shift_lead)
+  // just declare 'GET' => true and silently inherit _config.php's
+  // external-link default — see that file's 'esr' entry.
+  $esr_iframe_url = 'https://docs.google.com/forms/d/e/1FAIpQLSdQLiwPwmIFDDrNCpfWaTA3ZssfWdAykabJrQ4YxI5zlVwlMg/viewform?embedded=true';
 
   $policy = [
 
@@ -86,12 +105,15 @@ function scoop_access_policy(): array {
         'TaskEdit'      => ['GET' => true, 'POST' => true],
         'Prep'          => ['GET' => true, 'POST' => true, 'DELETE' => true],
         'RecipeCount'   => ['GET' => true, 'POST' => true, 'DELETE' => true],
-        // See _config.php's 'ProductionPlan'/'KitchenReport' entries /
-        // ice_cream_maker's own block below for the full comment —
-        // administrator sees every iframe topic in addition to whichever
-        // role it's actually for.
+        // See _config.php's 'ProductionPlan'/'esr' entries / ice_cream_maker's
+        // own block below for the full comment — administrator sees every
+        // iframe topic in addition to whichever role it's actually for.
+        // 'esr': no mode/url override — inherits _config.php's default
+        // (external-link, window.open target 'esr'), same as shift_lead.
+        // kitchen_manager/ice_cream_maker/kiosk are the ones who override
+        // to the embedded-iframe alternative instead (see their own blocks).
         'ProductionPlan' => ['GET' => true],
-        'KitchenReport'   => ['GET' => true],
+        'esr'             => ['GET' => true],
         // 'ItemPivot' declared here is new — every role below gets this
         // same explicit grant so nobody who could already see the Flavor
         // map loses it now that it's actually enforced (see
@@ -101,7 +123,7 @@ function scoop_access_policy(): array {
         // deliberately, both were meant to stay open to any authenticated
         // user regardless of role (see EmptiedLog's own comment in
         // _config.php). Explicit kiosk request narrowed that: kiosk should
-        // ONLY see Batch/ProductionPlan/KitchenReport/ItemPivot/Cabinet, so
+        // ONLY see Batch/ProductionPlan/esr/ItemPivot/Cabinet, so
         // both now need real declarations — true here and for every other
         // role, false only for kiosk (see kiosk's own block below) —
         // otherwise scoop_type_has_explicit_view_policy() picking up
@@ -212,9 +234,11 @@ function scoop_access_policy(): array {
         // view-gated set (Batch/Cabinet/ItemPivot above already were, or
         // exceed it — Cabinet POST, Batch DELETE) — these two were the
         // remaining gap, ice_cream_maker/kiosk/administrator only. See
-        // _config.php's 'ProductionPlan'/'KitchenReport' entries.
+        // _config.php's 'ProductionPlan' entry. 'esr': embedded-iframe mode
+        // (see administrator's own 'esr' comment above for the external
+        // alternative) — same form kiosk/ice_cream_maker get below.
         'ProductionPlan' => ['GET' => true],
-        'KitchenReport'   => ['GET' => true],
+        'esr' => ['GET' => true, 'display_mode' => 'iframe', 'url' => $esr_iframe_url],
         // See author's EmptiedLog/CabinetWorkflow comment above.
         'EmptiedLog'      => ['GET' => true],
         'CabinetWorkflow' => ['GET' => true],
@@ -261,6 +285,11 @@ function scoop_access_policy(): array {
         'RecipeCount'   => ['GET' => true],
         'EmptiedLog'      => ['GET' => true],
         'CabinetWorkflow' => ['GET' => true],
+        // New grant (didn't have 'KitchenReport' before this rename) — no
+        // mode/url override, same as administrator: inherits _config.php's
+        // external-link default (that Google Form can't be embedded for
+        // this role, which is exactly what the default already reflects).
+        'esr' => ['GET' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
@@ -275,17 +304,21 @@ function scoop_access_policy(): array {
 
     // Explicit request: ice_cream_maker should ONLY see Batch (create +
     // delete — makes tubs, corrections happen by deleting and remaking the
-    // batch, never editing one directly)/ProductionPlan/KitchenReport/
-    // ItemPivot/Cabinet (view-only) — nothing else, at all. Every other
-    // type below is spelled out as an explicit false/false rather than
-    // just omitted, so the restriction reads as deliberate, not a gap
-    // someone forgot to fill in.
+    // batch, never editing one directly)/ProductionPlan/esr ("Shift
+    // Report", overridden below to explicit embedded-iframe mode instead
+    // of _config.php's external-link default)/ItemPivot/Cabinet
+    // (view-only) — nothing else, at all. Every other type below is
+    // spelled out as an explicit false/false rather than just omitted, so
+    // the restriction reads as deliberate, not a gap someone forgot to
+    // fill in.
     'ice_cream_maker' => [
       'routes' => [
         'Batch'          => ['GET' => true, 'POST' => true, 'DELETE' => true],
         'Cabinet'        => ['GET' => true, 'POST' => false],
         'ProductionPlan' => ['GET' => true],
-        'KitchenReport'  => ['GET' => true],
+        // Deviates from _config.php's external-link default — this role
+        // gets the embeddable form instead (see the block comment above).
+        'esr'             => ['GET' => true, 'display_mode' => 'iframe', 'url' => $esr_iframe_url],
         'ItemPivot'      => ['GET' => true],
         'FlavorTub'       => ['GET' => false, 'POST' => false],
         'DateActivity'    => ['GET' => false, 'POST' => false],
@@ -307,17 +340,20 @@ function scoop_access_policy(): array {
 
     // Shared front-of-house tablet. Explicit request, same as
     // ice_cream_maker above: kiosk should ONLY see Batch (full view/
-    // create/delete)/ProductionPlan/KitchenReport/ItemPivot/Cabinet
-    // (view-only) — nothing else. This supersedes the role's original
-    // "FlavorTub/DateActivity 'state'-only tub tracking" purpose (see the
-    // top-of-file role reference) — kiosk has been repointed at this
-    // different set of controls entirely, not just narrowed.
+    // create/delete)/ProductionPlan/esr (embedded-iframe mode, see
+    // ice_cream_maker's own comment above)/ItemPivot/Cabinet (view-only) —
+    // nothing else. This supersedes the role's original "FlavorTub/
+    // DateActivity 'state'-only tub tracking" purpose (see the top-of-file
+    // role reference) — kiosk has been repointed at this different set of
+    // controls entirely, not just narrowed.
     'kiosk' => [
       'routes' => [
         'Batch'          => ['GET' => true, 'POST' => true, 'DELETE' => true],
         'Cabinet'        => ['GET' => true, 'POST' => false],
         'ProductionPlan' => ['GET' => true],
-        'KitchenReport'  => ['GET' => true],
+        // Deviates from _config.php's external-link default — this role
+        // gets the embeddable form instead (see the block comment above).
+        'esr'             => ['GET' => true, 'display_mode' => 'iframe', 'url' => $esr_iframe_url],
         'ItemPivot'      => ['GET' => true],
         'FlavorTub'       => ['GET' => false, 'POST' => false],
         'DateActivity'    => ['GET' => false, 'POST' => false],

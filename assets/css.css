@@ -631,12 +631,12 @@ html > body.TS_GRID-UPDATING .scoop-grid {
    :has(.iframeView) instead of a literal [data-grid-type="Iframe"] check —
    .iframeView is the content root IframePanel.render() always builds
    (includes/shortcode.php's own [scoop_iframe], or any config-driven
-   "iframe topic" type like 'ProductionPlan'/'KitchenReport' — see
-   _config.php) — so this self-scales to a future topic with no CSS edit,
-   the same way scoop-api.js's staticTypes derivation already does. A
-   literal per-type-name exclusion here would've silently needed updating
-   every time a new topic was added — it already did, for ProductionPlan/
-   KitchenReport, before this fix. */
+   "iframe topic" type like 'ProductionPlan'/'esr' — see _config.php) — so
+   this self-scales to a future topic with no CSS edit, the same way
+   scoop-api.js's staticTypes derivation already does. A literal
+   per-type-name exclusion here would've silently needed updating every
+   time a new topic was added — it already did, for ProductionPlan/esr
+   (then still called 'KitchenReport'), before this fix. */
 .scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not([data-grid-type="Task"]):not(:has(.iframeView)):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state))::after {
   content: '';
   position: absolute;

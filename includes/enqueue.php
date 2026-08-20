@@ -154,6 +154,26 @@ function scoop_client_metadata(): array {
     // canvasMode comment (assets/models/_base-grid-model.js) and the
     // "TABLE ...canvas..." sizing rules in assets/css.css for what each
     // value actually does.
+    // Some "iframe topic" types (e.g. 'esr' — see _config.php) offer TWO
+    // different behaviors depending on who's asking: embedded iframe vs. a
+    // plain external-link toggle (e.g. a Google Form that can't be
+    // embedded at all for some accounts). _config.php's own mode/url/
+    // target act as the DEFAULT; a role's _policy.php route entry only
+    // needs to declare its own mode/url/target when it DEVIATES from that
+    // default (see administrator/shift_lead — no override, inherit the
+    // config default — vs. kitchen_manager/ice_cream_maker/kiosk, which
+    // do). Resolved here, server-side, per current user, so the client
+    // never has to know about roles at all — it just reads whichever of
+    // iframeUrl/externalUrl came back (see IframePanel's constructor,
+    // assets/ui/iframe-panel.js).
+    $user_route_policy = scoop_get_user_policy($user)['routes'][$route_key] ?? [];
+    $display_mode = $user_route_policy['display_mode']
+      ?? $cfg['display_mode']
+      ?? (isset($cfg['iframe_url']) ? 'iframe' : null);
+    $url = $user_route_policy['url'] ?? $cfg['url'] ?? $cfg['iframe_url'] ?? null;
+    $window_target = $user_route_policy['window_target'] ?? $cfg['window_target'] ?? null;
+    $wants_external = $display_mode === 'external' && !empty($url);
+
     $out[$route_key] = [
       'primary'      => $primary,
       'entities'     => $entities_out,
@@ -161,15 +181,28 @@ function scoop_client_metadata(): array {
       'icon'         => $cfg['icon'] ?? mb_substr($route_key, 0, 1),
       'target'       => $cfg['target'] ?? null,
       'canvasMode'   => $cfg['canvas_mode'] ?? 'half-stack',
-      // "Iframe topic" types only (e.g. 'ProductionPlan' — see _config.php)
-      // — the URL as server-supplied data instead of a page-content
-      // shortcode attribute. null for every ordinary type; read by
-      // IframePanel (assets/ui/iframe-panel.js) as a fallback for its
-      // data-url attribute. Already only reaches a browser whose role
-      // passed scoop_render_grid_host()'s iframe_url gate (shortcode.php),
-      // same as this whole metadata payload only ever goes to a logged-in
-      // user.
-      'iframeUrl'    => $cfg['iframe_url'] ?? null,
+      // "Iframe topic" types only (e.g. 'ProductionPlan'/'esr' — see
+      // _config.php) — resolved per-current-user from _policy.php's route
+      // entry (override) falling back to _config.php's own display_mode/
+      // url/window_target (default). displayMode is the EXPLICIT field
+      // IframePanel's constructor reads to decide iframe-vs-external (see
+      // assets/ui/iframe-panel.js) — not inferred from which URL happens
+      // to be set. null for every ordinary type. Already only reaches a
+      // browser whose role passed scoop_render_grid_host()'s view-gate
+      // (shortcode.php), same as this whole metadata payload only ever
+      // goes to a logged-in user.
+      'displayMode'    => $display_mode,
+      // Kept split into iframeUrl/externalUrl (rather than one bare 'url')
+      // for back-compat with [scoop_iframe]'s data-url fallback and the
+      // :not(:has(.iframeView)) shimmer-suppression CSS, both of which
+      // predate displayMode.
+      'iframeUrl'      => $wants_external ? null : $url,
+      // Set only once resolved mode is 'external' — see the comment above.
+      // 'esr' targets window name 'esr' by default (see 'window_target' in
+      // _config.php's 'esr' entry) so repeat clicks reuse the same
+      // tab/window instead of opening a new one every time.
+      'externalUrl'    => $wants_external ? $url : null,
+      'externalTarget' => $wants_external ? ($window_target ?? '_blank') : null,
     ];
   }
 

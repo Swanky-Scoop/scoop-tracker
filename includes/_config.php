@@ -166,22 +166,43 @@ function scoop_routes_config(string $batch_key = ''): array {
     // _policy.php declares 'GET' for it. Still needs a
     // [scoop_grid type="ProductionPlan"] host placed on a page to mount,
     // same as every other type; only the URL itself moved out of page
-    // content. A further topic (see 'KitchenReport' below) is just
-    // another entry shaped like this one plus its own _policy.php rule —
-    // no JS changes needed (see assets/data/scoop-api.js's mountAllGrids()).
+    // content. A further topic (see 'esr' below) is just another entry
+    // shaped like this one plus its own _policy.php rule — no JS changes
+    // needed (see assets/data/scoop-api.js's mountAllGrids()).
     'ProductionPlan' => [
       'display_title' => 'Production Plan',
       'icon'          => 'if:h',
       'iframe_url'    => 'https://docs.google.com/document/d/e/2PACX-1vSjXPTYNym_czfTF9l2LXDX3X7kVVX_sZV0mCj8AdjpUjW-rtTnmMC_xzmnl0Jxm2T7xy013_IHG5OW/pub?embedded=true',
     ],
-    // Second "iframe topic" type — see 'ProductionPlan' above for the full
-    // mechanism comment. Same role gate (administrator/ice_cream_maker/
-    // kiosk — see _policy.php) per explicit request, kept identical rather
-    // than duplicated per-role reasoning.
-    'KitchenReport' => [
-      'display_title' => 'Kitchen Report',
+    // Second "iframe topic" type — see 'ProductionPlan' above for the base
+    // mechanism comment. Was 'KitchenReport'; renamed — "Shift Report", key
+    // 'esr' ("end of shift report"). Unlike ProductionPlan, this one's
+    // display mode AND url vary per role. 'display_mode'/'url'/
+    // 'window_target' below are the DEFAULT — 'external' because that's
+    // this form's true native behavior (a real Google Form that genuinely
+    // can't be embedded); any role that doesn't declare its own override
+    // in _policy.php (administrator/shift_lead — see their own 'esr' route
+    // entries) just inherits this default as-is. kitchen_manager/
+    // ice_cream_maker/kiosk are the actual special case — they get a
+    // DIFFERENT, embeddable Google Form instead, via an explicit
+    // 'display_mode'/'url' override in their own _policy.php blocks.
+    // Reading any one role's _policy.php block (default or overridden)
+    // tells the whole story for this button without needing to also check
+    // here — this entry only supplies what a role didn't bother
+    // overriding.
+    //
+    // NOTE: named 'display_mode'/'window_target' rather than 'mode'/
+    // 'target' deliberately — this route has no REST path, so it never
+    // reaches scoop_handle_request()'s own 'mode' (create/update) branch
+    // or the dock-slot 'target' (action/aside) read in
+    // scoop_client_metadata() below, but reusing those key names anyway
+    // would be a landmine for the next type that isn't so lucky.
+    'esr' => [
+      'display_title' => 'Shift Report',
       'icon'          => 'if:kr',
-      'iframe_url'    => 'https://docs.google.com/forms/d/e/1FAIpQLSdQLiwPwmIFDDrNCpfWaTA3ZssfWdAykabJrQ4YxI5zlVwlMg/viewform?embedded=true',
+      'display_mode'  => 'external',
+      'url'           => 'https://forms.gle/jGpJHeU3Ss4fLBeS7',
+      'window_target' => 'esr',
     ],
     'FlavorTub' => [
       'display_title' => 'Curret tubs',

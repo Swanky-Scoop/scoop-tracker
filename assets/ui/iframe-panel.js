@@ -6,18 +6,28 @@
 //     stamps them straight onto the host as data-title/data-url/data-icon —
 //     per-instance, page-content-driven, general purpose: a page can embed
 //     as many different URLs as it wants just by writing more shortcodes.
-//   - A config-driven "iframe topic" type (e.g. 'ProductionPlan' — see
-//     _config.php's iframe_url) has no shortcode attributes of its own;
+//   - A config-driven "iframe topic" type (e.g. 'ProductionPlan'/'esr' —
+//     see _config.php's iframe_url) has no shortcode attributes of its own;
 //     [scoop_grid type="..."] is a plain host like every other type, and
 //     title/icon/url all come from SCOOP.metaData[name] instead — server-
 //     supplied data, gated per-role in scoop_render_grid_host()
 //     (shortcode.php) rather than embeddable by anyone who can edit a page.
 //
+// A config-driven topic can ALSO carry an explicit displayMode of 'external'
+// instead of the default 'iframe' — scoop_client_metadata() (enqueue.php)
+// resolves this per current user, per-role override in _policy.php falling
+// back to _config.php's default (see 'esr' in both files: some forms simply
+// can't be embedded for every account). mode === 'external' means this
+// control never opens an in-page panel at all — clicking TOGGLE just does
+// window.open(url, externalTarget) and nothing else; see the constructor
+// and render() below. This is read directly off metaData.displayMode, not
+// inferred from which URL field happens to be populated.
+//
 // No model, no fetch, no bundle entity — unlike every other dockable view
 // (List subclasses, PopularPlot, ShiftReportForm/TaskForm), this control has
 // no server data dependency at all; render() runs once, synchronously, off
-// whichever of the two sources above supplied it. Still borrows Dockable/
-// List's TOGGLE/dockToggle/canvas-exclusivity plumbing (same technique
+// whichever of the sources above supplied it. Still borrows Dockable/List's
+// TOGGLE/dockToggle/canvas-exclusivity plumbing (same technique
 // popular-plot.js uses — see that file's own header comment) so it
 // participates in the dock exactly the way every other control does.
 //////////////////////////////////
@@ -31,15 +41,25 @@ export default class IframePanel {
     this.api = config.api ?? null;
 
     // window.SCOOP.metaData[name] — see scoop_client_metadata()'s
-    // displayTitle/icon/iframeUrl fields (enqueue.php). Only iframe-topic
-    // types carry a non-null iframeUrl; every dataset.* check below still
-    // wins when present, so a page-content [scoop_iframe] instance behaves
-    // exactly as before even though meta is technically in scope for it too
-    // (SCOOP.metaData has no 'Iframe' entry — meta is undefined there).
+    // displayTitle/icon/displayMode/iframeUrl/externalUrl fields
+    // (enqueue.php). Only iframe-topic types carry a non-null displayMode;
+    // every dataset.* check below still wins when present, so a
+    // page-content [scoop_iframe] instance behaves exactly as before even
+    // though meta is technically in scope for it too (SCOOP.metaData has
+    // no 'Iframe' entry — meta is undefined there).
     const meta = window.SCOOP?.metaData?.[name];
 
     this.title = target.dataset.title || meta?.displayTitle || "Embed";
-    this.url = target.dataset.url || meta?.iframeUrl || "";
+    // Explicit constructor field — 'iframe' | 'external' — resolved
+    // server-side per current user (see enqueue.php's comment). A
+    // page-content [scoop_iframe] instance has no displayMode of its own
+    // and is always 'iframe' — it has no external-link concept.
+    this.mode = meta?.displayMode || "iframe";
+    this.url = target.dataset.url || (this.mode === "external" ? meta?.externalUrl : meta?.iframeUrl) || "";
+    // Only ever set server-side, for a config-driven topic resolved to
+    // 'external' mode — never a dataset.* override, [scoop_iframe] has no
+    // equivalent attribute.
+    this.externalTarget = meta?.externalTarget || "_blank";
 
     // Stand-in for a real model — every borrowed Dockable/List method below
     // only ever reads displayTitle/icon/canvasMode/dockTarget off
@@ -70,6 +90,15 @@ export default class IframePanel {
     if (!this.target.contains(this.TOGGLE)) this.target.append(this.TOGGLE);
 
     this.TOGGLE.addEventListener("click", (e) => {
+      // External mode: just open/reuse the named window — no in-page panel
+      // to toggle open or closed, no dock-hash entry to sync (there's
+      // nothing "open" in THIS page to restore on reload).
+      if (this.mode === "external") {
+        window.open(this.url, this.externalTarget, "noopener");
+        e.stopPropagation();
+        return;
+      }
+
       const isOpen = !this.target.classList.contains("toggled");
       this._setToggled(isOpen);
       this._syncDockHash();
@@ -97,6 +126,17 @@ export default class IframePanel {
 
   render() {
     this.root?.remove();
+
+    // External mode never opens an in-page panel (see the constructor's
+    // click handler) — still marks itself with the same empty .iframeView
+    // class every other mode uses, purely so the loading-shimmer heuristic
+    // (:has(.iframeView) exclusion — css.css) sees this host as "loaded"
+    // instead of shimmering forever with nothing that will ever fill it in.
+    if (this.mode === "external") {
+      this.root = this._el("div", { classes: ["iframeView"] });
+      this.target.append(this.root);
+      return;
+    }
 
     if (!this.url) {
       this.root = this._el("div", { classes: ["iframeView"] });

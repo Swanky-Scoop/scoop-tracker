@@ -992,15 +992,22 @@ export default class ScoopAPI {
     // "Iframe" (see iframe-panel.js) has no bundle entity, no model, no
     // fetch at all — it renders entirely off its own shortcode attributes
     // (data-title/data-url) or, for a config-driven "iframe topic" type
-    // (e.g. 'ProductionPlan' — see _config.php's iframe_url), off
-    // SCOOP.metaData[type].iframeUrl instead. Either way excluded from the
-    // bundle scope below for the same reason as analyticsTypes: the bundle
-    // endpoint 400s on unknown types. Derived from metaData rather than a
-    // hardcoded list of topic names so a future topic (e.g. 'OpenShifts')
-    // needs only its own _config.php entry — nothing here has to change.
+    // (e.g. 'ProductionPlan'/'esr' — see _config.php), off
+    // SCOOP.metaData[type].iframeUrl/externalUrl instead — resolved
+    // per-current-user server-side to whichever displayMode applies (see
+    // scoop_client_metadata(), enqueue.php), but it's still IframePanel
+    // that has to mount it, just in its plain-external-link mode rather
+    // than an actual iframe (see IframePanel's constructor). Either way
+    // excluded from the bundle scope below for the same reason as
+    // analyticsTypes: the bundle endpoint 400s on unknown types. Derived
+    // from metaData rather than a hardcoded list of topic names so a
+    // future topic (e.g. 'OpenShifts') needs only its own _config.php
+    // entry — nothing here has to change.
     const staticTypes = new Set([
       "Iframe",
-      ...Object.keys(SCOOP.metaData ?? {}).filter(key => SCOOP.metaData[key]?.iframeUrl),
+      ...Object.keys(SCOOP.metaData ?? {}).filter(key =>
+        SCOOP.metaData[key]?.iframeUrl || SCOOP.metaData[key]?.externalUrl
+      ),
     ]);
     const modelsBom = this.getModelsBom();
 
