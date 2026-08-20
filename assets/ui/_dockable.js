@@ -56,6 +56,56 @@ export default class Dockable extends El {
     aside: ':scope > aside',
   };
 
+  // Escape closes ONE open dock control at a time: .action-target's (if
+  // occupied) first, then <aside>'s, then whichever .canvas control is
+  // earliest in DOM order — .canvas is a plain flex-wrap row with no
+  // `order` overrides (see css.css), so DOM order is left-to-right visual
+  // order, same as the toolbar's own shortcode-order convention (see
+  // DOCKING.md). Only one close per keypress, so repeated Escapes step
+  // back through whatever's open instead of clearing the whole dock at
+  // once. Bound once globally (see app.js), not per-instance — every
+  // dockable view's host already carries the same _dockListInstance
+  // back-reference dockToggle() sets below, regardless of which concrete
+  // class (List, IframePanel, PopularPlot, ShiftReportForm/TaskForm — the
+  // last two borrow _setToggled/_syncDockHash the same way IframePanel
+  // does) actually owns it.
+  static bindEscapeToClose() {
+    document.addEventListener('keydown', (e) => {
+      // defaultPrevented catches FindIt's own Escape handler (closes its
+      // dropdown, calls preventDefault but not stopPropagation) — without
+      // this, dismissing an autocomplete list would also collapse the
+      // whole panel underneath it in the same keypress.
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+
+      const dock = document.querySelector('.in-dock');
+      if (!dock) return;
+
+      // Yields to anything more locally contextual already open — a
+      // confirm/flavor-picker modal (.modal.show) or a Details drill-down
+      // (.DETAILS/.DETAILS2.show). Neither of those calls
+      // preventDefault()/stopPropagation() on its own Escape handler
+      // (confirm-swap-modal.js/flavor-picker-modal.js/details.js), so
+      // without this explicit check both would close in the same keypress
+      // as a dock panel instead of the modal/drill-down alone winning it.
+      if (document.querySelector('.modal.show, .DETAILS.show, .DETAILS2.show')) return;
+
+      const closeHost = (host) => {
+        const instance = host?._dockListInstance;
+        if (!instance) return false;
+        instance._setToggled(false);
+        instance._syncDockHash();
+        return true;
+      };
+
+      const closed =
+        closeHost(dock.querySelector(`${Dockable.DOCK_SLOT_SELECTORS.action} > .toggled`)) ||
+        closeHost(dock.querySelector(`${Dockable.DOCK_SLOT_SELECTORS.aside} > .toggled`)) ||
+        closeHost(dock.querySelector(':scope > .canvas > .toggled'));
+
+      if (closed) e.preventDefault();
+    });
+  }
+
   // Wires the host's back-reference, canvas-sizing dataset, and the TOGGLE
   // click handler. Call once, after this.target/this.TOGGLE/this.modelInstance
   // are all set.

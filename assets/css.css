@@ -1899,7 +1899,7 @@ aside table.zList thead th {
    (Cabinet) never gets this wrapper at all (see grid.js), so this can stay
    scoped to .action-target without needing to also exclude aside by hand. */
 .action-target .zList-scroll {
-  max-height: 50vh;
+  max-height: 40vh;
   overflow-y: auto;
 }
 .action-target table.zList thead th {

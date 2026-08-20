@@ -1,5 +1,6 @@
 import ScoopAPI    from "./data/scoop-api.js";
 import Details     from "./ui/details.js";
+import Dockable    from "./ui/_dockable.js";
 import { initDockResizers } from "./ui/dock-resizer.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -7,6 +8,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   // rendered by [scoop_dock] (see includes/shortcode.php), present in the
   // DOM before any JS runs.
   initDockResizers();
+
+  // Same reasoning — a single document-level listener, not tied to any one
+  // control, so it doesn't need to wait for mountAllGrids(). Queries
+  // .in-dock's current state fresh on every Escape press rather than
+  // tracking anything itself, so mounting order doesn't matter here.
+  Dockable.bindEscapeToClose();
 
   const api = new ScoopAPI({
     nonce: SCOOP.nonce,
