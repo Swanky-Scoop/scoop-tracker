@@ -37,16 +37,20 @@ export default class BatchHistoryGridModel extends BaseGridModel {
   }
 
   // Mirrors includes/_policy.php's 'Batch' route DELETE grant: administrator,
-  // kitchen_manager, ice_cream_maker. window.SCOOP is the global
+  // kitchen_manager, ice_cream_maker, kiosk. window.SCOOP is the global
   // wp_localize_script() payload (see enqueue.php) — SCOOP.user is null for
   // a logged-out visitor, which can't reach this grid at all (see
   // scoop_require_login_for_homepage), but the null-check keeps this safe
-  // regardless.
+  // regardless. This list has to be kept in sync with _policy.php by hand —
+  // it's a client-side convenience (hide a button nobody could use), not a
+  // real permission boundary; the actual enforcement is the DELETE
+  // route's own permission_callback (scoop_write_permission('Batch')).
   _canDeleteBatch() {
     const roles = window.SCOOP?.user?.roles ?? [];
     return roles.includes('administrator')
       || roles.includes('kitchen_manager')
-      || roles.includes('ice_cream_maker');
+      || roles.includes('ice_cream_maker')
+      || roles.includes('kiosk');
   }
 
   buildCols() {

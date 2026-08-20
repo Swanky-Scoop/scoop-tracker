@@ -45,18 +45,19 @@ function scoop_render_grid_host($raw_atts, string $view) {
         return '<p>You must be logged in to view this.</p>';
     }
 
-    // Types opted into 'view_gated' => true (see _config.php — currently
-    // Cabinet/Batch/ItemPivot/ProductionPlan/KitchenReport) are gated per
-    // role via the same scoop_user_can_route() matrix every write route
-    // already uses (see _policy.php), just checked here instead of a REST
-    // permission_callback since a read-only type (the iframe topics) has
-    // no route of its own to gate that way. Scoped to only opted-in
-    // types — every other type's host renders exactly as before, no new
-    // gate introduced for them. Returns nothing at all (not an error
-    // message) so the button/control is genuinely absent for a role that
-    // shouldn't see it, not just refused.
-    $route_cfg = scoop_routes_config((string)$atts['type']);
-    if (!empty($route_cfg['view_gated']) && !scoop_user_can_route(wp_get_current_user(), (string)$atts['type'], 'GET')) {
+    // Any type _policy.php has an explicit GET declaration for, for at
+    // least one role (scoop_type_has_explicit_view_policy() — _policy.php),
+    // is gated per-role via the same scoop_user_can_route() matrix every
+    // write route already uses, checked here instead of a REST
+    // permission_callback since a read-only type (the iframe topics) has no
+    // route of its own to gate that way. A type nobody's ever declared a GET
+    // value for (EmptiedLog, Popular, ...) stays ungated, visible to any
+    // logged-in user, exactly as before — this doesn't change anything for
+    // types _policy.php has never mentioned. Returns nothing at all (not an
+    // error message) so the button/control is genuinely absent for a role
+    // that shouldn't see it, not just refused.
+    $type = (string)$atts['type'];
+    if (scoop_type_has_explicit_view_policy($type) && !scoop_user_can_route(wp_get_current_user(), $type, 'GET')) {
         return '';
     }
 

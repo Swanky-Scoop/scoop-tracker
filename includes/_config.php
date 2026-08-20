@@ -20,6 +20,17 @@ function scoop_routes_config(string $batch_key = ''): array {
   // or inline "<svg ...>" markup — see List._buildToggleButton() in
   // assets/ui/_list.js. Default (no override) is the route key itself /
   // its first letter.
+  //
+  // View-gating (which roles even see this type's dock button at all) is
+  // NOT configured here — it's automatic, driven entirely by _policy.php:
+  // the moment ANY role's block declares a 'GET' value for a type
+  // (scoop_type_has_explicit_view_policy(), _policy.php), that type is
+  // gated for every role, checked in scoop_render_grid_host()
+  // (shortcode.php). A type nobody's ever declared GET for (EmptiedLog,
+  // Popular, ...) stays ungated, visible to any logged-in user. So: to gate
+  // a NEW type, just start writing 'GET' => true/false for it in
+  // _policy.php's role blocks — nothing to touch here, and nothing to
+  // remember to flip on.
   $cfg = [
 
     'Cabinet' => [
@@ -33,11 +44,6 @@ function scoop_routes_config(string $batch_key = ''): array {
       'post_type'    => 'slot',
       'pod_name'     => 'slot',
       'allowed_fields_cb' => 'scoop_planning_allowed_slot_fields',
-      // Hard view-gate (see 'view_gated' comment on 'ProductionPlan' below)
-      // — every named role in _policy.php already grants 'Cabinet' => GET
-      // true, so this is a no-op for current behavior; it only starts
-      // mattering if a future role's block omits it.
-      'view_gated'   => true,
     ],
     'Batch' => [
       'display_title' => 'Add batch',
@@ -57,10 +63,6 @@ function scoop_routes_config(string $batch_key = ''): array {
       // includes/_specs.php, which folds this into the type's writesPods.
       'cascades_to'  => ['tub'],
       'allowed_fields_cb' => 'scoop_batches_allowed_fields',
-      // Hard view-gate — see 'ProductionPlan' below. kiosk previously had
-      // no Batch access at all; now granted GET/POST/DELETE explicitly
-      // (see _policy.php) as part of the same request that added this gate.
-      'view_gated'   => true,
     ],
     'Task' => [
       'display_title' => 'New Task',
@@ -132,12 +134,6 @@ function scoop_routes_config(string $batch_key = ''): array {
       'display_title' => 'Flavor map',
       'icon'         => 'if:m',
       'canvas_mode'  => 'full-nostack',
-      // Hard view-gate — see 'ProductionPlan' below. Unlike Cabinet/Batch,
-      // no role had an explicit 'ItemPivot' entry before this (it was never
-      // gated at all) — every named role in _policy.php now gets one
-      // explicitly, so this doesn't silently hide it from anyone who could
-      // already see it.
-      'view_gated'   => true,
     ],
     // "What got emptied, by day" log — see assets/models/emptied-log-grid-model.js.
     // No path/methods/mode/envelope_key here (same as ItemPivot above): it's
@@ -160,25 +156,15 @@ function scoop_routes_config(string $batch_key = ''): array {
     'Analytics' => [
       'icon'         => 'if:E',
     ],
-    // 'view_gated' => true (also on Cabinet/Batch/ItemPivot above) makes
-    // scoop_render_grid_host() (shortcode.php) check
-    // scoop_user_can_route($user, $type, 'GET') and render NOTHING at all
-    // — not even an error message — when denied, so the button/control is
-    // genuinely absent for a role that shouldn't see it. Every role that
-    // should keep seeing an already-gated type needs an explicit
-    // 'GET' => true for it in _policy.php; omitting it denies by default
-    // (scoop_user_can_route()'s `?? false`). Opt-in per type deliberately
-    // — most types (FlavorTub, EmptiedLog, Analytics, ...) stay ungated,
-    // visible to any logged-in user same as always; only flip this on for
-    // a type you've actually audited every role's grants for.
-    //
     // First of a family of "iframe topic" types (see DOCKING.md-style
     // comment on IframePanel) — a dockable embed whose URL is server-
     // supplied config, not page content. No path/methods/mode/
     // envelope_key: read-only, no REST route of its own, same shape as
     // Analytics/Popular above. iframe_url flows to the client via
-    // scoop_client_metadata()'s iframeUrl field (enqueue.php). Still needs
-    // a [scoop_grid type="ProductionPlan"] host placed on a page to mount,
+    // scoop_client_metadata()'s iframeUrl field (enqueue.php). View-gated
+    // automatically (see the comment at the top of this function) since
+    // _policy.php declares 'GET' for it. Still needs a
+    // [scoop_grid type="ProductionPlan"] host placed on a page to mount,
     // same as every other type; only the URL itself moved out of page
     // content. A further topic (see 'KitchenReport' below) is just
     // another entry shaped like this one plus its own _policy.php rule —
@@ -187,7 +173,6 @@ function scoop_routes_config(string $batch_key = ''): array {
       'display_title' => 'Production Plan',
       'icon'          => 'if:h',
       'iframe_url'    => 'https://docs.google.com/document/d/e/2PACX-1vSjXPTYNym_czfTF9l2LXDX3X7kVVX_sZV0mCj8AdjpUjW-rtTnmMC_xzmnl0Jxm2T7xy013_IHG5OW/pub?embedded=true',
-      'view_gated'    => true,
     ],
     // Second "iframe topic" type — see 'ProductionPlan' above for the full
     // mechanism comment. Same role gate (administrator/ice_cream_maker/
@@ -197,7 +182,6 @@ function scoop_routes_config(string $batch_key = ''): array {
       'display_title' => 'Kitchen Report',
       'icon'          => 'if:kr',
       'iframe_url'    => 'https://docs.google.com/forms/d/e/1FAIpQLSdQLiwPwmIFDDrNCpfWaTA3ZssfWdAykabJrQ4YxI5zlVwlMg/viewform?embedded=true',
-      'view_gated'    => true,
     ],
     'FlavorTub' => [
       'display_title' => 'Curret tubs',

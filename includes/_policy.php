@@ -79,9 +79,10 @@ function scoop_access_policy(): array {
         // role it's actually for.
         'ProductionPlan' => ['GET' => true],
         'KitchenReport'   => ['GET' => true],
-        // 'ItemPivot' => 'view_gated' (_config.php) is new — every role
-        // below gets this same explicit grant so nobody who could already
-        // see the Flavor map loses it now that it's actually enforced.
+        // 'ItemPivot' declared here is new — every role below gets this
+        // same explicit grant so nobody who could already see the Flavor
+        // map loses it now that it's actually enforced (see
+        // scoop_type_has_explicit_view_policy() above).
         'ItemPivot'      => ['GET' => true],
       ],
       'entities' => [
@@ -106,8 +107,16 @@ function scoop_access_policy(): array {
         'Closeout'  => ['GET' => true, 'POST' => false],
         'DateActivity' => ['GET' => true, 'POST' => false],  // ← ADDED THIS
         'Analytics' => ['GET' => true],
-        // See administrator's 'ItemPivot' comment above.
-        'ItemPivot' => ['GET' => true],
+        // See administrator's 'ItemPivot' comment above — same reasoning
+        // now covers Task/Prep/RecipeCount/InstockFlavor too, backfilled
+        // wherever this role had no explicit entry, so extending
+        // scoop_type_has_explicit_view_policy() coverage to them didn't
+        // silently hide anything this legacy role could already see.
+        'ItemPivot'     => ['GET' => true],
+        'Task'          => ['GET' => true],
+        'Prep'          => ['GET' => true],
+        'RecipeCount'   => ['GET' => true],
+        'InstockFlavor' => ['GET' => true],
       ],
       'entities' => [
         'tub'  => [],
@@ -123,8 +132,12 @@ function scoop_access_policy(): array {
         'Closeout'  => ['GET' => true, 'POST' => true],
         'DateActivity' => ['GET' => true, 'POST' => true],  // ← ADDED THIS
         'Analytics' => ['GET' => true],
-        // See administrator's 'ItemPivot' comment above.
-        'ItemPivot' => ['GET' => true],
+        // See author's comment above.
+        'ItemPivot'     => ['GET' => true],
+        'Task'          => ['GET' => true],
+        'Prep'          => ['GET' => true],
+        'RecipeCount'   => ['GET' => true],
+        'InstockFlavor' => ['GET' => true],
       ],
       'entities' => [
         // 'slot' added so add-next/leave-empty/Confirm Cabinet can write
@@ -189,9 +202,9 @@ function scoop_access_policy(): array {
         // GET is just a diagnostic ping — see scoop_handle_request — real
         // batch data comes through the bundle endpoint, ungated by route).
         // GET now also gates Batch's own dock button visibility (see
-        // 'view_gated' in _config.php), so this true is load-bearing now,
-        // not just parity — shift_lead needs to keep seeing the widget
-        // even though it can't create/delete from it.
+        // scoop_type_has_explicit_view_policy() above), so this true is
+        // load-bearing now, not just parity — shift_lead needs to keep
+        // seeing the widget even though it can't create/delete from it.
         'Batch'         => ['GET' => true, 'POST' => false],
         'Cabinet'       => ['GET' => true, 'POST' => true],
         'FlavorTub'     => ['GET' => true, 'POST' => true],
@@ -202,8 +215,12 @@ function scoop_access_policy(): array {
         // Filing the end-of-shift report is this role's job in practice —
         // see WHITEBOARD-INGESTION.md.
         'ShiftReport'   => ['POST' => true],
-        // See administrator's 'ItemPivot' comment above.
+        // See author's backfill comment above (_policy.php's 'author'
+        // block) — same reasoning.
         'ItemPivot'     => ['GET' => true],
+        'Task'          => ['GET' => true],
+        'Prep'          => ['GET' => true],
+        'RecipeCount'   => ['GET' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
@@ -230,15 +247,18 @@ function scoop_access_policy(): array {
         'Analytics'     => ['GET' => false],
         // This is the intended audience for these buttons (plus
         // administrator, above) — see _config.php's 'ProductionPlan'/
-        // 'KitchenReport' entries and scoop_render_grid_host()'s
-        // 'view_gated' check (shortcode.php). Every other role below
-        // simply omits them, which scoop_user_can_route()'s `?? false`
-        // default already treats as denied — no explicit 'GET' => false
-        // needed.
+        // 'KitchenReport' entries and scoop_type_has_explicit_view_policy()
+        // above. Every other role below simply omits them, which
+        // scoop_user_can_route()'s `?? false` default already treats as
+        // denied — no explicit 'GET' => false needed.
         'ProductionPlan' => ['GET' => true],
         'KitchenReport'   => ['GET' => true],
-        // See administrator's 'ItemPivot' comment above.
+        // See author's backfill comment above (_policy.php's 'author'
+        // block) — same reasoning.
         'ItemPivot'      => ['GET' => true],
+        'Task'           => ['GET' => true],
+        'Prep'           => ['GET' => true],
+        'RecipeCount'    => ['GET' => true],
       ],
       'entities' => [
         'tub'  => [],
@@ -266,8 +286,12 @@ function scoop_access_policy(): array {
         // explanation.
         'ProductionPlan' => ['GET' => true],
         'KitchenReport'   => ['GET' => true],
-        // See administrator's 'ItemPivot' comment above.
+        // See author's backfill comment above (_policy.php's 'author'
+        // block) — same reasoning.
         'ItemPivot'      => ['GET' => true],
+        'Task'           => ['GET' => true],
+        'Prep'           => ['GET' => true],
+        'RecipeCount'    => ['GET' => true],
       ],
       'entities' => [
         'tub'  => ['state'],
@@ -321,4 +345,33 @@ function scoop_user_can_route(\WP_User $user, string $route, string $method): bo
   $can = $policy['routes'][$route][$method] ?? false;
 
   return $can;
+}
+
+/**
+ * Does ANY named role (not '_default', which is a deny-all fallback, not a
+ * real declared policy) explicitly declare a 'GET' value — true OR false —
+ * for this route key? Used by scoop_render_grid_host() (shortcode.php) to
+ * decide whether a [scoop_grid type="..."] host should even render for the
+ * current user: if a type's GET access has genuinely never been declared
+ * anywhere (e.g. EmptiedLog — deliberately open to any authenticated user,
+ * see its own _config.php comment), it stays ungated, visible to everyone,
+ * exactly as before. The moment even ONE role writes a 'GET' entry for a
+ * type, that type is now "clearly meant to be permission-controlled" — every
+ * OTHER role's silence on it starts meaning "denied" (scoop_user_can_route's
+ * own `?? false`), not "ungated". This is what makes an explicit
+ * 'GET' => false in this file actually hide the button instead of only
+ * blocking the route call after the button was already shown and clicked —
+ * previously an unconditional [scoop_grid] shortcode would render, then any
+ * data fetch behind it just 403'd, since these are two independent layers
+ * that used to only agree by accident, per-type, when someone remembered to
+ * gate the render side too.
+ */
+function scoop_type_has_explicit_view_policy(string $type): bool {
+  foreach (scoop_access_policy() as $role_slug => $role_policy) {
+    if ($role_slug === '_default') continue;
+    if (array_key_exists('GET', $role_policy['routes'][$type] ?? [])) {
+      return true;
+    }
+  }
+  return false;
 }
