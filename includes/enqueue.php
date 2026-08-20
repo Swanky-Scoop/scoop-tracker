@@ -161,6 +161,15 @@ function scoop_client_metadata(): array {
       'icon'         => $cfg['icon'] ?? mb_substr($route_key, 0, 1),
       'target'       => $cfg['target'] ?? null,
       'canvasMode'   => $cfg['canvas_mode'] ?? 'half-stack',
+      // "Iframe topic" types only (e.g. 'ProductionPlan' — see _config.php)
+      // — the URL as server-supplied data instead of a page-content
+      // shortcode attribute. null for every ordinary type; read by
+      // IframePanel (assets/ui/iframe-panel.js) as a fallback for its
+      // data-url attribute. Already only reaches a browser whose role
+      // passed scoop_render_grid_host()'s iframe_url gate (shortcode.php),
+      // same as this whole metadata payload only ever goes to a logged-in
+      // user.
+      'iframeUrl'    => $cfg['iframe_url'] ?? null,
     ];
   }
 

@@ -145,6 +145,34 @@ function scoop_routes_config(string $batch_key = ''): array {
     'Analytics' => [
       'icon'         => 'if:E',
     ],
+    // First of a family of "iframe topic" types (see DOCKING.md-style
+    // comment on IframePanel) — a dockable embed whose URL is server-
+    // supplied config, not page content. No path/methods/mode/
+    // envelope_key: read-only, no REST route of its own, same shape as
+    // Analytics/Popular above. iframe_url flows to the client via
+    // scoop_client_metadata()'s iframeUrl field (enqueue.php); view access
+    // is gated per-role via scoop_user_can_route()'s 'GET' check (see
+    // _policy.php), enforced in scoop_render_grid_host() (shortcode.php).
+    // Still needs a [scoop_grid type="ProductionPlan"] host placed on a
+    // page to mount, same as every other type; only the URL itself moved
+    // out of page content. A further topic (see 'KitchenReport' below) is
+    // just another entry shaped like this one plus its own _policy.php
+    // rule — no JS changes needed (see assets/data/scoop-api.js's
+    // mountAllGrids()).
+    'ProductionPlan' => [
+      'display_title' => 'Production Plan',
+      'icon'          => 'if:h',
+      'iframe_url'    => 'https://docs.google.com/document/d/e/2PACX-1vSjXPTYNym_czfTF9l2LXDX3X7kVVX_sZV0mCj8AdjpUjW-rtTnmMC_xzmnl0Jxm2T7xy013_IHG5OW/pub?embedded=true',
+    ],
+    // Second "iframe topic" type — see 'ProductionPlan' above for the full
+    // mechanism comment. Same role gate (administrator/ice_cream_maker/
+    // kiosk — see _policy.php) per explicit request, kept identical rather
+    // than duplicated per-role reasoning.
+    'KitchenReport' => [
+      'display_title' => 'Kitchen Report',
+      'icon'          => 'if:kr',
+      'iframe_url'    => 'https://docs.google.com/forms/d/e/1FAIpQLSdQLiwPwmIFDDrNCpfWaTA3ZssfWdAykabJrQ4YxI5zlVwlMg/viewform?embedded=true',
+    ],
     'FlavorTub' => [
       'display_title' => 'Curret tubs',
       'icon'         => 'if:f',

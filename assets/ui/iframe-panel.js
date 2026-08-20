@@ -1,18 +1,25 @@
 ///////////////////////////////////
 // IframePanel — bespoke, non-List dockable view for embedding a third-party
-// iframe (e.g. a published Google Doc) inside a [scoop_dock]. General
-// purpose: title/url come straight off the host's data-title/data-url (see
-// [scoop_iframe] in includes/shortcode.php) rather than being hardcoded per
-// instance, so a page can embed as many different URLs as it wants just by
-// writing more shortcodes.
+// iframe (e.g. a published Google Doc) inside a [scoop_dock]. Two ways its
+// content gets defined:
+//   - [scoop_iframe title=... url=... icon=...] (see includes/shortcode.php)
+//     stamps them straight onto the host as data-title/data-url/data-icon —
+//     per-instance, page-content-driven, general purpose: a page can embed
+//     as many different URLs as it wants just by writing more shortcodes.
+//   - A config-driven "iframe topic" type (e.g. 'ProductionPlan' — see
+//     _config.php's iframe_url) has no shortcode attributes of its own;
+//     [scoop_grid type="..."] is a plain host like every other type, and
+//     title/icon/url all come from SCOOP.metaData[name] instead — server-
+//     supplied data, gated per-role in scoop_render_grid_host()
+//     (shortcode.php) rather than embeddable by anyone who can edit a page.
 //
 // No model, no fetch, no bundle entity — unlike every other dockable view
 // (List subclasses, PopularPlot, ShiftReportForm/TaskForm), this control has
 // no server data dependency at all; render() runs once, synchronously, off
-// the shortcode's own attributes. Still borrows Dockable/List's TOGGLE/
-// dockToggle/canvas-exclusivity plumbing (same technique popular-plot.js
-// uses — see that file's own header comment) so it participates in the dock
-// exactly the way every other control does.
+// whichever of the two sources above supplied it. Still borrows Dockable/
+// List's TOGGLE/dockToggle/canvas-exclusivity plumbing (same technique
+// popular-plot.js uses — see that file's own header comment) so it
+// participates in the dock exactly the way every other control does.
 //////////////////////////////////
 import List from "./_list.js";
 import El   from "./_el.js";
@@ -23,19 +30,32 @@ export default class IframePanel {
     this.name = name;
     this.api = config.api ?? null;
 
-    this.title = target.dataset.title || "Embed";
-    this.url = target.dataset.url || "";
+    // window.SCOOP.metaData[name] — see scoop_client_metadata()'s
+    // displayTitle/icon/iframeUrl fields (enqueue.php). Only iframe-topic
+    // types carry a non-null iframeUrl; every dataset.* check below still
+    // wins when present, so a page-content [scoop_iframe] instance behaves
+    // exactly as before even though meta is technically in scope for it too
+    // (SCOOP.metaData has no 'Iframe' entry — meta is undefined there).
+    const meta = window.SCOOP?.metaData?.[name];
+
+    this.title = target.dataset.title || meta?.displayTitle || "Embed";
+    this.url = target.dataset.url || meta?.iframeUrl || "";
 
     // Stand-in for a real model — every borrowed Dockable/List method below
     // only ever reads displayTitle/icon/canvasMode/dockTarget off
     // this.modelInstance, so a plain object with those four fields is
     // enough; there's no domain/columns/rows here to justify a real
     // BaseGridModel subclass. canvasMode is fixed at 'half-nostack' by this
-    // control's design, not configurable from the shortcode (title/url are
-    // the only per-instance parameters).
+    // control's design, not configurable from either source above.
     this.modelInstance = {
       displayTitle: this.title,
-      icon: config.icon ?? "🖼",
+      // data-icon (see [scoop_iframe]'s `icon` attribute) beats meta.icon
+      // (config-driven topic) beats config.icon (a fallback for any future
+      // caller that constructs IframePanel directly) beats the plain
+      // picture-frame default — same "if:<name>"/inline-svg/image-path/
+      // literal-glyph shapes _buildToggleButton() understands for every
+      // other dockable control.
+      icon: target.dataset.icon || meta?.icon || config.icon || "🖼",
       canvasMode: "half-nostack",
       dockTarget: null,
     };

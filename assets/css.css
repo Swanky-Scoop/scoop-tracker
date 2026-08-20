@@ -618,17 +618,26 @@ html > body.TS_GRID-UPDATING .scoop-grid {
 }
 
 /* see css.md#scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id */
-.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not([data-grid-type="Task"]):not([data-grid-type="Iframe"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zList-form {
+.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not([data-grid-type="Task"]):not(:has(.iframeView)):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zList-form {
   min-height: 13.5rem;
 }
 
 /* see css.md#scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id-2 —
-   "Iframe" (assets/ui/iframe-panel.js) added alongside ShiftReport/Task:
+   IframePanel (assets/ui/iframe-panel.js) added alongside ShiftReport/Task:
    this loading-shimmer heuristic infers "still loading" purely from DOM
    shape (no table rows/list items/empty-state yet), and an iframe embed's
    content root is neither — without this exclusion the shimmer never
-   clears, same failure mode ShiftReport/Task already needed this fix for. */
-.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not([data-grid-type="Task"]):not([data-grid-type="Iframe"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state))::after {
+   clears, same failure mode ShiftReport/Task already needed this fix for.
+   :has(.iframeView) instead of a literal [data-grid-type="Iframe"] check —
+   .iframeView is the content root IframePanel.render() always builds
+   (includes/shortcode.php's own [scoop_iframe], or any config-driven
+   "iframe topic" type like 'ProductionPlan'/'KitchenReport' — see
+   _config.php) — so this self-scales to a future topic with no CSS edit,
+   the same way scoop-api.js's staticTypes derivation already does. A
+   literal per-type-name exclusion here would've silently needed updating
+   every time a new topic was added — it already did, for ProductionPlan/
+   KitchenReport, before this fix. */
+.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not([data-grid-type="Task"]):not(:has(.iframeView)):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state))::after {
   content: '';
   position: absolute;
   top: 0;

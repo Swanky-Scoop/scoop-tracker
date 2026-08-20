@@ -71,6 +71,12 @@ function scoop_access_policy(): array {
         'TaskEdit'      => ['GET' => true, 'POST' => true],
         'Prep'          => ['GET' => true, 'POST' => true, 'DELETE' => true],
         'RecipeCount'   => ['GET' => true, 'POST' => true, 'DELETE' => true],
+        // See _config.php's 'ProductionPlan'/'KitchenReport' entries /
+        // ice_cream_maker's own block below for the full comment —
+        // administrator sees every iframe topic in addition to whichever
+        // role it's actually for.
+        'ProductionPlan' => ['GET' => true],
+        'KitchenReport'   => ['GET' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
@@ -197,6 +203,14 @@ function scoop_access_policy(): array {
         'InstockFlavor' => ['GET' => true, 'POST' => false],
         'Closeout'      => ['GET' => false, 'POST' => false],
         'Analytics'     => ['GET' => false],
+        // This is the intended audience for these buttons (plus
+        // administrator, above) — see _config.php's 'ProductionPlan'/
+        // 'KitchenReport' entries and scoop_render_grid_host()'s
+        // iframe_url gate (shortcode.php). Every other role below simply
+        // omits them, which scoop_user_can_route()'s `?? false` default
+        // already treats as denied — no explicit 'GET' => false needed.
+        'ProductionPlan' => ['GET' => true],
+        'KitchenReport'   => ['GET' => true],
       ],
       'entities' => [
         'tub'  => [],
@@ -216,6 +230,11 @@ function scoop_access_policy(): array {
         'InstockFlavor' => ['GET' => false, 'POST' => false],
         'Closeout'      => ['GET' => false, 'POST' => false],
         'Analytics'     => ['GET' => false],
+        // Also part of the intended audience — see administrator's own
+        // 'ProductionPlan'/'KitchenReport' comment above for the full
+        // explanation.
+        'ProductionPlan' => ['GET' => true],
+        'KitchenReport'   => ['GET' => true],
       ],
       'entities' => [
         'tub'  => ['state'],

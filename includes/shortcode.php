@@ -45,6 +45,20 @@ function scoop_render_grid_host($raw_atts, string $view) {
         return '<p>You must be logged in to view this.</p>';
     }
 
+    // "Iframe topic" types (e.g. 'ProductionPlan' — see _config.php's
+    // iframe_url + scoop_client_metadata()'s iframeUrl field) are gated per
+    // role via the same scoop_user_can_route() matrix every write route
+    // already uses (see _policy.php), just checked here instead of a REST
+    // permission_callback since this type has no route of its own. Scoped
+    // to only types that declare iframe_url — every other type's host
+    // renders exactly as before, no new gate introduced for them. Returns
+    // nothing at all (not an error message) so the button/control is
+    // genuinely absent for a role that shouldn't see it, not just refused.
+    $route_cfg = scoop_routes_config((string)$atts['type']);
+    if (!empty($route_cfg['iframe_url']) && !scoop_user_can_route(wp_get_current_user(), (string)$atts['type'], 'GET')) {
+        return '';
+    }
+
     $id = 'scoop-grid-' . uniqid();
 
     $normalize_filter_key = function ($key) {
@@ -135,17 +149,22 @@ add_shortcode('scoop_tile', function ($atts) {
 });
 
 /**
- * Shortcode: [scoop_iframe title="..." url="..." slug="..."]
+ * Shortcode: [scoop_iframe title="..." url="..." slug="..." icon="..."]
  *
  * A dockable host for an arbitrary third-party iframe embed (e.g. a
  * published Google Doc) — see assets/ui/iframe-panel.js. Unlike
  * [scoop_grid]/[scoop_tile], this host carries no bundle-entity contract:
- * title/url are passed straight through as data attributes and the client
- * renders them with zero server round-trip, no Pods entity, no REST route.
- * General-purpose by design — every attribute is per-instance, so a page
- * can embed as many different URLs as it wants just by writing more of this
- * shortcode. Fixed at 'half-nostack' canvas sizing (see
+ * title/url/icon are passed straight through as data attributes and the
+ * client renders them with zero server round-trip, no Pods entity, no REST
+ * route. General-purpose by design — every attribute is per-instance, so a
+ * page can embed as many different URLs as it wants just by writing more of
+ * this shortcode. Fixed at 'half-nostack' canvas sizing (see
  * IframePanel's constructor) — not configurable from the shortcode.
+ *
+ * `icon` accepts the same shapes List._buildToggleButton() (_dockable.js)
+ * understands everywhere else — an "if:<name>" icon-font marker, inline
+ * "<svg ...>" markup, an image path, or a literal glyph — falling back to
+ * IframePanel's own "🖼" default when omitted.
  */
 add_shortcode('scoop_iframe', function ($raw_atts) {
     if (!is_user_logged_in()) {
@@ -159,6 +178,7 @@ add_shortcode('scoop_iframe', function ($raw_atts) {
         // #dock= hash — same convention as [scoop_grid]'s own `slug` (see
         // scoop_render_grid_host above and ScoopAPI._controlId()).
         'slug'  => null,
+        'icon'  => null,
     ], is_array($raw_atts) ? $raw_atts : [], 'scoop_iframe');
 
     if (empty($atts['url'])) {
@@ -177,6 +197,9 @@ add_shortcode('scoop_iframe', function ($raw_atts) {
     data-url="<?php echo esc_url($atts['url']); ?>"
     <?php if (!empty($atts['slug'])) : ?>
     data-slug="<?php echo esc_attr($atts['slug']); ?>"
+    <?php endif; ?>
+    <?php if (!empty($atts['icon'])) : ?>
+    data-icon="<?php echo esc_attr($atts['icon']); ?>"
     <?php endif; ?>
     ></div>
     <?php
