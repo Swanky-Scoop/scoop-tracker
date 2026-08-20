@@ -26,7 +26,9 @@
  *   kiosk            — shared front-of-house tablet. FlavorTub/DateActivity
  *                       write, but ONLY the 'state' field (no amount/use/
  *                       slot) — tub tracking (Opened/Emptied etc.), nothing
- *                       else. No batch, no Cabinet write, no flavor edit.
+ *                       else. No Cabinet write, no flavor edit. Batch is
+ *                       full view/create/delete (explicit request, not the
+ *                       "no batch" it originally shipped with).
  *   editor / author  — legacy WP roles, predate the kitchen-role set above;
  *                       left exactly as they were, not part of this redesign.
  *
@@ -77,6 +79,10 @@ function scoop_access_policy(): array {
         // role it's actually for.
         'ProductionPlan' => ['GET' => true],
         'KitchenReport'   => ['GET' => true],
+        // 'ItemPivot' => 'view_gated' (_config.php) is new — every role
+        // below gets this same explicit grant so nobody who could already
+        // see the Flavor map loses it now that it's actually enforced.
+        'ItemPivot'      => ['GET' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
@@ -100,6 +106,8 @@ function scoop_access_policy(): array {
         'Closeout'  => ['GET' => true, 'POST' => false],
         'DateActivity' => ['GET' => true, 'POST' => false],  // ← ADDED THIS
         'Analytics' => ['GET' => true],
+        // See administrator's 'ItemPivot' comment above.
+        'ItemPivot' => ['GET' => true],
       ],
       'entities' => [
         'tub'  => [],
@@ -115,6 +123,8 @@ function scoop_access_policy(): array {
         'Closeout'  => ['GET' => true, 'POST' => true],
         'DateActivity' => ['GET' => true, 'POST' => true],  // ← ADDED THIS
         'Analytics' => ['GET' => true],
+        // See administrator's 'ItemPivot' comment above.
+        'ItemPivot' => ['GET' => true],
       ],
       'entities' => [
         // 'slot' added so add-next/leave-empty/Confirm Cabinet can write
@@ -148,6 +158,15 @@ function scoop_access_policy(): array {
         'TaskEdit'      => ['GET' => true, 'POST' => true],
         'Prep'          => ['GET' => true, 'POST' => true, 'DELETE' => true],
         'RecipeCount'   => ['GET' => true, 'POST' => true, 'DELETE' => true],
+        // See administrator's 'ItemPivot' comment above.
+        'ItemPivot'     => ['GET' => true],
+        // kitchen_manager is a strict superset of ice_cream_maker for the
+        // view-gated set (Batch/Cabinet/ItemPivot above already were, or
+        // exceed it — Cabinet POST, Batch DELETE) — these two were the
+        // remaining gap, ice_cream_maker/kiosk/administrator only. See
+        // _config.php's 'ProductionPlan'/'KitchenReport' entries.
+        'ProductionPlan' => ['GET' => true],
+        'KitchenReport'   => ['GET' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
@@ -169,6 +188,10 @@ function scoop_access_policy(): array {
         // job. GET left true only for parity with every other role (Batch's
         // GET is just a diagnostic ping — see scoop_handle_request — real
         // batch data comes through the bundle endpoint, ungated by route).
+        // GET now also gates Batch's own dock button visibility (see
+        // 'view_gated' in _config.php), so this true is load-bearing now,
+        // not just parity — shift_lead needs to keep seeing the widget
+        // even though it can't create/delete from it.
         'Batch'         => ['GET' => true, 'POST' => false],
         'Cabinet'       => ['GET' => true, 'POST' => true],
         'FlavorTub'     => ['GET' => true, 'POST' => true],
@@ -179,6 +202,8 @@ function scoop_access_policy(): array {
         // Filing the end-of-shift report is this role's job in practice —
         // see WHITEBOARD-INGESTION.md.
         'ShiftReport'   => ['POST' => true],
+        // See administrator's 'ItemPivot' comment above.
+        'ItemPivot'     => ['GET' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
@@ -206,11 +231,14 @@ function scoop_access_policy(): array {
         // This is the intended audience for these buttons (plus
         // administrator, above) — see _config.php's 'ProductionPlan'/
         // 'KitchenReport' entries and scoop_render_grid_host()'s
-        // iframe_url gate (shortcode.php). Every other role below simply
-        // omits them, which scoop_user_can_route()'s `?? false` default
-        // already treats as denied — no explicit 'GET' => false needed.
+        // 'view_gated' check (shortcode.php). Every other role below
+        // simply omits them, which scoop_user_can_route()'s `?? false`
+        // default already treats as denied — no explicit 'GET' => false
+        // needed.
         'ProductionPlan' => ['GET' => true],
         'KitchenReport'   => ['GET' => true],
+        // See administrator's 'ItemPivot' comment above.
+        'ItemPivot'      => ['GET' => true],
       ],
       'entities' => [
         'tub'  => [],
@@ -220,10 +248,13 @@ function scoop_access_policy(): array {
 
     // Shared front-of-house tablet. Tub state tracking only — no amount/use
     // (kiosk doesn't adjust quantities), no slot (not part of Cabinet
-    // planning), no batch, no flavor edit.
+    // planning), no flavor edit. Batch was "no batch" too until explicit
+    // request granted full view/create/delete — kiosk now works the
+    // Batch/BatchHistory/ProductionPlan/KitchenReport/ItemPivot/Cabinet set
+    // the same as ice_cream_maker.
     'kiosk' => [
       'routes' => [
-        'Batch'         => ['GET' => false, 'POST' => false, 'DELETE' => false],
+        'Batch'         => ['GET' => true, 'POST' => true, 'DELETE' => true],
         'Cabinet'       => ['GET' => true, 'POST' => false],
         'FlavorTub'     => ['GET' => true, 'POST' => true],
         'DateActivity'  => ['GET' => true, 'POST' => true],
@@ -235,6 +266,8 @@ function scoop_access_policy(): array {
         // explanation.
         'ProductionPlan' => ['GET' => true],
         'KitchenReport'   => ['GET' => true],
+        // See administrator's 'ItemPivot' comment above.
+        'ItemPivot'      => ['GET' => true],
       ],
       'entities' => [
         'tub'  => ['state'],
