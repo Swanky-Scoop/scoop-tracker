@@ -76,11 +76,22 @@ where staff already interact with tubs day-to-day.
   path here (and likely a `create`-mode write, since it produces a new tub
   row, unlike the route's current `update`-only mode).
 
+## Decisions
+
+- Lineage: a new field **`split_tubs`** links tubs to each other directly
+  (tub-to-tub relationship), rather than relying on `alt_uses` (a tub→use
+  link) for tracing where a split-off tub came from. This supersedes
+  `alt_uses` for the lineage question — `alt_uses` may still be redundant/
+  removable once `split_tubs` lands, since a tub's uses can be derived by
+  walking its `split_tubs` links and reading each linked tub's `use`.
+  Developer is adding this field; still open whether it's single- or
+  multi-value, one-directional (child→parent) or bidirectional (with a
+  `sister_id` pairing per [[schema-sync-sister-id-gap]] caveats if
+  bidirectional), and whether it's schema-file-authored like `alt_uses` or
+  added via Pods admin + Schema Sync.
+
 ## Open questions (not yet decided)
 
-- Does the new split-off tub need a reference back to its origin tub (for
-  audit trail / "why does this exist"), or is `alt_uses` on the *original*
-  tub sufficient lineage?
 - Should `FlavorTub`'s route move from `update`-only to also support
   `create` (mirroring how `batch` creates tubs today), or should splits go
   through a distinct write path?
