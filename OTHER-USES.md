@@ -80,23 +80,51 @@ where staff already interact with tubs day-to-day.
 
 - Lineage: a new field **`split_tubs`** links tubs to each other directly
   (tub-to-tub relationship), rather than relying on `alt_uses` (a tub→use
-  link) for tracing where a split-off tub came from. This supersedes
-  `alt_uses` for the lineage question — `alt_uses` may still be redundant/
-  removable once `split_tubs` lands, since a tub's uses can be derived by
-  walking its `split_tubs` links and reading each linked tub's `use`.
-  Developer is adding this field; still open whether it's single- or
-  multi-value, one-directional (child→parent) or bidirectional (with a
-  `sister_id` pairing per [[schema-sync-sister-id-gap]] caveats if
-  bidirectional), and whether it's schema-file-authored like `alt_uses` or
-  added via Pods admin + Schema Sync.
+  link) for tracing where a split-off tub came from.
+- **`split_tubs` shape (created in Pods admin on `.local`, not yet in the
+  schema file):** multi-value, bidirectional sister field, self-referential
+  on `tub`. Bidirectional means Pods auto-mirrors A→B as B→A on save — but
+  it is *not* transitive: if tub A splits into B and C, A.split_tubs = [B,
+  C] and each of B/C auto-gets [A], but B and C are not directly linked to
+  each other. Finding "every piece of one original whole tub" from an
+  arbitrary member means a graph walk (BFS/DFS over `split_tubs`), not a
+  single flat read. Caveat per [[schema-sync-sister-id-gap]]: if/when this
+  field is exported to the schema file for test/ops, Schema Sync strips
+  `sister_id` — the bidirectional pairing has to be manually re-established
+  on each environment it lands on.
+- **`alt_uses` removed** (2026-08-21) — deleted from
+  `includes/pods-schema/_schema.php` (field entry + its header comment
+  block). It was hand-authored only, never applied to any live environment
+  (nothing to Apply/remove elsewhere), and `split_tubs` supersedes it for
+  the lineage/history purpose it was meant to serve.
 
-## Open questions (not yet decided)
+## Write-path design (discussed, not yet decided/coded)
 
-- Should `FlavorTub`'s route move from `update`-only to also support
-  `create` (mirroring how `batch` creates tubs today), or should splits go
-  through a distinct write path?
-- UI: is this a new button/modal inside CabinetWorkflow's tile
-  (`cabinet-workflow-tile.js`), or a separate flow?
-- Should there be a floor on split size (e.g. can't split off less than some
-  minimum amount), or any validation that split amounts sum correctly
-  against the original?
+Splitting needs to (a) create a new tub row for the claimed portion and (b)
+decrement the origin tub's `amount` — in one operation, ideally, since the
+`tub` table is MyISAM (no transactions). The existing `FlavorTub` route is
+`mode: update` only, so it can't create a row.
+
+Leading option discussed: a new create-mode route (e.g. `TubSplit`, `mode:
+create`, `pod_name: tub`) whose pre-save hook — mirroring how `Batch`
+creation already spawns tub rows via `scoop_create_tubs_for_new_batch` in
+`includes/hooks/batch-tub.php` — reads the origin tub id off the incoming
+`split_tubs` value, validates the requested portion against the origin's
+current `amount`, decrements the origin, and stamps the new row
+`state='Emptied'` / `emptied_at=now()`. Rejected alternative: two separate
+client requests (create, then update origin) — no transactions to fall back
+on if the second call fails.
+
+**Not yet decided — explicitly deferred, discuss before coding:**
+
+- Whether to actually build the route above, or a different write path.
+- Whether the split action is exposed only inside CabinetWorkflow (matches
+  the original framing — staff already work tubs there, and it already
+  knows a tub's cabinet/slot context) or also from the plain FlavorTub grid.
+- Whether to enforce a minimum split size (floor on the portion, to avoid
+  near-zero junk records) — and if so, what the floor is.
+- What the new split-off row inherits from origin (draft assumption, not
+  confirmed: `flavor`/`location`/`batch`/`closeout` copied over, `slot`
+  left unset since it's recorded as already emptied).
+- Permissions: same roles that can already write `use`/`amount` on a tub,
+  or a narrower set for splitting specifically.
