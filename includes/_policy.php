@@ -105,6 +105,9 @@ function scoop_access_policy(): array {
       'routes' => [
         'Cabinet'       => ['GET' => true, 'POST' => true],
         'FlavorTub'     => ['GET' => true, 'POST' => true],
+        // "Split for another use" (see OTHER-USES.md) — granted alongside
+        // FlavorTub, same underlying tub-write capability.
+        'TubSplit'      => ['GET' => true, 'POST' => true],
         'Batch'         => ['GET' => true, 'POST' => true, 'DELETE' => true],
         'Closeout'      => ['GET' => true, 'POST' => true],
         'DateActivity'  => ['GET' => true, 'POST' => true],
@@ -198,6 +201,8 @@ function scoop_access_policy(): array {
       'routes' => [
         'Cabinet'   => ['GET' => true, 'POST' => true],
         'FlavorTub' => ['GET' => true, 'POST' => true],
+        // See administrator's TubSplit comment above — same reasoning.
+        'TubSplit'  => ['GET' => true, 'POST' => true],
         'Batch'     => ['GET' => true, 'POST' => true],
         'Closeout'  => ['GET' => true, 'POST' => true],
         'DateActivity' => ['GET' => true, 'POST' => true],  // ← ADDED THIS
@@ -235,6 +240,8 @@ function scoop_access_policy(): array {
         'Batch'         => ['GET' => true, 'POST' => true, 'DELETE' => true],
         'Cabinet'       => ['GET' => true, 'POST' => true],
         'FlavorTub'     => ['GET' => true, 'POST' => true],
+        // See administrator's TubSplit comment above — same reasoning.
+        'TubSplit'      => ['GET' => true, 'POST' => true],
         'DateActivity'  => ['GET' => true, 'POST' => true],
         'InstockFlavor' => ['GET' => true, 'POST' => true],
         'Closeout'      => ['GET' => false, 'POST' => false],
@@ -286,6 +293,8 @@ function scoop_access_policy(): array {
         'Batch'         => ['GET' => true, 'POST' => false],
         'Cabinet'       => ['GET' => true, 'POST' => true],
         'FlavorTub'     => ['GET' => true, 'POST' => true],
+        // See administrator's TubSplit comment above — same reasoning.
+        'TubSplit'      => ['GET' => true, 'POST' => true],
         'DateActivity'  => ['GET' => true, 'POST' => true],
         'InstockFlavor' => ['GET' => true, 'POST' => false],
         'Closeout'      => ['GET' => false, 'POST' => false],
@@ -410,6 +419,8 @@ function scoop_access_policy(): array {
         'ItemPivot'       => ['GET' => true],
         // Same as shift_lead — full read/write.
         'FlavorTub'       => ['GET' => true, 'POST' => true],
+        // See administrator's TubSplit comment above — same reasoning.
+        'TubSplit'        => ['GET' => true, 'POST' => true],
         'Batch'           => ['GET' => false, 'POST' => false],
         'ProductionPlan'  => ['GET' => false],
         'DateActivity'    => ['GET' => false, 'POST' => false],

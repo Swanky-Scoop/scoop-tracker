@@ -140,6 +140,79 @@ function scoop_create_pod_item(string $pod_name, array $allowed_fields, array $d
     }
   }
 
+  // TubSplit — "split for another use" (see OTHER-USES.md, assets/ui/
+  // tub-detail-view.js). The only field the client actually chooses is
+  // 'use' (already filtered into $clean above, from scoop_tubs_allowed_fields
+  // — same grant a role needs to edit tub.use anywhere else). Everything
+  // else about the new tub is derived from the origin tub named by
+  // 'origin_tub_id' — a plain request value, not a Pods field, so (like
+  // task's post_title above) it's read straight off raw $data, never added
+  // to any allowed-fields list, never persisted anywhere itself.
+  //
+  // No split_tubs link is written (deliberately dropped — see OTHER-USES.md:
+  // "nice-to-have... even a single bidirectional link adds complexity for
+  // small gains").
+  //
+  // opened_on is copied from the origin here because it's read straight off
+  // $data at create time, same as the fields above — the tub 'pre_save'
+  // hook that normally reverts opened_on/emptied_at edits (scoop_enforce_
+  // tub_rules, includes/hooks/tub-state.php) explicitly skips new items
+  // entirely, so this isn't fighting that hook. created_on, by contrast,
+  // CANNOT be copied — scoop_auto_set_tub_created_on (same file) force-sets
+  // it to now on every new tub unconditionally; not attempted here.
+  if ($pod_name === 'tub') {
+    $origin_id = (int)($data['origin_tub_id'] ?? 0);
+    if ($origin_id <= 0) {
+      return new WP_Error('tub_split_missing_origin', 'Tub split requires origin_tub_id.');
+    }
+
+    if (!function_exists('pods')) {
+      return new WP_Error('pods_missing', 'Pods API not available.');
+    }
+
+    $origin = pods('tub', $origin_id);
+    if (!$origin || !$origin->exists()) {
+      return new WP_Error('tub_split_origin_not_found', 'Origin tub not found.');
+    }
+
+    $origin_amount = (float)$origin->field('amount');
+    if ($origin_amount <= 0) {
+      return new WP_Error('tub_split_no_amount', 'Origin tub has no amount to split.');
+    }
+
+    $use_id = (int)($clean['use'] ?? 0);
+    if ($use_id <= 0) {
+      return new WP_Error('tub_split_missing_use', 'Tub split requires a use.');
+    }
+
+    $half = $origin_amount / 2;
+
+    $origin_title = get_the_title($origin_id) ?: "Tub {$origin_id}";
+    $use_title    = get_the_title($use_id) ?: "Use {$use_id}";
+
+    $clean['post_title'] = "{$origin_title}/{$use_title}";
+    $clean['post_name']  = sanitize_title($clean['post_title']);
+    $clean['flavor']     = scoop_rel_id($origin->field('flavor'));
+    $clean['location']   = scoop_rel_id($origin->field('location'));
+    $clean['batch']      = scoop_rel_id($origin->field('batch'));
+    $clean['closeout']   = scoop_rel_id($origin->field('closeout'));
+    $clean['opened_on']  = $origin->field('opened_on');
+    $clean['amount']     = $half;
+    $clean['state']      = 'Emptied';
+    $clean['emptied_at'] = current_time('mysql');
+
+    // Origin's own amount is halved further down, AFTER the new tub is
+    // confirmed created (see the pod_name==='tub' check right after
+    // save_pod_item() below) — not before. If that second save fails, the
+    // worse outcome is a visible over-count (origin still shows its old
+    // amount, alongside a real new tub for the split-off half) rather than
+    // a silent loss (origin already halved, but no new tub exists to show
+    // where the other half went). MyISAM, no transaction to fall back on
+    // either way — see CLAUDE.md's data repair policy. $origin_id/$half
+    // stay in scope for the rest of this function (PHP is function-scoped,
+    // not block-scoped) — no need to stash them anywhere.
+  }
+
   // Pods relationship pick fields default to pick_post_status=publish, so a
   // draft child (wp_insert_post()'s own default when post_status isn't set
   // explicitly) is silently invisible to any relationship pointing at it —
@@ -157,6 +230,25 @@ function scoop_create_pod_item(string $pod_name, array $allowed_fields, array $d
 
   $id = (int)$id;
   if ($id <= 0) return new WP_Error('create_failed', 'Create failed (no id returned).');
+
+  // TubSplit's second write: the new tub above already exists at this
+  // point, so a failure here is logged, not returned as an error — the
+  // split itself succeeded (there's a real new tub for the new use); only
+  // the origin's own amount is left stale, a visible inconsistency for
+  // someone to reconcile rather than a reason to make the client think the
+  // whole split failed (which would invite a retry that creates a
+  // duplicate split tub — see the comment above this block).
+  if ($pod_name === 'tub' && isset($origin_id, $half)) {
+    $origin_saved = pods_api()->save_pod_item([
+      'pod'  => 'tub',
+      'id'   => $origin_id,
+      'data' => ['amount' => $half],
+    ]);
+
+    if (is_wp_error($origin_saved)) {
+      error_log("scoop_create_pod_item (tub split): new tub {$id} created, but failed to halve origin tub {$origin_id}'s amount: " . $origin_saved->get_error_message());
+    }
+  }
 
   return $id;
 }
