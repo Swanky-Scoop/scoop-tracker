@@ -522,6 +522,37 @@ correct state to redisplay. Success/failure feedback via the existing
 `Toast` component (`assets/ui/toast.js`), same as `ConfirmSwapModal`'s
 write flows.
 
+### Extracted into a shared control, second consumer: ConfirmSwapModal
+
+The split control now lives in `assets/ui/_tub-split-control.js`
+(`buildSplitTubControl(item, api, { onSplit })`) — `tub-detail-view.js` was
+the first consumer; `ConfirmSwapModal` (CabinetWorkflow) is the second,
+per developer request ("it is also acting on tubs"). Genuinely shared, not
+duplicated: same DOM builder, same write, same `Toast` feedback — only
+`onSplit` (what "refresh myself" means) differs per host.
+
+- **Which tub**: `ConfirmSwapModal` juggles two tubs at once — the
+  incoming one it's proposing (`plan.tub`) and the one currently in the
+  slot being swapped out (`plan.outgoingTub`). Confirmed with the
+  developer: the control acts on **`plan.outgoingTub`**, matching the
+  original front-of-house/event scenario this whole feature started from.
+- **Placement/lifecycle**: a `this.SPLIT_HOST` div, appended last in
+  `_buildDom()` (bottom of the modal, per the request), but *rebuilt* each
+  `_render()` — same reasoning as the flavor lines already being
+  repositioned per render, not built once: the target tub changes with
+  whatever row/slot is currently open. Empty (nothing appended) when
+  there's no outgoing tub at all, e.g. filling a previously-empty slot.
+- **`onSplit`**: reopens the dialog with a fresh row
+  (`this.getRow?.(row.slotId) ?? row`, then `this.open(freshRow, this.
+  _selectedFlavorId)`) — the exact same reopen-after-a-detour pattern
+  `_pickScheduled()` already used for its own "schedule a flavor, then
+  come back" flow. The domain is already refreshed by the time this runs
+  (`_tub-split-control.js` does that before calling `onSplit`), so
+  `getRow` picks up whatever changed on the outgoing tub.
+- Reuses the same `.modal` base CSS (`body > .modal * { display:flex; ...
+  }`) `ConfirmSwapModal`'s own `.modal.confirm_swap` already gets — no new
+  CSS needed, lays out the same way it does inside the Details modal.
+
 ### Not built
 
 - No minimum split-size floor (still an open item from the original design

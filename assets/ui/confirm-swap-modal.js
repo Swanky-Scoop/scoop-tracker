@@ -33,6 +33,7 @@
 //////////////////////////////////
 import El from "./_el.js";
 import Toast from "./toast.js";
+import { buildSplitTubControl } from "./_tub-split-control.js";
 
 export default class ConfirmSwapModal extends El {
   constructor({ api, model, onChangePlan, openPickerFor, getRow, paintOptimistic, confirmOptimistic }) {
@@ -116,6 +117,13 @@ export default class ConfirmSwapModal extends El {
 
     this.REPLACE_LABEL = el('p', { text: 'Replace flavor' });
 
+    // Rebuilt fresh on every _render() (see there) — it acts on
+    // this._plan.outgoingTub, which changes per row/open, same reasoning
+    // as the flavor lines above being repositioned each render rather than
+    // built once. Empty (no outgoing tub, e.g. filling a previously-empty
+    // slot) until _render() has something to put in it.
+    this.SPLIT_HOST = el('div', { classes: ['split-tub-host'] });
+
     this.FORM.append(
       this.CLOSE,
       this.REPLACE_LABEL,
@@ -129,6 +137,7 @@ export default class ConfirmSwapModal extends El {
       this.NEXT_P,
       this.BTN_GROUP,
       EMPTY_P,
+      this.SPLIT_HOST,
     );
     this.ROOT.append(this.FORM);
     document.body.append(this.ROOT);
@@ -207,6 +216,29 @@ export default class ConfirmSwapModal extends El {
       ? [this.IMMEDIATE_P, this.NEXT_P, this.CURRENT_P]
       : [this.CURRENT_P, this.IMMEDIATE_P, this.NEXT_P];
     order.forEach(p => this.FORM.insertBefore(p, this.BTN_GROUP));
+
+    // Acts on the OUTGOING tub (the one physically in this slot right now,
+    // about to be swapped out) — not plan.tub, the incoming one being
+    // proposed. Nothing to split if there's no outgoing tub at all (e.g.
+    // filling a previously-empty slot).
+    this.SPLIT_HOST.replaceChildren();
+    if (this._plan.outgoingTub) {
+      this.SPLIT_HOST.append(
+        buildSplitTubControl(this._plan.outgoingTub, this.api, { onSplit: () => this._afterSplit() })
+      );
+    }
+  }
+
+  // Same reopen-with-fresh-row pattern as _pickScheduled below — the split
+  // already refreshed the domain (see _tub-split-control.js) by the time
+  // this runs, so getRow() picks up whatever changed (the outgoing tub's
+  // reduced amount, or its new use/state if it was converted in place).
+  _afterSplit() {
+    const row = this._row;
+    if (!row) return;
+
+    const freshRow = this.getRow?.(row.slotId) ?? row;
+    this.open(freshRow, this._selectedFlavorId);
   }
 
   _tubMetaText(tub) {
