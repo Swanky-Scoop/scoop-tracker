@@ -528,7 +528,14 @@ export default class BaseGridModel {
       // key; Number(array) => NaN and titleFrom() would show "NaN". Only
       // apply the single-id titleMap lookup for scalar values.
       const isMulti = Array.isArray(raw);
-      const id = isMulti ? 0 : Number(raw ?? 0);
+      // col.detailEntity marks a column whose raw value is the ROW'S OWN
+      // title text (e.g. a synthetic `_title` column), not a foreign key —
+      // Number(raw) would be NaN. Point the cell's id at the row's own id
+      // instead, so _list.js's detail-link rendering opens the right item.
+      // See instock-flavor-grid-model.js for the one model using this today.
+      const id = col.detailEntity
+        ? Number(rowData?.id ?? 0)
+        : (isMulti ? 0 : Number(raw ?? 0));
 
       let display = (col.titleMap && !isMulti)
         ? this.titleFrom(id, col)

@@ -25,8 +25,10 @@ export default class InstockFlavorGridModel extends BaseGridModel {
     super.buildCols();
 
     // detailEntity (not titleMap) opts this cell into the Details-panel link
-    // in Grid._getCellDom() without going through titleMap's id-lookup
-    // display logic — this cell's raw value already IS the title text.
+    // in _list.js's _renderFieldValue without going through titleMap's
+    // id-lookup display logic — this cell's raw value already IS the title
+    // text. fillRowFromColumns() sees detailEntity and points the cell's id
+    // at this row's own id automatically (there's no foreign key to read).
     const titleCol = { key: "_title", label: "Flavor", dataType: "string", control: "input", hidden: false, visible: true, write: false, detailEntity: "flavor" };
     this._allColumns = [titleCol, ...(this._allColumns ?? [])];
     this._applyColumnFilter();
@@ -115,13 +117,5 @@ export default class InstockFlavorGridModel extends BaseGridModel {
 
   _fillFlavorRow(row, flavor, i) {
     this.fillRowFromColumns(row, flavor, i);
-    this._applyTitleLink(row);
-  }
-
-  // fillRowFromColumns() sets cell.id = Number(raw), but raw here is the
-  // title string (not a foreign key) — fix it up to the flavor's own post id
-  // so the Details link points at the right item.
-  _applyTitleLink(row) {
-    if (row._title) row._title.id = row.id;
   }
 }

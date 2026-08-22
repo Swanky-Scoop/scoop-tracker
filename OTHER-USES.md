@@ -208,6 +208,41 @@ detail-link renderer generalized per the decision above, and a synthetic
 column added to `FlavorTubGridModel`), the split action's real write path,
 per-field edit permissions.
 
+### Detail-link renderer generalized (2026-08-21)
+
+The "generalize the detail-link column pattern" decision above is now
+partly done — the *rendering* half, ahead of the FlavorTub edit column
+that will consume it:
+
+- `assets/ui/_list.js`'s `_renderFieldValue`: the detail-link branch was
+  hardcoded to `entityKey === 'flavor'`; now any column with a resolved
+  `col.detailEntity ?? col.titleMap` links, not just `flavor`. This also
+  activates links for `use`/`location`/`cabinet` relationship columns
+  (`_inferTitleMap` already computed them, they just never rendered as
+  links before).
+- `assets/models/_base-grid-model.js`'s `fillRowFromColumns`: a
+  `col.detailEntity` column now automatically gets `id = rowData.id` (the
+  row's own id) instead of `Number(raw)` (which was `NaN` for a title
+  string). This is what `instock-flavor-grid-model.js`'s local
+  `_applyTitleLink` hack did by hand for one case — removed that hack
+  (and its now-redundant `_fillFlavorRow` wrapper line) now that it's
+  automatic for any model.
+- Net effect: any grid model can make its own row's title clickable with
+  one column def line — `{ key: '_title', detailEntity: '<its own pod>' }`
+  — same as InstockFlavor already had, just no longer flavor-specific or
+  requiring a per-model id-fixup hack.
+
+**Checked, deliberately not touched**: `flavors-grid-model.js`'s
+`flavor_name` column (Analytics-sourced Flavors list) shows each flavor's
+own name as plain text today — a real candidate for this. Left alone
+because it's built from `/scoop/v1/analytics` response data
+(`f.flavor_id`/`f.flavor_name`), bypassing the bundle pattern entirely (see
+CLAUDE.md, "Analytics is the odd one out") — wiring it up risks a dead
+link ("Not loaded on this page") on any page where the Flavors analytics
+view is shown without the `flavor` domain also being bundled from another
+grid on the same page. Flag for a follow-up if this list should get the
+same treatment.
+
 ### Still open
 
 - Exact field list/order to show for a tub in the modal (candidates from

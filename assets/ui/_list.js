@@ -804,12 +804,15 @@ export default class List extends Dockable{
         new ToggleIt(EL, data, this.name);
       else new FindIt(EL, data, this.name);
     } else {
-      // Read-only relationship fields (currently: flavor) link to a Details
+      // Read-only relationship fields (col.titleMap — flavor/use/location/
+      // cabinet, see _base-grid-model.js's _inferTitleMap) link to a Details
       // panel instead of plain text. col.detailEntity lets a non-relationship
-      // field (e.g. a row's own title) opt into the same link without
-      // triggering titleMap's id-lookup display logic.
+      // field (e.g. a row's own title — see fillRowFromColumns' detailEntity
+      // branch, which points d.id at the row's own id for exactly this case)
+      // opt into the same link without triggering titleMap's id-lookup
+      // display logic.
       const entityKey = col.detailEntity ?? col.titleMap;
-      if (entityKey === 'flavor' && d.id) {
+      if (entityKey && d.id) {
         EL.append(this.el('a', {
           text: '' + (d.display || ''),
           classes: ['detail-link'],
