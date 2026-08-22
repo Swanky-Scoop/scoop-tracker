@@ -3,12 +3,14 @@
 // registered there against entity 'tub'. Reuses the generic field dump for
 // now — the exact field list/order a tub's detail view should show is still
 // an open design question, see OTHER-USES.md — and adds a tub-only actions
-// area: an inline "split for another use" control (new tub for half the
-// origin's amount, under a different use — see OTHER-USES.md for the full
-// design). Inline rather than its own modal since the only real input is
-// the use picker (amount/title/state/etc. are all server-computed — see
-// the pod_name==='tub' branch in includes/_write_fields.php's
-// scoop_create_pod_item()).
+// area: an inline "split for another use" control. GUI collects a use AND
+// an amount; the server (includes/_write_fields.php's scoop_create_pod_item,
+// pod_name==='tub' branch) decides what actually happens with them — either
+// a real split (new tub for the requested amount, origin reduced by that
+// same amount) or, if the requested amount covers the whole remaining
+// amount, converts the origin tub in place instead of leaving a spent
+// husk behind. Inline rather than its own modal since the inputs are just
+// the two fields below — title/state/etc. are all server-computed.
 //////////////////////////////////
 import { fillFields } from "./_detail-fields.js";
 import Details from "./details.js";
@@ -34,6 +36,18 @@ function buildSplitControl(item, api) {
     SELECT.append(OPT);
   });
 
+  // Defaults to the tub's own current amount — left as-is, that's a
+  // request >= the origin's amount, which the server treats as "convert
+  // the whole tub" rather than a split (see scoop_create_pod_item). Lower
+  // it to split off only part of the tub instead.
+  const currentAmount = Number(item?.amount) || 0;
+  const AMOUNT = document.createElement('input');
+  AMOUNT.type = 'number';
+  AMOUNT.classList.add('split-tub-amount');
+  AMOUNT.min = '0.01';
+  AMOUNT.step = '0.01';
+  AMOUNT.value = currentAmount > 0 ? String(currentAmount) : '';
+
   const BTN = document.createElement('button');
   BTN.type = 'button';
   BTN.classList.add('split-tub-submit');
@@ -42,36 +56,38 @@ function buildSplitControl(item, api) {
   // Mirrors the server's own validation (scoop_create_pod_item's
   // tub_split_no_amount/tub_split_missing_use errors) — nothing useful for
   // the button to do if there's no amount left to split or no use to pick.
-  const noAmount = !(Number(item?.amount) > 0);
+  const noAmount = currentAmount <= 0;
   BTN.disabled = !SELECT.options.length || noAmount;
   if (noAmount) BTN.title = 'Nothing left on this tub to split.';
 
-  BTN.addEventListener('click', () => splitTub({ item, api, SELECT, BTN }));
+  BTN.addEventListener('click', () => splitTub({ item, api, SELECT, AMOUNT, BTN }));
 
-  WRAP.append(SELECT, BTN);
+  WRAP.append(SELECT, AMOUNT, BTN);
   return WRAP;
 }
 
-async function splitTub({ item, api, SELECT, BTN }) {
+async function splitTub({ item, api, SELECT, AMOUNT, BTN }) {
   const useId = Number(SELECT.value);
-  if (!useId) return;
+  const amount = Number(AMOUNT.value);
+  if (!useId || !(amount > 0)) return;
 
   BTN.disabled = true;
   SELECT.disabled = true;
+  AMOUNT.disabled = true;
 
   const res = await api.postJson({
-    cells: { 0: { use: useId, origin_tub_id: item.id } },
+    cells: { 0: { use: useId, amount, origin_tub_id: item.id } },
   }, 'TubSplit');
 
   if (res.ok) {
-    Toast.addMessage({
-      title: 'Tub split',
-      message: 'Created a new tub for the selected use.',
-    });
+    // Server decides whether this was a real split (new tub) or a
+    // whole-tub conversion (see scoop_create_pod_item) — the client
+    // doesn't need to know which to react correctly either way.
+    Toast.addMessage({ title: 'Tub split saved', message: 'Split for another use recorded.' });
     await api.refreshPageDomain({ force: true });
-    // Re-renders whatever's currently open (this same tub — its amount is
-    // now halved) against the refreshed domain, rather than closing the
-    // panel out from under the user.
+    // Re-renders whatever's currently open (this same tub — its own
+    // amount/use/state may have changed) against the refreshed domain,
+    // rather than closing the panel out from under the user.
     Details.refresh();
   } else {
     Toast.addMessage({
@@ -80,6 +96,7 @@ async function splitTub({ item, api, SELECT, BTN }) {
     });
     BTN.disabled = false;
     SELECT.disabled = false;
+    AMOUNT.disabled = false;
   }
 }
 

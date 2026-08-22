@@ -415,21 +415,36 @@ the other two (`scoop_get_user_policy($user)` then a policy-array lookup).
 
 The write-path question from way back ("Should `FlavorTub`'s route move
 from `update`-only to also support `create`...") is resolved: a new
-`TubSplit` route, `mode: 'create'`, `pod_name: 'tub'`. Final field values
-(confirmed in conversation, differ from the original draft above):
+`TubSplit` route, `mode: 'create'`, `pod_name: 'tub'`.
 
-- `amount`: **exactly half of the origin's current amount** — not a
-  user-chosen portion. The origin's own `amount` is set to that same half.
-  (0.66 → 0.33 + 0.33, not a partial split.)
-- `title`: literal `"{origin title}/{use title}"`.
-- `use`: the only field the GUI actually collects.
-- `flavor`/`location`/`batch`/`closeout`/`opened_on`: copied from the origin.
-- `state`: `'Emptied'`, `emptied_at`: now.
-- `created_on`: **not attempted** — confirmed (see `tub-state.php` below)
-  that it can't be set on create anyway, so there's nothing to try.
-- **No `split_tubs` link** — explicitly dropped as a "nice-to-have" per
-  developer request; even one bidirectional link was judged not worth the
-  complexity for what it'd buy right now.
+### Amount is a GUI choice, not always a half — two outcomes
+
+Revised after the first pass (which always halved): the GUI now collects
+**both** `use` and `amount`. The server compares the requested amount to
+the origin's current amount and picks one of two outcomes:
+
+- **`requested >= origin's amount`** — nothing meaningful would be left
+  over. No new tub is created at all — the **origin itself** is converted:
+  `use` → the picked use, `state` → `'Emptied'`. `amount` is left
+  untouched. This is a plain update through the normal `pods_api()` path
+  (not `scoop_create_pod_item()`'s create flow), so `scoop_enforce_tub_rules`
+  (the *update*-path hook, `tub-state.php`) auto-stamps `emptied_at` the
+  same way it already does for every other transition into `'Emptied'` —
+  nothing tub-split-specific needed for that half. `>=`, not just `>`: an
+  exact match would leave a zero-`amount` origin behind if forced through
+  the split branch, which is a worse outcome than just relabeling the one
+  tub that already exists.
+- **`requested < origin's amount`** — a real split, same shape as the
+  original design: new tub for the requested amount (`title`:
+  `"{origin title}/{use title}"`, `flavor`/`location`/`batch`/`closeout`/
+  `opened_on` copied from origin, `state: 'Emptied'`, `emptied_at`: now),
+  origin's own `amount` reduced by that same requested amount (not halved).
+
+`created_on` is still never attempted either way — confirmed (see below)
+that it can't be set on create regardless. **No `split_tubs` link** either
+way — explicitly dropped as a "nice-to-have" per developer request; even
+one bidirectional link was judged not worth the complexity for what it'd
+buy right now.
 
 ### Why the write lives where it does
 
@@ -443,56 +458,69 @@ itself, not a hook. The real precedent already existed:
 special-cases `post_title` for `batch`/`task` by reading values straight
 off the raw, unfiltered `$data` — the split logic is a new
 `if ($pod_name === 'tub')` branch there, doing the same thing at larger
-scale (load the origin tub, halve its amount, copy several fields onto the
-new row).
+scale (load the origin tub, compare the requested amount, then either
+convert it in place or copy several fields onto a new row).
 
 Confirmed by reading `tub-state.php` directly (not assumed):
 `scoop_enforce_tub_rules` explicitly bails (`if ($is_new_item ...) return`)
 for new items — it only enforces opened_on/emptied_at/state rules on
-*edits*. So none of its reversion logic fights the values this write sets
-on create. Separately, `scoop_auto_set_tub_created_on` unconditionally
+*edits*. So none of its reversion logic fights the values the split branch
+sets on create, and the convert-in-place branch (a real edit) gets the
+*benefit* of that same hook's existing `state → 'Emptied'` auto-stamp
+logic for free. Separately, `scoop_auto_set_tub_created_on` unconditionally
 forces `created_on`/`changed_on` to now on every new tub — confirming
 `created_on` genuinely can't be copied, exactly as anticipated.
 
 ### `origin_tub_id`
 
-A plain sibling key in the write payload (`{ cells: { 0: { use, origin_tub_id } } }`),
-never a Pods field, never persisted — read once, directly off raw `$data`,
-same pattern as `CabinetWorkflowTile`'s existing `source: 'workflow'` hint
-(though that one only feeds an audit-log label; this one drives real logic).
+A plain sibling key in the write payload
+(`{ cells: { 0: { use, amount, origin_tub_id } } }`), never a Pods field,
+never persisted — read once, directly off raw `$data`, same pattern as
+`CabinetWorkflowTile`'s existing `source: 'workflow'` hint (though that one
+only feeds an audit-log label; this one drives real logic). `amount` itself
+*is* a real allowed tub field already (same grant as editing it anywhere
+else), so it's read off the already-filtered `$clean`, not raw `$data`.
 
-### Write ordering (no transactions — MyISAM)
+### Write ordering (split branch only — no transactions, MyISAM)
 
-New tub is created **first**; the origin's `amount` is halved **second**.
+New tub is created **first**; the origin's `amount` is reduced **second**.
 If the second save fails, it's logged but not surfaced as a request
 failure — the split itself already succeeded (a real new tub exists), so
 the client shouldn't be told to retry (which would create a duplicate
 split tub). The origin's stale amount becomes a visible, reconcilable
 inconsistency instead of a silent one. Ordered this way specifically so a
 mid-flight failure leaves *extra* data (recoverable) rather than *lost*
-data (an already-halved origin with nothing to show for the missing half).
+data (an already-reduced origin with nothing to show for the missing
+portion). The convert-in-place branch has no such ordering question — it's
+a single write.
 
 ### Permissions
 
 `TubSplit`'s `allowed_fields_cb` reuses `scoop_tubs_allowed_fields` — a
-role that can't already write `tub.use` can't split a tub either, no new
-permission concept invented. Route-level access (`_policy.php`) was
-granted to the same five roles that already have `FlavorTub` POST access
-(`administrator`, `editor`, `kitchen_manager`, `shift_lead`, `lead`) — a
-mechanical mirror of an existing grant, not a new judgment call.
+role that can't already write `tub.use`/`tub.amount` can't split a tub
+either, no new permission concept invented. Route-level access
+(`_policy.php`) was granted to the same five roles that already have
+`FlavorTub` POST access (`administrator`, `editor`, `kitchen_manager`,
+`shift_lead`, `lead`) — a mechanical mirror of an existing grant, not a
+new judgment call.
 
-### Client: inline use-picker
+### Client: inline use + amount picker
 
 `assets/ui/tub-detail-view.js`'s `.actions` placeholder button became a
 real `<select>` (every `use`, sorted by `order`, same shape as
-`BaseGridModel.getOptions('use')`) + a submit button, disabled up front if
-the tub has no `amount` left to split (mirrors the server's own
-`tub_split_no_amount` check). On submit: POSTs to `TubSplit`, then
-`api.refreshPageDomain({force:true})` + `Details.refresh()` — re-renders
-the same still-open panel against the refreshed domain (showing the
-origin's new halved amount) rather than closing it out from under the
-user. Success/failure feedback via the existing `Toast` component
-(`assets/ui/toast.js`), same as `ConfirmSwapModal`'s write flows.
+`BaseGridModel.getOptions('use')`) + a number `<input>` (defaults to the
+tub's own current `amount` — left as-is, that's a `>=` request, i.e.
+"convert the whole tub"; lowered, that's a real split) + a submit button,
+disabled up front if the tub has no `amount` left at all (mirrors the
+server's own `tub_split_no_amount` check). On submit: POSTs to `TubSplit`,
+then `api.refreshPageDomain({force:true})` + `Details.refresh()` —
+re-renders the same still-open panel against the refreshed domain (showing
+whatever changed — origin's reduced amount, or its new use/state) rather
+than closing it out from under the user. The client doesn't need to know
+which of the two server outcomes happened; both leave the origin tub in a
+correct state to redisplay. Success/failure feedback via the existing
+`Toast` component (`assets/ui/toast.js`), same as `ConfirmSwapModal`'s
+write flows.
 
 ### Not built
 
