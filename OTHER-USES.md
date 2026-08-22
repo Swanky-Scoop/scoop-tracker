@@ -293,6 +293,32 @@ mechanism, two different entities, both right. ItemPivot's pivot-computed
 construction, so the injected edit column never reaches its actually-custom
 rendering (confirmed by reading `_pivot-grid-model.js` — not just assumed).
 
+### Missed spot, then fixed: ItemPivot's own "Flavor" row label (2026-08-21)
+
+Caught by the developer, not by the sweep above: ItemPivot's leading
+"Flavor" column (the pivot row's own bucket label) wasn't clickable either,
+and none of the three mechanisms above could have caught it — `PivotGridModel.buildRows()`
+(`_pivot-grid-model.js`) computes `this.columns` itself from scratch every
+time and overwrites whatever `_ensureRowDetailAccess()` set during
+construction, and `item-pivot-grid.js`'s `_row_label` case was a hardcoded
+plain-`<th>`-text special case that returned before any generic detail-link
+logic ran. The row's `id` was also a prefixed string (`"flavor_123"`, not a
+bare post id) — `Details.open()`'s `Number(id)` would have read that as NaN.
+
+Fixed by extending `_pivot-grid-model.js`'s (reusable, documented-for-future-
+reuse) row-bucket contract: `getRowDefs()` entries can now optionally carry
+`detailEntity`/`id` alongside `key`/`label` — set when the bucket IS a real
+Pods item, left unset for a synthetic bucket (a date, a category) that
+isn't. `fillRow` turns `row._row_label` into `{ display, id, detailEntity }`
+when set (still a bare string otherwise) — verified `_list.js`'s
+`_getSortValue` already handles both shapes correctly (falls to `.display`
+for the object case), so the existing alphabetical sort needed no changes.
+`item-pivot-grid-model.js`'s `pushFlavor` sets `detailEntity: 'flavor', id:
+f.id`; `item-pivot-grid.js`'s `_row_label` case renders a `detail-link` when
+present. Net: any future PivotGridModel child (a batch or ingredient pivot,
+per that file's own header comment) gets this for free by setting two
+fields, not by re-deriving this fix.
+
 ### Still open
 
 - Exact field list/order to show for a tub in the modal (candidates from
