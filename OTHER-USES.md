@@ -319,6 +319,48 @@ present. Net: any future PivotGridModel child (a batch or ingredient pivot,
 per that file's own header comment) gets this for free by setting two
 fields, not by re-deriving this fix.
 
+### Per-model on/off toggle: detailLinks / detailLinkTypes (2026-08-21)
+
+Went through several rounds of naming before landing here — worth recording
+the final shape and why it's simpler than the first few drafts:
+
+- **Rejected**: a separate `detailLinkKinds` axis (row-title / group-title /
+  edit-icon as independently toggleable "kinds"). Collapsed away — which of
+  the three actually applies is a fact about *where a linkable type shows
+  up* in a given grid (its own title column, a group header, neither), not
+  a separate decision a model author should have to make. "Edit" and
+  "Details" are the same action/terminology, not a distinct
+  write-permission-gated feature — no field-editability check needed either.
+- **Final shape** — one axis, content type only:
+  ```js
+  this.detailLinks = false;                  // model-wide default, true unless explicitly false
+  this.detailLinkTypes = ['tub', 'flavor'];  // allow-list; only matters when detailLinks is false
+  ```
+  `detailLinkTypes` is exclusively an allow-list (no per-type "off" entries)
+  — with `detailLinks` at its default `true`, every type's already on and
+  the list has nothing to add; a model only needs to name the types it
+  wants back after setting `detailLinks = false`.
+- **Implementation** (`_base-grid-model.js`):
+  - `isDetailLinkEnabled(type)` — the one resolution function every other
+    piece calls: `detailLinkTypes.includes(type)` wins if true, else falls
+    back to `detailLinks !== false`.
+  - `_applyDetailLinkGating()` — runs right after `buildCols()` in
+    `_buildColumns()`, bakes `col.detailLinkable` onto every column with a
+    resolvable type (`col.detailEntity ?? col.titleMap`). `_list.js`'s
+    `_renderFieldValue` reads that flag (`!== false` default-on) instead of
+    calling the resolver itself — toggle logic lives once, in the model,
+    never duplicated into rendering.
+  - `_ensureRowDetailAccess()` now bails before even considering the edit
+    icon if `isDetailLinkEnabled(primary)` is false — matches the stated
+    rule exactly: no icon if the type isn't linkable at all, and (already
+    true before this) no icon if a title column already covers it.
+  - `buildGroupedRows()`'s group-header linking and `_pivot-grid-model.js`'s
+    row-label linking both gate through the same `isDetailLinkEnabled` call.
+- **Dormant by default**: no model sets `detailLinks`/`detailLinkTypes` yet,
+  so `isDetailLinkEnabled` always returns `true` and nothing about current
+  behavior changed — this is plumbing for a future per-model opt-out, not
+  itself a behavior change.
+
 ### Still open
 
 - Exact field list/order to show for a tub in the modal (candidates from

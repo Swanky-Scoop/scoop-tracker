@@ -151,11 +151,13 @@ export default class PivotGridModel extends BaseGridModel {
       makeRowId: (rowDef) => rowDef.key,
       fillRow: (row, rowDef) => {
         // Object shape (not a bare string) only when the bucket is a real
-        // Pods item — see this file's header comment. _list.js's
+        // Pods item AND that type is actually linkable (this.detailLinks /
+        // this.detailLinkTypes, see _base-grid-model.js's
+        // isDetailLinkEnabled) — see this file's header comment. _list.js's
         // _getSortValue already handles both shapes (falls to .display for
         // an object, returns a bare string as-is), so this doesn't disturb
         // the existing alphabetical row sort.
-        row._row_label = rowDef.detailEntity
+        row._row_label = (rowDef.detailEntity && this.isDetailLinkEnabled(rowDef.detailEntity))
           ? { display: rowDef.label, id: rowDef.id, detailEntity: rowDef.detailEntity }
           : rowDef.label;
         const rowMap = matrix.get(rowDef.key) ?? new Map();

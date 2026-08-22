@@ -810,9 +810,12 @@ export default class List extends Dockable{
       // field (e.g. a row's own title — see fillRowFromColumns' detailEntity
       // branch, which points d.id at the row's own id for exactly this case)
       // opt into the same link without triggering titleMap's id-lookup
-      // display logic.
+      // display logic. col.detailLinkable (baked on by _base-grid-model.js's
+      // _applyDetailLinkGating, per-model this.detailLinks/detailLinkTypes)
+      // is the actual on/off switch — default on (!== false) so a column
+      // that predates that gating still links exactly as before.
       const entityKey = col.detailEntity ?? col.titleMap;
-      if (entityKey && d.id) {
+      if (entityKey && d.id && col.detailLinkable !== false) {
         EL.append(this.el('a', {
           text: '' + (d.display || ''),
           classes: ['detail-link'],

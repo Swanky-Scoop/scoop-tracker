@@ -128,7 +128,34 @@ export default class BaseGridModel {
 
   _buildColumns() {
       this.buildCols();  // Only columns, from metadata (own or inherited default)
+      this._applyDetailLinkGating();
       this._ensureRowDetailAccess();
+  }
+
+  // Single on/off decision for a content type (a pod name — 'tub', 'flavor',
+  // 'use', ...): does it get detail-linked anywhere it shows up in this
+  // model (a row's own title, a group header, the row-edit-icon fallback)?
+  // this.detailLinkTypes is a pure allow-list — its presence only matters
+  // when this.detailLinks is false; with the (default) true, everything's
+  // already on and the list has nothing to add. Every model defaults to
+  // both unset, i.e. every type linkable, i.e. today's behavior unchanged.
+  isDetailLinkEnabled(type) {
+    if (this.detailLinkTypes?.includes(type)) return true;
+    return this.detailLinks !== false;
+  }
+
+  // Bakes col.detailLinkable onto every column whose value resolves to a
+  // content type (col.detailEntity, or col.titleMap for a relationship
+  // column) — _list.js's _renderFieldValue reads this instead of calling
+  // isDetailLinkEnabled itself, so the toggle logic lives once, here, not
+  // duplicated into the render path.
+  _applyDetailLinkGating() {
+    if (!Array.isArray(this._allColumns)) return;
+    for (const col of this._allColumns) {
+      const type = col.detailEntity ?? col.titleMap;
+      if (!type) continue;
+      col.detailLinkable = this.isDetailLinkEnabled(type);
+    }
   }
 
   // Every row must be reachable from a click somehow: either buildCols()
@@ -141,21 +168,24 @@ export default class BaseGridModel {
   // model gets this for free with no per-model opt-in. Models with no
   // metaData.primary (Analytics-derived, CabinetWorkflow's own hand-built
   // columns) are left alone — there's no single "this row's own pod" to
-  // link to.
+  // link to. Skipped entirely when the row's own type isn't linkable at all
+  // (isDetailLinkEnabled(primary) false) — an icon promising a details view
+  // that's been explicitly turned off for this model would be pointless.
   _ensureRowDetailAccess() {
     const primary = this.metaData?.primary;
     if (!primary || !Array.isArray(this._allColumns)) return;
+    if (!this.isDetailLinkEnabled(primary)) return;
 
     const hasOwnTitleLink = this._allColumns.some(c => c.detailEntity === primary);
     if (hasOwnTitleLink) return;
 
     this._allColumns = [
-      { key: '_edit', label: '', type: 'edit', detailEntity: primary, title: 'Details', hidden: false, visible: true, write: false },
+      { key: '_edit', label: '', type: 'edit', detailEntity: primary, detailLinkable: true, title: 'Details', hidden: false, visible: true, write: false },
       ...this._allColumns,
     ];
     this._applyColumnFilter();
   }
-  
+
   _buildRows() {
       this.buildRows();  // Only rows, from domain
   }
@@ -386,9 +416,12 @@ export default class BaseGridModel {
     // 'cabinet') — NOT synthetic grouping keys like 'diet' or 'day' (no
     // matching domain array) or ones whose id isn't actually a Pods post id
     // (e.g. Tasks' 'assignee', a WP user id — no domain.assignee array
-    // either, so this still correctly excludes it). See grid.js's
-    // buildGroupDom / tile.js's buildGroupDom for where this gets rendered.
-    const groupDetailEntity = Array.isArray(this.domain?.[groupType]) ? groupType : null;
+    // either, so this still correctly excludes it) — AND only when that
+    // type is actually linkable per isDetailLinkEnabled (this.detailLinks /
+    // this.detailLinkTypes). See grid.js's buildGroupDom / tile.js's
+    // buildGroupDom for where this gets rendered.
+    const groupDetailEntity = (Array.isArray(this.domain?.[groupType]) && this.isDetailLinkEnabled(groupType))
+      ? groupType : null;
     let i = 0;
     for (const [groupId, items] of (groupsMap ?? new Map()).entries()) {
       if (includeGroupId && !includeGroupId(groupId)) continue;
