@@ -176,6 +176,38 @@ Cabinet Workflow grid" section).
   modal's actions area, stubbed/no-op, until the write-path question above
   (new create-mode route vs. alternative) is actually decided and built.
 
+### Built so far (2026-08-21)
+
+The click→modal *mechanism* is generic; what renders *inside* the modal is
+per-entity — that split is now real, not just a plan:
+
+- `assets/ui/details.js`: `Details._VIEWS` is an `entity -> renderFn` map
+  (currently `{ tub: renderTubDetails }`). `_render()` looks up
+  `_VIEWS[entity]`, falling back to the generic `fillFields` dump for any
+  entity without an entry. `_ensureHost()` now gives the panel the exact
+  `.modal`/`form`/`.show` structure and class names CabinetWorkflow's
+  modals use (`assets/css.css`'s existing `body > .modal` rules apply
+  as-is, no parallel CSS), plus a new `.actions` container alongside
+  `.fields` for entity-specific row actions.
+- `assets/ui/_detail-fields.js` (new): the generic field-dump + relation-
+  link-resolving logic, factored out of `Details` so entity-specific views
+  can call it as a base and layer on top, instead of duplicating it.
+- `assets/ui/tub-detail-view.js` (new): `renderTubDetails()` — calls the
+  generic `fillFields` (no field curation yet, see "still open" below) and
+  appends one disabled placeholder button to `.actions` for the future
+  split action.
+- `assets/ui/item-pivot-grid.js` + `assets/css.css`: ItemPivot's squares
+  now carry both `item-square` (generic sizing/border/hover, entity-
+  agnostic) and `tub-square` (tub-only `state-*` background colors) — the
+  click trigger itself was already entity-agnostic (keyed on the
+  `data-detail-entity`/`data-detail-id` attributes, not the class), so no
+  change was needed there.
+
+**Not built yet**: the FlavorTub grid "edit" column (still needs the
+detail-link renderer generalized per the decision above, and a synthetic
+column added to `FlavorTubGridModel`), the split action's real write path,
+per-field edit permissions.
+
 ### Still open
 
 - Exact field list/order to show for a tub in the modal (candidates from

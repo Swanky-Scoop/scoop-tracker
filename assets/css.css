@@ -2389,6 +2389,37 @@ body > .modal{
   }
 }
 
+/* Details panel (assets/ui/details.js) reuses body > .modal's overlay/panel
+   CSS as-is (same class, see that file's _ensureHost comment) — this block
+   only overrides what the base .modal's `& * { display:flex; ... }` rule
+   would otherwise do to a <dl> field list (smash every dt/dd onto one
+   centered row), same idea as .flavor_picker's own override below. */
+body > .modal.DETAILS,
+body > .modal.DETAILS2 {
+  & .fields {
+    display: block;
+    text-align: left;
+    overflow-y: auto;
+    max-height: 60vh;
+
+    & dt {
+      display: block;
+      font-weight: 600;
+      margin-top: 0.5rem;
+    }
+    & dd {
+      display: block;
+      margin: 0 0 0.25rem;
+    }
+  }
+
+  & .actions {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border-light);
+  }
+}
+
 body > .modal.flavor_picker {
   & > form {
     width: auto;
@@ -2778,12 +2809,16 @@ table.zList td.trend-steady {
     vertical-align: top;
 
     display: table-cell;
-    & > .tub-square + .tub-square {
+    & > .item-square + .item-square {
       margin-left: 0.125rem;
     }
   }
 
-  & .tub-square {
+  /* Generic square-per-item look, shared by any ItemPivot instance
+     regardless of what kind of item it's showing. Item-type-specific
+     coloring (e.g. tub state colors below) layers on top via the item's
+     own class, not here. */
+  & .item-square {
     display: inline-block;
     width: 1rem;
     height: 1rem;
@@ -2793,6 +2828,14 @@ table.zList td.trend-steady {
     border-radius: 0.125rem;
     cursor: pointer;
 
+    &:hover,
+    &:focus-visible {
+      transform: scale(1.25);
+      box-shadow: 0 0 0 2px var(--color-green-darkest);
+    }
+  }
+
+  & .tub-square {
     &.state-Hardening    { background-color: #9fd3ff; }
     &.state-Freezing     { background-color: #4a90d9; }
     &.state-Tempering    { background-color: #f5c542; }
@@ -2802,12 +2845,6 @@ table.zList td.trend-steady {
        --color-state-emptied-row-bg's own comment (css.css, :root). */
     &.state-Emptied      { background-color: var(--color-state-emptied-row-bg); }
     &.state-Lost         { background-color: darkred; }
-
-    &:hover,
-    &:focus-visible {
-      transform: scale(1.25);
-      box-shadow: 0 0 0 2px var(--color-green-darkest);
-    }
   }
 }
 

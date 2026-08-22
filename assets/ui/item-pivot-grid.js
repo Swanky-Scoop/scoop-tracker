@@ -135,7 +135,7 @@ export default class ItemPivotGrid extends Grid {
 
     tubs.forEach(tub => {
       CELL.append(this.el('button', {
-        classes: ['tub-square', this._squareStateClass(tub)],
+        classes: ['item-square', 'tub-square', this._squareStateClass(tub)],
         attrs: {
           type: 'button',
           title: `${tub.state}${tub.amount != null ? ' · ' + tub.amount : ''}`,
