@@ -480,6 +480,61 @@ function scoop_user_can_route(\WP_User $user, string $route, string $method): bo
   return $can;
 }
 
+// TEMPORARY (2026-08-21): while the click-to-details GUI is being built out
+// (see OTHER-USES.md), an unset detail_views defaults to "every entity
+// allowed" — no role below has a detail_views key yet, so this is
+// currently a no-op everywhere, on purpose, so the linking behavior can be
+// exercised without first populating policy data for all 8 roles. Flip
+// this to false once that flow is settled (per conversation) — that
+// changes the DEFAULT to deny, at which point every role needs its own
+// explicit detail_views list, matching how 'entities' write-lists already
+// work (see scoop_user_writeable_fields — same deny-unless-listed shape).
+if (!defined('SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW')) {
+  define('SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW', true);
+}
+
+// Role → which entity/pod types (lowercase — 'tub', 'flavor', 'use', ...,
+// same vocabulary as col.detailEntity/titleMap client-side) that role may
+// open a Details view for at all. Unlike scoop_user_writeable_fields'
+// $fields ?? [] (always deny-unless-listed), this distinguishes "no
+// detail_views key at all" (falls to SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW)
+// from "detail_views explicitly set" (an allow-list, including an
+// explicit [] meaning deny everything) — see
+// scoop_client_detail_viewable_entities() below for how this reaches the
+// client as SCOOP.detailViewableEntities, and _base-grid-model.js's
+// isDetailLinkEnabled() for how the client combines it with a model's own
+// detailLinks/detailLinkTypes.
+function scoop_user_can_view_details(\WP_User $user, string $entity): bool {
+
+  $policy = scoop_get_user_policy($user);
+
+  if (!array_key_exists('detail_views', $policy)) {
+    return SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW;
+  }
+
+  return in_array($entity, $policy['detail_views'], true);
+}
+
+// What enqueue.php ships to the client as SCOOP.detailViewableEntities —
+// null (no restriction, current default for every role) rather than
+// enumerating every entity name Scoop knows about, so isDetailLinkEnabled()
+// client-side can tell "unrestricted" apart from "restricted to this exact
+// (possibly empty) list" without the two ever needing to define the same
+// canonical entity list twice. Once a role's detail_views is set, this
+// mirrors it verbatim — scoop_user_can_view_details() and this function
+// must never disagree, since one gates the server, the other gates what
+// the client even offers to click.
+function scoop_client_detail_viewable_entities(\WP_User $user): ?array {
+
+  $policy = scoop_get_user_policy($user);
+
+  if (!array_key_exists('detail_views', $policy)) {
+    return null;
+  }
+
+  return array_values($policy['detail_views']);
+}
+
 /**
  * Does ANY named role (not '_default', which is a deny-all fallback, not a
  * real declared policy) explicitly declare a 'GET' value — true OR false —

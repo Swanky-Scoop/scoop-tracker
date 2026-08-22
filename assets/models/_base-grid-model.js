@@ -135,11 +135,24 @@ export default class BaseGridModel {
   // Single on/off decision for a content type (a pod name — 'tub', 'flavor',
   // 'use', ...): does it get detail-linked anywhere it shows up in this
   // model (a row's own title, a group header, the row-edit-icon fallback)?
+  //
+  // Two layers, server first: SCOOP.detailViewableEntities (see
+  // includes/_policy.php's scoop_user_can_view_details() / enqueue.php) is
+  // null when this user's role has no explicit detail_views policy — the
+  // current default for every role — meaning no restriction at all; once
+  // set, it's a hard allow-list the model-level settings below can only
+  // narrow, never widen (same relationship as route-vs-field permissions
+  // elsewhere in this app — server denies are final).
+  //
   // this.detailLinkTypes is a pure allow-list — its presence only matters
-  // when this.detailLinks is false; with the (default) true, everything's
-  // already on and the list has nothing to add. Every model defaults to
-  // both unset, i.e. every type linkable, i.e. today's behavior unchanged.
+  // when this.detailLinks is false; with the (default) true, everything
+  // the server allows is already on and the list has nothing to add. Every
+  // model defaults to both unset, i.e. every type linkable, i.e. today's
+  // behavior unchanged.
   isDetailLinkEnabled(type) {
+    const serverAllowed = window.SCOOP?.detailViewableEntities;
+    if (Array.isArray(serverAllowed) && !serverAllowed.includes(type)) return false;
+
     if (this.detailLinkTypes?.includes(type)) return true;
     return this.detailLinks !== false;
   }

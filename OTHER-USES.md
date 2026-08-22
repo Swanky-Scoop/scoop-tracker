@@ -361,6 +361,42 @@ the final shape and why it's simpler than the first few drafts:
   behavior changed — this is plumbing for a future per-model opt-out, not
   itself a behavior change.
 
+### Server-side permission layer: _policy.php's detail_views (2026-08-21)
+
+Extends the existing two-layer permission model (route-level
+`scoop_user_can_route()`, field-level `scoop_user_writeable_fields()`, both
+in `includes/_policy.php`) with a third: can this user's role open a
+Details view for a given entity type at all. Same resolution pattern as
+the other two (`scoop_get_user_policy($user)` then a policy-array lookup).
+
+- **New policy key**: `detail_views`, sibling to `routes`/`entities` in each
+  role's block — a flat allow-list of entity/pod names (same vocabulary as
+  `col.detailEntity`/`titleMap`/client-side `detailLinkTypes`).
+- **`scoop_user_can_view_details(\WP_User $user, string $entity): bool`** —
+  server-side gate. Distinguishes "no `detail_views` key at all" from "key
+  present" (even an explicit `[]`), unlike `scoop_user_writeable_fields`'s
+  always-`?? []`: absence falls to `SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW`.
+- **`scoop_client_detail_viewable_entities(\WP_User $user): ?array`** —
+  what actually reaches the client, via a new `enqueue.php` key,
+  `SCOOP.detailViewableEntities`: `null` when unrestricted, an array when
+  restricted. `null` rather than enumerating every known entity name, so
+  neither side has to keep a duplicate canonical entity list in sync.
+- **Client wiring**: `isDetailLinkEnabled()` (`_base-grid-model.js`) checks
+  `SCOOP.detailViewableEntities` first — a hard deny if the array exists
+  and doesn't include the type, unoverridable by a model's own
+  `detailLinks`/`detailLinkTypes` (same relationship as route-vs-field
+  permissions elsewhere: server denies are final, model-level settings can
+  only narrow within whatever the server already allows).
+- **Temporary default-allow posture**: `SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW`
+  (`_policy.php`) is `true` while the GUI flow is still being built —
+  every role currently has no `detail_views` key, so this is presently a
+  no-op everywhere, letting the linking behavior be exercised freely
+  without first populating policy data for all 8 roles. **Explicitly
+  deferred, not forgotten**: flip that constant to `false` (switching the
+  default to deny) and populate each role's `detail_views` once the GUI
+  flow settles — developer will ask for role-by-role proposals then, not
+  guessed now.
+
 ### Still open
 
 - Exact field list/order to show for a tub in the modal (candidates from
@@ -371,3 +407,6 @@ the final shape and why it's simpler than the first few drafts:
   detection, given today it's a hardcoded single-case check.
 - How per-field edit permissions actually get wired into `Details.js` once
   that phase starts (not this pass).
+- Flip `SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW` to `false` and populate real
+  `detail_views` per role once the GUI flow is settled (see above) —
+  developer will ask for proposals when ready, don't guess ahead of that.
