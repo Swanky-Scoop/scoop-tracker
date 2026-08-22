@@ -128,3 +128,61 @@ on if the second call fails.
   left unset since it's recorded as already emptied).
 - Permissions: same roles that can already write `use`/`amount` on a tub,
   or a narrower set for splitting specifically.
+
+## Tub detail modal (GUI plan)
+
+Prompted by wanting a click-to-see-details modal for tubs — reachable from
+`.tub-square` in the ItemPivot grid, and from a new "edit" column on the
+FlavorTub grid — that eventually also hosts the split/alt-use control.
+
+**Grounded finding that changed the plan:** `.tub-square`
+(`assets/ui/item-pivot-grid.js`) already carries `data-detail-entity="tub"`
+/ `data-detail-id`, and a click on it already opens something today — the
+existing generic, page-wide `Details` panel (`assets/ui/details.js`,
+attached once via `Details.attach(api)` in `assets/app.js`). It's a
+read-only `<dl>` field list, with two-level stacking (`.DETAILS`/
+`.DETAILS2`) and hash-based URL state (`#details=entity:id`, so
+back/forward works) — but it has **zero CSS today**, unlike CabinetWorkflow's
+two modals (`FlavorPickerModal`, `ConfirmSwapModal` in `assets/ui/`), which
+are bespoke `El` subclasses (no shared base class between them) sharing a
+real `.modal`/`.show` overlay CSS treatment (`assets/css.css`, "MODAL -
+Cabinet Workflow grid" section).
+
+### Decisions
+
+- **Reuse, don't rebuild**: restyle the existing `Details` panel with
+  CabinetWorkflow's `.modal`/`.show` CSS convention rather than building a
+  new bespoke modal class. Keeps the already-working plumbing (global click
+  delegation in `_list.js`, `.tub-square`'s existing wiring, hash-based
+  state).
+- **Editability**: long-term goal is editable fields in the modal, gated
+  per-field by the same server-computed write permissions already used
+  elsewhere (`scoop_client_metadata()`'s per-column `write` flag, sourced
+  from `_policy.php`). **Not built now** — for this pass, the modal is
+  read-only field display plus a separate "actions" area (for row-level
+  actions like the future split control). The actions area is **not**
+  permission-gated yet either — assume available to everyone for now;
+  restricting it via `_policy.php` is explicit future follow-up, not part
+  of this pass.
+- **FlavorTub "edit" column**: generalize the existing detail-link column
+  renderer (`_list.js`, currently hardcoded to only fire when
+  `col.detailEntity ?? col.titleMap === 'flavor'`) to work for any
+  entity/column, rather than adding a new declarative column `type`
+  (unlike the `type: 'delete'` pattern). `FlavorTubGridModel` will need a
+  synthetic client-side column opting into it — following the precedent in
+  `assets/models/instock-flavor-grid-model.js` (`{key:'_title',
+  detailEntity:'flavor'}`), but pointed at `tub`/the row's own id.
+- **Split/alt-use control**: placeholder only. Reserve a spot in the
+  modal's actions area, stubbed/no-op, until the write-path question above
+  (new create-mode route vs. alternative) is actually decided and built.
+
+### Still open
+
+- Exact field list/order to show for a tub in the modal (candidates from
+  the spec: `state`, `use`, `amount`, `slot`, `flavor`, `opened_on`,
+  `emptied_at`, `location`, `batch`, `closeout` — confirm which to include).
+- Whether generalizing the detail-link renderer needs an explicit opt-in
+  signal on a column def beyond reusing `detailEntity`/`titleMap`
+  detection, given today it's a hardcoded single-case check.
+- How per-field edit permissions actually get wired into `Details.js` once
+  that phase starts (not this pass).
