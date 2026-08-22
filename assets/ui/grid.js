@@ -53,9 +53,10 @@ export default class Grid extends List {
   }
 
   buildMetaFieldDom(field) {
-    // A 'delete' action column has nothing to sort by — omit 'sortable' and
-    // data-sort-key so List._sortCols's [data-sort-key] delegation skips it.
-    const sortable = field.type !== 'delete';
+    // Action columns ('delete', 'edit') have nothing to sort by — omit
+    // 'sortable' and data-sort-key so List._sortCols's [data-sort-key]
+    // delegation skips them.
+    const sortable = field.type !== 'delete' && field.type !== 'edit';
 
     return this.el('th', {
       text: field.label ?? field.key,
@@ -80,7 +81,17 @@ export default class Grid extends List {
     const GD = el('th', { classes: ['groupCell'], attrs: { colSpan: fields.length } });
     const SP = el('b');
     const OC = group.collapsible ? el('button', { classes: ['oc'] }) : null;
-    const LB = el('span', { text: group.label, classes: ['groupLabel'] });
+    // group.detailEntity (see _base-grid-model.js's buildGroupedRows) is only
+    // set when groupType names a real, loaded domain entity — a synthetic
+    // grouping key (diet, day, assignee, ...) stays plain text.
+    const LB = group.detailEntity
+      ? el('a', {
+          text: group.label,
+          classes: ['groupLabel', 'detail-link'],
+          attrs: { href: `#details=${encodeURIComponent(group.detailEntity)}%3A${group.groupId}` },
+          data: { detailEntity: group.detailEntity, detailId: group.groupId },
+        })
+      : el('span', { text: group.label, classes: ['groupLabel'] });
 
     if (group.collapsible) SP.append(OC);
     if (group.badges && group.badges[0]) GD.append(this._getBadgeDom(group.badges));
@@ -121,6 +132,7 @@ export default class Grid extends List {
     // not the id list. Tile shows the fuller list — see tile.js.
     if (col.dataType === 'ids') return this._renderIdsCount(CELL, col, data);
     if (col.type === 'delete') return this._renderDeleteCell(CELL, col, row);
+    if (col.type === 'edit') return this._renderEditCell(CELL, col, row);
 
     return this._renderFieldValue(CELL, col, data);
   }
@@ -161,6 +173,33 @@ export default class Grid extends List {
       BTN.append(this.el('i', { classes: [`${List.ICON_FONT_CSS_PREFIX}${cls}`] }));
     } else {
       BTN.append('✕');
+    }
+
+    CELL.append(BTN);
+    return CELL;
+  }
+
+  // The fallback every row gets when nothing already links its own title
+  // (see _base-grid-model.js's _ensureRowDetailAccess — this is a { type:
+  // 'edit', detailEntity: <row's own pod> } column it prepends). Reuses the
+  // exact same [data-detail-entity] delegated click handler every other
+  // detail-link already goes through (_list.js) — no separate wiring.
+  _renderEditCell(CELL, col, row) {
+    CELL.classList.add(col.key, 'edit-action', 'read-only');
+    const rowId = row?.id?.rowId ?? row?.id ?? 0;
+
+    const BTN = this.el('button', {
+      classes: ['row-edit'],
+      attrs: { type: 'button', title: col.title ?? 'Details' },
+      data: { detailEntity: col.detailEntity, detailId: rowId },
+    });
+
+    const icon = String(col.icon ?? '');
+    if (icon.startsWith(List.ICON_FONT_MARKER)) {
+      const cls = icon.slice(List.ICON_FONT_MARKER.length);
+      BTN.append(this.el('i', { classes: [`${List.ICON_FONT_CSS_PREFIX}${cls}`] }));
+    } else {
+      BTN.append('✎');
     }
 
     CELL.append(BTN);

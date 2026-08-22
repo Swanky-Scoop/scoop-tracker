@@ -87,7 +87,19 @@ export default class Tile extends List {
     const GD = el('div', { classes: ['groupCell'] });
     const SP = el('b');
     const OC = group.collapsible ? el('button', { classes: ['oc'], attrs: { type: 'button' } }) : null;
-    const LB = el('h2', { text: group.label, classes: ['groupLabel'] });
+    // group.detailEntity (see _base-grid-model.js's buildGroupedRows) is only
+    // set when groupType names a real, loaded domain entity — a synthetic
+    // grouping key (diet, day, assignee, ...) stays plain text. <h2> either
+    // way — same heading semantics as the plain-text case, see css.css's
+    // .groupLabel reset.
+    const LB = group.detailEntity
+      ? el('a', {
+          classes: ['groupLabel', 'detail-link'],
+          attrs: { href: `#details=${encodeURIComponent(group.detailEntity)}%3A${group.groupId}` },
+          data: { detailEntity: group.detailEntity, detailId: group.groupId },
+        })
+      : el('h2', { text: group.label, classes: ['groupLabel'] });
+    if (group.detailEntity) LB.append(el('h2', { text: group.label }));
 
     if (group.collapsible) SP.append(OC);
     if (group.badges && group.badges[0]) GD.append(this._getBadgeDom(group.badges));
@@ -119,11 +131,30 @@ export default class Tile extends List {
   }
 
   buildFieldDom(col, data, row) {
+    if (col.type === 'edit') return this._buildEditFieldDom(col, row);
     if (col.key === '_title' && col.detailEntity) return this._buildTitleFieldDom(col, data);
     if (col.dataType === 'file') return this._buildFileFieldDom(col, data, row);
     if (col.dataType === 'ids' || col.dataType === 'post_names') return this._buildMultiFieldDom(col, data);
 
     return this._buildScalarFieldDom(col, data);
+  }
+
+  // Tile's counterpart to grid.js's _renderEditCell — the fallback every row
+  // gets when nothing already links its own title (see _base-grid-model.js's
+  // _ensureRowDetailAccess). Same [data-detail-entity] delegated click
+  // handling as every other detail-link (_list.js), just a bare button here
+  // rather than a <td>-wrapped one.
+  _buildEditFieldDom(col, row) {
+    const rowId = row?.id?.rowId ?? row?.id ?? 0;
+
+    const BTN = this.el('button', {
+      classes: ['row-edit'],
+      attrs: { type: 'button', title: col.title ?? 'Details' },
+      data: { detailEntity: col.detailEntity, detailId: rowId },
+    });
+    BTN.append('✎');
+
+    return BTN;
   }
 
   _buildTitleFieldDom(col, data) {

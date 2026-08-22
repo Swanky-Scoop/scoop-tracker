@@ -243,6 +243,56 @@ view is shown without the `flavor` domain also being bundled from another
 grid on the same page. Flag for a follow-up if this list should get the
 same treatment.
 
+### The general rule, stated and implemented (2026-08-21)
+
+Prompted by FlavorTub as the concrete case: its group headers are flavor
+names (should link to that flavor's details) and its rows are tubs with no
+title column at all (should get a leading edit icon instead). Generalized
+to every Grid/Tile-backed list, not just FlavorTub — three pieces, all in
+the shared List machinery (`_base-grid-model.js`, `grid.js`, `tile.js`),
+none per-model:
+
+1. **Row title shown → already covered** by the detail-link generalization
+   above (any `col.detailEntity`-marked column becomes a link).
+2. **No row title shown → leading edit-icon column, automatic.**
+   `_base-grid-model.js`'s `_buildColumns()` now always runs a new
+   `_ensureRowDetailAccess()` after `buildCols()` (own or inherited): if no
+   column already has `detailEntity === this.metaData.primary` (the row's
+   own pod), it prepends a synthetic `{ key: '_edit', type: 'edit',
+   detailEntity: primary }` column. `grid.js`'s `_renderEditCell` and
+   `tile.js`'s `_buildEditFieldDom` render it as a small icon button
+   carrying the same `data-detail-entity`/`data-detail-id` attributes every
+   other detail-link uses — no new click-handling code, same delegated
+   `_list.js` listener. Models with no `metaData.primary` (Analytics-
+   derived, CabinetWorkflow's hand-built columns) are untouched — nothing
+   to link to a single "own pod."
+   - **Bug caught before shipping**: `_applyColumnFilter()`'s `showList`
+     filtering would have silently dropped the injected `_edit` column on
+     any model calling `setShowList()` with an explicit allowlist —
+     `flavor-tub-grid-model.js` does exactly that. Fixed by always keeping
+     `type: 'edit'`/`type: 'delete'` columns through the filter regardless
+     of `showList` — they're structural affordances, not data fields a
+     showList is curating.
+3. **Group header titles → clickable when the group is a real entity.**
+   `buildGroupedRows()` now computes `detailEntity` for each group:
+   `groupType` counts only if `Array.isArray(this.domain?.[groupType])` —
+   i.e. it names a pod actually present in the bundle. This correctly
+   links FlavorTub's/Cabinet's flavor/cabinet group headers, while leaving
+   synthetic grouping keys alone (Flavors' `diet` bucket, EmptiedLog's
+   `day` bucket, Tasks' `assignee` — a WP user id with no matching
+   `domain.assignee` array, so it's excluded even though the id itself is
+   numeric). `grid.js`/`tile.js`'s `buildGroupDom` render the label as a
+   `detail-link` `<a>` instead of plain `<span>`/`<h2>` when set.
+
+Verified against existing models, not just FlavorTub: Cabinet grid's own
+header comment confirms `metaData.primary` is `'slot'` for that route (not
+`'cabinet'`), so its rows correctly get slot-detail edit icons while its
+`cabinet`-grouped headers correctly get cabinet-detail links — same
+mechanism, two different entities, both right. ItemPivot's pivot-computed
+`this.columns` gets fully overwritten by its own `buildRows()` after
+construction, so the injected edit column never reaches its actually-custom
+rendering (confirmed by reading `_pivot-grid-model.js` — not just assumed).
+
 ### Still open
 
 - Exact field list/order to show for a tub in the modal (candidates from

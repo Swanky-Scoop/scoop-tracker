@@ -1809,6 +1809,36 @@ table.zList tr .badges {
    TABLE - SPECIAL COLUMNS
    ============================================ */
 
+/* Leading { type: 'edit' } column a model gets for free when none of its
+   columns already link its own row's title (see _base-grid-model.js's
+   _ensureRowDetailAccess) — Grid's <td>-wrapped case. Tile's bare-button
+   case (see tile.js's _buildEditFieldDom) shares button.row-edit's own
+   styling below without this cell wrapper. */
+table.zList tr .edit-action {
+  width: 2rem;
+  padding: 0.25rem;
+  text-align: center;
+}
+
+button.row-edit {
+  width: 1.5rem;
+  height: 1.5rem;
+  line-height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background-color: transparent;
+  color: var(--color-border-main);
+  font-size: 0.9rem;
+  cursor: pointer;
+
+  &:hover,
+  &:focus {
+    background-color: var(--color-green-base);
+    color: var(--color-text-white);
+  }
+}
+
 table.zList tr {
   & .id {
     display: none;

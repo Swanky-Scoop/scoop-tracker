@@ -127,7 +127,33 @@ export default class BaseGridModel {
   }
 
   _buildColumns() {
-      this.buildCols();  // Only columns, from metadata
+      this.buildCols();  // Only columns, from metadata (own or inherited default)
+      this._ensureRowDetailAccess();
+  }
+
+  // Every row must be reachable from a click somehow: either buildCols()
+  // (own or inherited) already gave it a column linking the row's OWN
+  // title (col.detailEntity === this row's own pod — see
+  // fillRowFromColumns/instock-flavor-grid-model.js), or nothing did and
+  // we prepend a plain { type: 'edit' } column that does the same job via
+  // an icon button (see grid.js's _renderEditCell / tile.js's
+  // _buildEditFieldDom). Runs after buildCols() unconditionally, so every
+  // model gets this for free with no per-model opt-in. Models with no
+  // metaData.primary (Analytics-derived, CabinetWorkflow's own hand-built
+  // columns) are left alone — there's no single "this row's own pod" to
+  // link to.
+  _ensureRowDetailAccess() {
+    const primary = this.metaData?.primary;
+    if (!primary || !Array.isArray(this._allColumns)) return;
+
+    const hasOwnTitleLink = this._allColumns.some(c => c.detailEntity === primary);
+    if (hasOwnTitleLink) return;
+
+    this._allColumns = [
+      { key: '_edit', label: '', type: 'edit', detailEntity: primary, title: 'Details', hidden: false, visible: true, write: false },
+      ...this._allColumns,
+    ];
+    this._applyColumnFilter();
   }
   
   _buildRows() {
@@ -278,9 +304,15 @@ export default class BaseGridModel {
         return;
     }
     
-    // Filter to only columns in showList
+    // Filter to only columns in showList — except action columns (edit,
+    // delete), which are structural affordances rather than data fields a
+    // model's showList is curating, so they stay regardless of whether a
+    // model remembered to name their (synthetic, model-invisible) key.
+    // Without this, _ensureRowDetailAccess's injected _edit column would
+    // silently vanish on any model calling setShowList() with an explicit
+    // allowlist (e.g. flavor-tub-grid-model.js).
     const showSet = new Set(this.showList);
-    this.columns = this._allColumns.filter(col => showSet.has(col.key));
+    this.columns = this._allColumns.filter(col => showSet.has(col.key) || col.type === 'edit' || col.type === 'delete');
   }
   
   _columnsFromMetadata(key, propList) {
@@ -349,6 +381,14 @@ export default class BaseGridModel {
   }) {
     this.rows = [];
     this.rowGroups = [];
+    // A group header links to its own Details view only when groupType
+    // names a real, currently-loaded domain entity (e.g. 'flavor',
+    // 'cabinet') — NOT synthetic grouping keys like 'diet' or 'day' (no
+    // matching domain array) or ones whose id isn't actually a Pods post id
+    // (e.g. Tasks' 'assignee', a WP user id — no domain.assignee array
+    // either, so this still correctly excludes it). See grid.js's
+    // buildGroupDom / tile.js's buildGroupDom for where this gets rendered.
+    const groupDetailEntity = Array.isArray(this.domain?.[groupType]) ? groupType : null;
     let i = 0;
     for (const [groupId, items] of (groupsMap ?? new Map()).entries()) {
       if (includeGroupId && !includeGroupId(groupId)) continue;
@@ -361,6 +401,7 @@ export default class BaseGridModel {
         label       : getGroupLabel ? getGroupLabel(groupId) : String(groupId),
         [groupIdKey]: groupId,
         groupType,
+        detailEntity: groupDetailEntity,
         rowType,
         rowLabel,
         badges,
