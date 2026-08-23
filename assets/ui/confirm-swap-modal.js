@@ -332,6 +332,31 @@ export default class ConfirmSwapModal extends El {
     const plan = this._plan;
     if (!row || !plan?.tub) return;
 
+    // "Staff gave up looking for the old flavor and moved on" detection —
+    // row.flavorId (the slot's actual current flavor) differs from what's
+    // about to be confirmed. If that old flavor still has tubs sitting in
+    // the pipeline at this location (remainingTubs — same eligibility as
+    // remainingSummary; Opened is already excluded, so this never includes
+    // plan.outgoingTub itself), they probably couldn't be found — offer to
+    // mark them !Lost now instead of letting them sit as phantom available
+    // stock forever. See OTHER-USES.md.
+    const flavorChanged = !row.empty && row.flavorId > 0 && row.flavorId !== this._selectedFlavorId;
+    const staleTubs = flavorChanged ? this.model.remainingTubs(row.flavorId, row.location) : [];
+
+    let markLost = [];
+    if (staleTubs.length) {
+      const oldTitle = row.flavorTitle || 'the previous flavor';
+      const newTitle = this.model.flavorInfo(this._selectedFlavorId).title || 'the new flavor';
+      const n = staleTubs.length;
+      const confirmed = window.confirm(
+        `Switching from ${oldTitle} to ${newTitle} — but ${n} tub${n === 1 ? '' : 's'} of ${oldTitle} `
+        + `still show${n === 1 ? 's' : ''} as remaining here. This usually means they can't be found `
+        + `in the freezer; left alone, they'll keep counting as available stock indefinitely.\n\n`
+        + `Empty the current tub and mark ${n === 1 ? 'that tub' : `those ${n} tubs`} of ${oldTitle} as lost?`
+      );
+      if (confirmed) markLost = staleTubs;
+    }
+
     // tub.slot is the bidirectional sister field to slot.tub (see
     // change-tub.md) — writing it here is what links the new tub to this
     // slot; slot.tub is never written directly, Pods syncs it. location is
@@ -351,6 +376,16 @@ export default class ConfirmSwapModal extends El {
     const emptying = plan.outgoingTub?.state === 'Opened' && !this.NOT_EMPTY_CHECK.checked;
     if (plan.outgoingTub) {
       tubCells[plan.outgoingTub.id] = emptying ? { state: 'Emptied', slot: 0 } : { slot: 0 };
+    }
+
+    // Confirmed "mark as lost" tubs ride the same write as the swap itself
+    // — one request, one inventory_change entry. None of these are ever
+    // Opened (remainingTubs excludes it, same as remainingSummary), and
+    // pods_api_pre_save_pod_item_tub (tub-state.php) only blocks an
+    // Opened tub from jumping straight to !Lost — every other state can,
+    // so this is always a clean transition.
+    for (const staleTub of markLost) {
+      tubCells[staleTub.id] = { state: '!Lost' };
     }
 
     const rTubs = await this.api.postJson({ cells: tubCells, source: 'workflow' }, 'FlavorTub');
@@ -400,6 +435,9 @@ export default class ConfirmSwapModal extends El {
     // Toast's `changes` list (see Toast.addMessage) is the "reviewable
     // change log" that section explicitly deferred building.
     const swapNotes = [];
+    if (markLost.length) {
+      swapNotes.push({ sentence: `Marked ${markLost.length} tub${markLost.length === 1 ? '' : 's'} of ${row.flavorTitle} as lost.` });
+    }
     if (emptying) swapNotes.push({ sentence: `${plan.outgoingTub._title} was emptied` });
     if (Number(plan.tub.location) !== Number(row.location)) swapNotes.push({ sentence: `${plan.tub._title} is at a different location.` });
     if (Number(plan.tub.amount ?? 1) < 1) swapNotes.push({ sentence: 'Using a partial' });

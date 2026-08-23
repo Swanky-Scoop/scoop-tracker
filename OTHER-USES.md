@@ -553,6 +553,44 @@ duplicated: same DOM builder, same write, same `Toast` feedback — only
   }`) `ConfirmSwapModal`'s own `.modal.confirm_swap` already gets — no new
   CSS needed, lays out the same way it does inside the Details modal.
 
+## "Mark abandoned flavor's remaining tubs as lost" — implemented (2026-08-22)
+
+Separate problem, same modal: staff often can't physically find tubs of
+the currently active flavor and just move on to the next one instead of
+continuing to hunt — leaving the old flavor's tubs sitting in the system
+forever as phantom "available" stock. `ConfirmSwapModal._confirm()` now
+detects this and offers to clean it up.
+
+- **Trigger**: `row.flavorId` (the slot's actual current flavor) differs
+  from `this._selectedFlavorId` (what's about to be confirmed) — i.e. the
+  plan actually changed, not just a re-confirm of the same flavor.
+- **What counts as "remaining"**: a new `remainingTubs(flavorId,
+  locationId)` on `CabinetWorkflowGridModel` — the tub-list twin of the
+  already-existing `remainingSummary` (same front-of-house-use,
+  still-in-the-pipeline eligibility, same `DISPLAY_EXCLUDED_STATES`
+  exclusion of Opened/Emptied/!Lost). Opened is already excluded there, so
+  this can never include the slot's own outgoing tub — no separate
+  exclusion needed. Scoped to the slot's own location — the whole premise
+  is "staff searched *this* freezer and couldn't find them."
+- **Confirmation**: a plain `window.confirm()` — deliberately, not a
+  custom UI. This codebase moved away from *sequential* native alerts
+  before (see `_confirm()`'s own comment on the old "alert cascade"), but
+  that was about a chain of blocking dialogs, not a single yes/no gate.
+  Wording was written to carry the full context on its own (no surrounding
+  UI to lean on): what's about to happen, why it's probably true (tubs
+  that can't be found), and why it matters (they'd otherwise count as
+  available stock indefinitely).
+- **The write**: on confirm, `{ state: '!Lost' }` for every stale tub rides
+  the *same* `FlavorTub` POST as the swap itself — one request, one
+  `inventory_change` entry, not a second round trip. Verified against
+  `tub-state.php`'s `scoop_enforce_tub_rules`: it only blocks an `Opened`
+  tub from jumping straight to `!Lost` (must go through `Emptied` first) —
+  since `remainingTubs` already excludes `Opened`, every tub this reaches
+  is in a state (Hardening/Freezing/Tempering/`__override__`) the hook
+  lets go straight to `!Lost` with no fight.
+- Surfaced in the existing post-confirm `Toast` (`swapNotes`), same list
+  the swap's own outcome notes already ride.
+
 ### Not built
 
 - No minimum split-size floor (still an open item from the original design

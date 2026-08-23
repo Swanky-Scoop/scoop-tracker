@@ -349,6 +349,16 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     return this._sumAmount(this._fohTubsExcluding(Number(flavorId), locationId, DISPLAY_EXCLUDED_STATES));
   }
 
+  // Same eligibility/exclusion as remainingSummary — front-of-house, still
+  // somewhere in the pipeline (not Opened/Emptied/!Lost) — but the actual
+  // tubs, not a summed amount. Opened is already excluded here (see
+  // DISPLAY_EXCLUDED_STATES), so this never includes a slot's own outgoing
+  // tub — used by ConfirmSwapModal's "staff gave up looking, mark the rest
+  // lost" flow (see OTHER-USES.md) to both count and write to them.
+  remainingTubs(flavorId, locationId) {
+    return this._fohTubsExcluding(Number(flavorId), locationId, DISPLAY_EXCLUDED_STATES);
+  }
+
   // Deliberately NOT location-scoped: a tub of the right flavor can be
   // physically carried between this shop's own locations (see
   // change-tub.md's Add Flavor / Confirm Cabinet decisions) — whichever
