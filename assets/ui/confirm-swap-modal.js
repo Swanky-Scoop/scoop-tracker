@@ -50,6 +50,12 @@ export default class ConfirmSwapModal extends El {
     this._selectedFlavorId = 0;
     this._preferWhole = true;
     this._plan = null;
+    // Set only via open(row, flavorId, { bulkCount }) — see openBulk() and
+    // _confirm()'s bulkActive branch. Every normal open() call resets this
+    // to 0 (its default), so switching flavors (Change Plan, a flavor-line
+    // click) or just reopening normally always drops a stale bulk intent
+    // rather than silently carrying it onto a different flavor.
+    this._pendingBulkCount = 0;
 
     this._buildDom();
 
@@ -145,15 +151,66 @@ export default class ConfirmSwapModal extends El {
 
   // flavorId: explicit target from FlavorPickerModal. Omitted (the classic
   // 'add-next' entry) falls back to _defaultFlavorId's current/immediate/
-  // next chain.
-  open(row, flavorId = null) {
+  // next chain. silent: skip showing the modal — used by openBulk's
+  // "confirmed via window.confirm(), just do it" path, which never wants
+  // the visible UI at all. bulkCount: see this._pendingBulkCount above.
+  open(row, flavorId = null, { silent = false, bulkCount = null } = {}) {
     this._row = row;
     this._selectedFlavorId = flavorId || this._defaultFlavorId(row);
     this._preferWhole = true;
     this.PARTIAL_CHECK.checked = true;
     this.NOT_EMPTY_CHECK.checked = false;
+    this._pendingBulkCount = bulkCount ?? 0;
     this._render();
-    this.ROOT.classList.add('show');
+    if (!silent) this.ROOT.classList.add('show');
+  }
+
+  // Multi-click "N tubs of this flavor sold out today" entry point (see
+  // cabinet-workflow-tile.js's click-buffering and OTHER-USES.md) —
+  // alternative to open(row) above. Always row.flavorId throughout — a
+  // same-flavor restock, never a flavor change (that's the OTHER bulk-ish
+  // flow, the "mark abandoned flavor's tubs lost" prompt in _confirm(),
+  // which is specifically about a flavor CHANGE — mutually exclusive with
+  // this one by construction, see _confirm()'s bulkActive check).
+  //
+  // Three outcomes, per the developer's own spec:
+  //   count > available  -> alert, then the normal single-tub modal.
+  //   count === available -> alert (this uses up everything), then the
+  //     normal VISIBLE modal, primed with the bulk count — the developer
+  //     wants to actually see the replacement before committing to
+  //     draining the last of a flavor, not a blind shortcut.
+  //   count < available, confirmed via window.confirm() -> silent commit,
+  //     no modal ever shown. Declined -> normal single-tub modal.
+  openBulk(row, count) {
+    const available = this.model.promotablePool(row.flavorId).length;
+    const flavorTitle = row.flavorTitle || 'this flavor';
+
+    if (count > available) {
+      window.alert(
+        `Only ${available} tub${available === 1 ? '' : 's'} of ${flavorTitle} left — showing the normal swap instead.`
+      );
+      this.open(row);
+      return;
+    }
+
+    if (count === available) {
+      window.alert(
+        `This uses the last ${count} tub${count === 1 ? '' : 's'} of ${flavorTitle} — review the replacement before confirming.`
+      );
+      this.open(row, null, { bulkCount: count });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Swap ${count} tubs of ${flavorTitle}? This empties the current tub and ${count - 1} more, and opens a fresh one.`
+    );
+    if (!confirmed) {
+      this.open(row);
+      return;
+    }
+
+    this.open(row, null, { silent: true, bulkCount: count });
+    this._confirm();
   }
 
   // reload === false ("don't reload the current flavor") overrides the
@@ -198,6 +255,11 @@ export default class ConfirmSwapModal extends El {
     this.IMG_META.textContent = tub ? this._tubMetaText(tub) : 'No tub available for this flavor.';
 
     this.CONFIRM_BTN.disabled = !tub;
+    // Only reachable via openBulk's count===available case (the count<available
+    // shortcut never shows this modal at all) — makes it visually obvious
+    // something bigger than a normal swap is about to happen.
+    const bulkPending = this._pendingBulkCount > 1 && this._selectedFlavorId === row.flavorId;
+    this.CONFIRM_BTN.textContent = bulkPending ? `Confirm ${this._pendingBulkCount}-tub swap` : 'Confirm Swap';
 
     // The currently PROPOSED target (this._selectedFlavorId/target), not
     // row.flavorId — this line sits right under the photo/title box, which
@@ -332,6 +394,18 @@ export default class ConfirmSwapModal extends El {
     const plan = this._plan;
     if (!row || !plan?.tub) return;
 
+    // Multi-click bulk restock (see openBulk) — always same-flavor
+    // (this._selectedFlavorId === row.flavorId), so mutually exclusive
+    // with the "abandoned flavor, mark lost" flow just below, which is
+    // specifically about a flavor CHANGE. Consumed here regardless of
+    // outcome so a stray leftover count can never leak into a later,
+    // unrelated confirm.
+    const bulkCount = this._pendingBulkCount;
+    this._pendingBulkCount = 0;
+    if (bulkCount > 1 && this._selectedFlavorId === row.flavorId) {
+      return this._confirmBulk(row, bulkCount);
+    }
+
     // "Staff gave up looking for the old flavor and moved on" detection —
     // row.flavorId (the slot's actual current flavor) differs from what's
     // about to be confirmed. If that old flavor still has tubs sitting in
@@ -460,6 +534,74 @@ export default class ConfirmSwapModal extends El {
     // then diffs the real result against what was just painted above.
     await this.api.refreshPageDomain({ force: true });
     this.confirmOptimistic?.(row.slotId, { current_flavor: this._selectedFlavorId, tub: plan.tub.id });
+  }
+
+  // The multi-click bulk-restock write — see openBulk and _confirm()'s
+  // bulkCount branch above. Structurally parallel to _confirm() (same
+  // write shape, same optimistic-repaint/Toast/refresh tail) but simpler:
+  // always the same flavor, every tub touched is treated as fully emptied
+  // (no "not empty" checkbox, no flavor-changed/mark-lost prompt — those
+  // don't apply to a same-flavor restock), and no single "plan.tub" — the
+  // whole point is N tubs, drawn via model.pickNextTubs in the same order
+  // pickNextTub would give one at a time.
+  async _confirmBulk(row, count) {
+    const tubs = this.model.pickNextTubs(row.flavorId, row.location, count, true);
+    const promoted = tubs[tubs.length - 1] ?? null;
+    const preEmptied = tubs.slice(0, -1);
+
+    // Defensive only — openBulk already checked count <= available before
+    // ever reaching here; a real empty result would mean the domain
+    // changed out from under this request (another tab, a race).
+    if (!promoted) {
+      Toast.addMessage({ title: 'Bulk swap failed', message: 'Not enough tubs were available — nothing was changed.' });
+      return;
+    }
+
+    const tubCells = {};
+    if (row.currentTubId) tubCells[row.currentTubId] = { state: 'Emptied', slot: 0 };
+    for (const t of preEmptied) tubCells[t.id] = { state: 'Emptied' };
+    tubCells[promoted.id] = { state: 'Opened', slot: row.slotId, location: row.location };
+
+    const rTubs = await this.api.postJson({ cells: tubCells, source: 'workflow' }, 'FlavorTub');
+    if (!rTubs.ok || !rTubs.data?.ok) {
+      Toast.addMessage({ title: 'Bulk swap failed', message: rTubs?.data?.error ?? `HTTP ${rTubs?.status}` });
+      return;
+    }
+
+    const rSlot = await this.api.postJson(
+      { cells: { [row.slotId]: { current_flavor: row.flavorId } }, source: 'workflow' },
+      'Cabinet',
+    );
+    if (!rSlot.ok || !rSlot.data?.ok) {
+      Toast.addMessage({
+        title: "Slot flavor didn't save",
+        message: `Tubs were swapped, but the slot's flavor failed to save.\n${rSlot?.data?.error ?? `HTTP ${rSlot?.status}`}`,
+      });
+      return;
+    }
+
+    this.close();
+
+    const target = this.model.flavorInfo(row.flavorId);
+    this.paintOptimistic?.(row.slotId, {
+      empty: false,
+      flavorId: row.flavorId,
+      flavorTitle: target.title,
+      flavorPhoto: target.photo,
+      allergens: target.allergens,
+      openTub: { ...promoted, state: 'Opened', slot: row.slotId, location: row.location },
+      currentTubId: promoted.id,
+      discrepancy: false,
+      impossible: false,
+    });
+
+    Toast.addMessage({
+      title: `${count}-tub swap confirmed`,
+      changes: [{ sentence: `Emptied ${count} tub${count === 1 ? '' : 's'} of ${row.flavorTitle}, opened a fresh one.` }],
+    });
+
+    await this.api.refreshPageDomain({ force: true });
+    this.confirmOptimistic?.(row.slotId, { current_flavor: row.flavorId, tub: promoted.id });
   }
 
   // Clears the slot, but leftover stock of the flavor being removed isn't

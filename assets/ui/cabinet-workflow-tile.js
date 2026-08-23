@@ -12,6 +12,15 @@ import ConfirmSwapModal from "./confirm-swap-modal.js";
 import FlavorPickerModal from "./flavor-picker-modal.js";
 import Toast from "./toast.js";
 
+// How long to wait after the LAST '.add-next' click before acting on
+// however many landed — see _registerSwapClick. Long enough to catch a
+// deliberate double/triple-click, short enough that a single click still
+// feels responsive. Capped at 3 (see _registerSwapClick) — nothing past
+// that is detected, per the multi-click "N tubs sold out today" gesture
+// (see confirm-swap-modal.js's openBulk and OTHER-USES.md).
+const SWAP_CLICK_WINDOW_MS = 350;
+const SWAP_CLICK_MAX = 3;
+
 export default class CabinetWorkflowTile extends Tile {
 
   // Appended straight to FRAME (not TOOLS) because TOOLS gets wiped and
@@ -74,8 +83,12 @@ export default class CabinetWorkflowTile extends Tile {
         // discrepancy (needs-tub or impossible): nothing to swap, offer the
         // free-form picker instead. Discrepancy stays out of both — run
         // Confirm Cabinet first to resolve which open tub belongs here
-        // (buildItemDom() disables the button in that case).
-        if (row.openTub) this.SWAP_MODAL.open(row);
+        // (buildItemDom() disables the button in that case). Multi-click
+        // buffering (see _registerSwapClick) only applies to the swap
+        // case — there's no "N tubs" concept without an existing open tub
+        // to restock, so the picker path still fires on the very first
+        // click, no delay.
+        if (row.openTub) this._registerSwapClick(slotId);
         else this.PICKER_MODAL.open(row);
         return;
       }
@@ -97,6 +110,40 @@ export default class CabinetWorkflowTile extends Tile {
     this.FORM.addEventListener('ts:list:init', () => {
       this._reconcileCabinet({ alertResult: false });
     }, { once: true });
+  }
+
+  // Buffers '.add-next' clicks per slot for SWAP_CLICK_WINDOW_MS so 2/3
+  // rapid clicks can be told apart from a single deliberate one — see
+  // confirm-swap-modal.js's openBulk (the "N tubs of this flavor sold out
+  // today" gesture, OTHER-USES.md). Debounced rather than acting on the
+  // first click and upgrading later: a uniform short delay before the
+  // modal/write happens, in exchange for the modal never flickering
+  // open-then-closed mid-gesture. Applies uniformly, including the common
+  // single-click case.
+  _registerSwapClick(slotId) {
+    this._swapClickCounts ??= new Map();
+    this._swapClickTimers ??= new Map();
+
+    const count = Math.min((this._swapClickCounts.get(slotId) ?? 0) + 1, SWAP_CLICK_MAX);
+    this._swapClickCounts.set(slotId, count);
+
+    clearTimeout(this._swapClickTimers.get(slotId));
+    this._swapClickTimers.set(slotId, setTimeout(() => {
+      this._swapClickCounts.delete(slotId);
+      this._swapClickTimers.delete(slotId);
+      this._handleSwapClicks(slotId, count);
+    }, SWAP_CLICK_WINDOW_MS));
+  }
+
+  _handleSwapClicks(slotId, count) {
+    // Re-fetched, not captured at click time — the buffering window means
+    // a refresh could have landed (or the slot could have lost its
+    // openTub) between the first click and now.
+    const row = (this.items ?? []).find(r => r.slotId === slotId);
+    if (!row || !row.openTub) return;
+
+    if (count > 1) this.SWAP_MODAL.openBulk(row, count);
+    else this.SWAP_MODAL.open(row);
   }
 
   // Immediate, optimistic repaint of one slot — see the CabinetWorkflow QA

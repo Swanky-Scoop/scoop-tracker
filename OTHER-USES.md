@@ -591,6 +591,123 @@ detects this and offers to clean it up.
 - Surfaced in the existing post-confirm `Toast` (`swapNotes`), same list
   the swap's own outcome notes already ride.
 
+## Multi-click "N-tub swap" gesture — implemented (2026-08-22)
+
+Third CabinetWorkflow feature this session, same slot-click surface as the
+two above but the opposite scenario: not a flavor change, a **same-flavor
+restock** — a slot sold through several tubs of one flavor over a busy day,
+and clicking through "Confirm Swap" once per tub is the thing being
+avoided. 2 or 3 rapid clicks on a slot (2 for a 2-tub swap, 3 for a 3-tub
+swap — capped at 3, nothing past that is detected) settles several
+sellouts in one write instead.
+
+### The mechanic
+
+An "N-tub swap" is **not** N independent swaps. The tub currently in the
+slot empties either way, same as any normal swap — that's the baseline,
+not part of N. N is how many tubs get drawn from the *promotable pool*
+(the pipeline — Hardening/Freezing/Tempering, same pool a single swap
+already draws from): the first `N-1`, in the same order `pickNextTub`
+would have picked them one at a time, go straight to `Emptied` (never
+individually opened); the `N`th gets promoted to `Opened` and linked to
+the slot, same outcome as a normal swap's last step.
+
+- **`CabinetWorkflowGridModel.pickNextTubs(flavorId, locationId, count,
+  preferWhole)`** (new) — up to `count` tubs, same ranking `pickNextTub`'s
+  rule (b) already used (Tempering rank, location, whole/partial
+  preference, age). That ranking was pulled out into a shared
+  `_promotableRanked()` so both methods draw from the identical order,
+  rather than a second hand-copied sort silently drifting from the first
+  over time.
+- Every tub touched — including the outgoing one — is treated as fully
+  emptied. No "not empty" checkbox consideration in this flow (developer:
+  "assume that they are all emptied") — the whole premise is tubs that
+  actually sold through. "Prefer whole tubs" only matters when there's a
+  real choice among candidates; in the one case this session flagged where
+  literally everything remaining gets drawn (see "exactly available"
+  below), the developer confirmed it has no effect either way — nothing
+  special was built for that, it's just naturally inert there.
+
+### Three outcomes, gated on `count` vs. the promotable pool's size
+
+`ConfirmSwapModal.openBulk(row, count)` — new entry point, sibling to the
+normal `open(row)`:
+
+- **`count > available`**: `alert()` saying how many are actually left,
+  then the normal single-tub modal (`open(row)`) — as if the extra clicks
+  never happened.
+- **`count === available`**: this would draw down the *entire* remaining
+  pool. Deliberately **not** the same shortcut as the case below —
+  developer: show the normal modal "so the user can see what the
+  replacement will be and potentially change it, or cancel the entire
+  operation." `alert()` first (draining the last N), then
+  `open(row, null, { bulkCount: count })` — the real, visible modal,
+  primed so `_confirm()` (see below) still does the N-tub write if the
+  user clicks through, with `CONFIRM_BTN`'s label changed to `Confirm
+  N-tub swap` so it's visually obvious this isn't an ordinary 1-tub
+  confirm. Still fully escapable — "Change Plan"/a flavor-line click
+  drops the pending bulk count automatically (see below), "leave slot
+  empty" and the close button work as they always did.
+- **`count < available`**: a `window.confirm()` restating the count
+  ("Swap N tubs of {flavor}? ..."). **No** → normal single-tub modal
+  (never a silent no-op). **Yes** → the write happens with the modal
+  **never shown at all** — `open(row, null, { silent: true, bulkCount:
+  count })` followed immediately by `_confirm()`. `silent` is a new
+  `open()` option that skips `classList.add('show')` but still runs the
+  normal `_render()` (populates `this._plan`/`this._row`, harmlessly, into
+  a hidden root) so `_confirm()` has what it needs.
+
+### Why a native `confirm()`/`alert()` here too
+
+Same reasoning as the "mark lost" feature above — single yes/no or
+informational gates, not the *sequential* alert cascade this codebase
+moved away from. Wording restates the click count back explicitly (per
+developer request from planning: "does that confirmation need to restate
+the click count back prominently... so a misfire is obvious"), so an
+accidental extra tap is easy to catch and back out of.
+
+### `_pendingBulkCount` — how the bulk intent survives into `_confirm()`
+
+A single piece of new state on `ConfirmSwapModal`, set only through
+`open()`'s new `bulkCount` option. Every *normal* `open()` call (no
+`bulkCount` passed) resets it to `0` by default — so switching flavors
+mid-flow (Change Plan → `FlavorPickerModal`, or clicking one of the
+Current/Immediate/Next flavor lines) automatically drops a stale bulk
+intent with no extra code, since those paths all eventually call `open()`
+again without a bulk count. `_confirm()` reads and clears it at the top
+(`bulkCount > 1 && this._selectedFlavorId === row.flavorId` — the flavor
+match guard is what makes this mutually exclusive with the "mark lost"
+flow's flavor-*changed* detection by construction), routing to a new
+`_confirmBulk(row, count)` — structurally parallel to `_confirm()`'s own
+write/optimistic-repaint/Toast/refresh tail, just building `tubCells` from
+`pickNextTubs()` instead of a single `plan.tub`.
+
+### Click detection — debounced, not click-then-upgrade
+
+`CabinetWorkflowTile._registerSwapClick(slotId)` buffers `.add-next`
+clicks per slot for `SWAP_CLICK_WINDOW_MS` (350ms) before acting on
+however many landed, rather than firing on the first click and
+"upgrading" if more arrive. Trade-off made deliberately: every click
+(including the ordinary single-click case) gets a uniform ~350ms delay
+before the modal/write happens, in exchange for the modal never visibly
+flickering open-then-closed mid-gesture. Capped at
+`SWAP_CLICK_MAX = 3` — a 4th+ rapid click still only ever reads as 3.
+Only applies when `row.openTub` exists (there's no "N tubs" concept
+without an existing open tub to restock) — the "no open tub, offer the
+picker" path is untouched, still fires on the very first click.
+
+### Not built (this feature)
+
+- Not tested end-to-end (same caveat as the rest of this session's PHP —
+  no linter available in this environment; this piece is pure client-side
+  JS, reviewed by hand against the real model/modal code, not executed in
+  a browser yet).
+- No handling for the click landing on a slot that changes discrepancy/
+  impossible state mid-buffer-window — `_handleSwapClicks` re-fetches the
+  row and bails if `openTub` is gone, but doesn't re-check `discrepancy`/
+  `impossible` specifically; edge case, not flagged as a concern by the
+  developer.
+
 ### Not built
 
 - No minimum split-size floor (still an open item from the original design

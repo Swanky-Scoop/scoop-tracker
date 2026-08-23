@@ -530,16 +530,42 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     if (openPool.length) return { tub: openPool[0], rule: 'a', pool: openPool };
 
     const excludeIds = excludeTubId ? new Set([Number(excludeTubId)]) : null;
+    const promotePool = this._promotableRanked(flavorId, locationId, excludeIds, preferWhole);
+
+    return { tub: promotePool[0] ?? null, rule: 'b', pool: promotePool };
+  }
+
+  // The sort behind pickNextTub's rule (b) — Tempering rank, then location,
+  // then whole/partial per preferWhole, then oldest created_on — factored
+  // out so pickNextTubs (below) can draw more than one tub in the exact
+  // same order a sequence of single swaps would have picked them, rather
+  // than duplicating this sort.
+  _promotableRanked(flavorId, locationId, excludeIds, preferWhole) {
+    const locRank = (t) => Number(t.location) === Number(locationId) ? 0 : 1;
+    const byAge = (a, b) =>
+      String(a.created_on ?? '').localeCompare(String(b.created_on ?? '')) ||
+      (Number(a.index) || 0) - (Number(b.index) || 0);
     const wholeRank = (t) => (Number(t.amount ?? 1) >= WHOLE_TUB_THRESHOLD) === preferWhole ? 0 : 1;
-    const promotePool = this.promotablePool(flavorId, excludeIds)
+
+    return this.promotablePool(flavorId, excludeIds)
       .sort((a, b) =>
         (this._temperingRank(a) - this._temperingRank(b))
         || (locRank(a) - locRank(b))
         || (wholeRank(a) - wholeRank(b))
         || byAge(a, b)
       );
+  }
 
-    return { tub: promotePool[0] ?? null, rule: 'b', pool: promotePool };
+  // Up to `count` tubs from the promotable pool, same order pickNextTub's
+  // rule (b) already uses — backs ConfirmSwapModal's multi-click "N tubs of
+  // this flavor sold out today" gesture (see OTHER-USES.md): the last one
+  // returned is what gets promoted to Opened, everything before it gets
+  // marked Emptied directly (never individually opened) — same outcome as
+  // N sequential single swaps, settled in one write. Not location-scoped
+  // for eligibility (a tub can be carried between locations, same as
+  // promotablePool/pickNextTub) — locationId only affects sort preference.
+  pickNextTubs(flavorId, locationId, count, preferWhole = true) {
+    return this._promotableRanked(flavorId, locationId, null, preferWhole).slice(0, Math.max(0, count));
   }
 
   // rule (a)'s raw pool — see pickNextTub.
