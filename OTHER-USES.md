@@ -718,3 +718,31 @@ picker" path is untouched, still fires on the very first click.
   surface in the UI.
 - Not tested end-to-end yet (no PHP linting available in this environment —
   reviewed by hand against real hook/dispatch code, not executed).
+
+## End-to-end verification + a real regression found and fixed (2026-08-27)
+
+Ran a full Playwright smoke test against the local site (`ops.swanky.local`)
+for all three CabinetWorkflow features above, plus the split control's
+Details-modal entry point. All confirmed working against real writes:
+split (both the true-split and convert-in-place branches — verified via
+the actual resulting tub records, not just UI state), mark-lost (confirm
+wording, tub states, toast), and the multi-click gesture's `count <
+available` (silent) and `count === available` (visible, bulk-labeled
+button) branches. No new console errors — the one error present throughout
+is a pre-existing, unrelated `DOCS_timing` reference error from an
+embedded Google Docs iframe.
+
+One real regression found and fixed during that pass:
+`_tub-split-control.js`'s use-picker was a hand-rolled `<select>`, which
+(being a plain `<select>`) always starts on its first option regardless of
+data — so it silently defaulted to "Front-of-house" even when a tub's
+actual current `use` was something else entirely. Caught by triple-clicking
+a tub whose real `use` was "Events" and noticing the picker still showed
+"Front-of-house". Fixed by switching to `FindIt` (`assets/ui/find-it.js`)
+— the same type-to-complete widget every other writeable relationship
+field in this app already uses, which correctly reflects whatever
+`id`/`display` it's constructed with. Verified fixed in both hosts (the
+Details modal and `ConfirmSwapModal`) against a real tub with a non-default
+`use`. Left blank (not defaulted to Front-of-house) when a tub's `use` is
+genuinely `0`/unset — showing what's actually there, not a guessed
+business-logic default.
