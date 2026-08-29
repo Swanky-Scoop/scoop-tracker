@@ -136,13 +136,15 @@ export default class BaseGridModel {
   // 'use', ...): does it get detail-linked anywhere it shows up in this
   // model (a row's own title, a group header, the row-edit-icon fallback)?
   //
-  // Two layers, server first: SCOOP.detailViewableEntities (see
-  // includes/_policy.php's scoop_user_can_view_details() / enqueue.php) is
-  // null when this user's role has no explicit detail_views policy — the
-  // current default for every role — meaning no restriction at all; once
-  // set, it's a hard allow-list the model-level settings below can only
-  // narrow, never widen (same relationship as route-vs-field permissions
-  // elsewhere in this app — server denies are final).
+  // Two layers, client-server: SCOOP.detailViewableEntities (set by
+  // includes/_policy.php's scoop_client_detail_viewable_entities() via
+  // enqueue.php) is null when this user's role has no explicit detail_views
+  // policy — the current default for every role — meaning no restriction at
+  // all; once set, it's a hard allow-list the model-level settings below
+  // can only narrow, never widen. NOTE this is a LINK-VISIBILITY control,
+  // not a data boundary: the Details view renders from the already-loaded
+  // bundle (no separate detail endpoint), so this only hides the clickable
+  // link, never the underlying row data the grid already shows.
   //
   // this.detailLinkTypes is a pure allow-list — its presence only matters
   // when this.detailLinks is false; with the (default) true, everything

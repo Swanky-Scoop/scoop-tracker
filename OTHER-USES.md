@@ -361,32 +361,40 @@ the final shape and why it's simpler than the first few drafts:
   behavior changed — this is plumbing for a future per-model opt-out, not
   itself a behavior change.
 
-### Server-side permission layer: _policy.php's detail_views (2026-08-21)
+### Client-side link-visibility layer: _policy.php's detail_views (2026-08-21)
 
-Extends the existing two-layer permission model (route-level
-`scoop_user_can_route()`, field-level `scoop_user_writeable_fields()`, both
-in `includes/_policy.php`) with a third: can this user's role open a
-Details view for a given entity type at all. Same resolution pattern as
-the other two (`scoop_get_user_policy($user)` then a policy-array lookup).
+Adds a third, **client-only** toggle to the existing two-layer permission
+model (route-level `scoop_user_can_route()`, field-level
+`scoop_user_writeable_fields()`, both in `includes/_policy.php`): can this
+user's role open a Details view for a given entity type at all. Same
+resolution pattern (`scoop_get_user_policy($user)` then a policy-array
+lookup).
+
+**Important — this is a LINK-VISIBILITY control, not a security boundary.**
+The Details view (`assets/ui/details.js`) renders read-only from the
+already-loaded bundle — there is no separate detail-serving endpoint to
+gate, and a role that can GET the grids pulling a given entity already has
+that entity's data rendered in the grid. So `detail_views` only decides
+whether the client *offers* a clickable "open details" link; it can never
+hide the underlying row data. (The former `scoop_user_can_view_details()`
+"server-side gate" was removed in review — it was never called anywhere.
+If a real server-side detail endpoint is ever added, gate it there on top
+of this.)
 
 - **New policy key**: `detail_views`, sibling to `routes`/`entities` in each
   role's block — a flat allow-list of entity/pod names (same vocabulary as
   `col.detailEntity`/`titleMap`/client-side `detailLinkTypes`).
-- **`scoop_user_can_view_details(\WP_User $user, string $entity): bool`** —
-  server-side gate. Distinguishes "no `detail_views` key at all" from "key
-  present" (even an explicit `[]`), unlike `scoop_user_writeable_fields`'s
-  always-`?? []`: absence falls to `SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW`.
 - **`scoop_client_detail_viewable_entities(\WP_User $user): ?array`** —
-  what actually reaches the client, via a new `enqueue.php` key,
-  `SCOOP.detailViewableEntities`: `null` when unrestricted, an array when
-  restricted. `null` rather than enumerating every known entity name, so
-  neither side has to keep a duplicate canonical entity list in sync.
+  the only place `detail_views` is consulted; it reaches the client via an
+  `enqueue.php` key, `SCOOP.detailViewableEntities`: `null` when
+  unrestricted, an array when restricted. `null` rather than enumerating
+  every known entity name, so neither side has to keep a duplicate
+  canonical entity list in sync.
 - **Client wiring**: `isDetailLinkEnabled()` (`_base-grid-model.js`) checks
-  `SCOOP.detailViewableEntities` first — a hard deny if the array exists
-  and doesn't include the type, unoverridable by a model's own
-  `detailLinks`/`detailLinkTypes` (same relationship as route-vs-field
-  permissions elsewhere: server denies are final, model-level settings can
-  only narrow within whatever the server already allows).
+  `SCOOP.detailViewableEntities` — a hard deny if the array exists and
+  doesn't include the type, unoverridable by a model's own
+  `detailLinks`/`detailLinkTypes` (model-level settings can only narrow
+  within whatever the server already allows).
 - **Temporary default-allow posture**: `SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW`
   (`_policy.php`) is `true` while the GUI flow is still being built —
   every role currently has no `detail_views` key, so this is presently a
