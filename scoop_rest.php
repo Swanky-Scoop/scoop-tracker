@@ -55,6 +55,8 @@ scoop_require('includes/audit.php');
 scoop_require('includes/audit-ui.php');
 scoop_require('includes/republish-tubs-ui.php');
 scoop_require('includes/supply-import-ui.php');
+scoop_require('includes/sample-tubs-ui.php');
+scoop_require('includes/cabinet-clone-ui.php');
 /**
  * UI glue (shortcode/admin/enqueue) last
  */

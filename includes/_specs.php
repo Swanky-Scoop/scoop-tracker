@@ -204,7 +204,19 @@ function scoop_entity_specs(string $key = ''): array {
           return false;
         },
 
-        'writeable' => ['state','use','amount','slot']
+        // 'location' added 2026-08-29: confirm-swap-modal.js's tub-open
+        // write has always sent a corrected `location` (row.location — the
+        // slot's own cabinet's location, since a tub can be promoted from a
+        // different location's stock, see CabinetWorkflowGridModel.promotablePool's
+        // comment), but it was never in this route's writeable set, so the
+        // server silently dropped it — invisible with only one real
+        // location (the value being written always matched what was already
+        // there), a real cross-location mismatch surfaced it: tubs opened
+        // into a second location's cabinet kept their original tub.location,
+        // which showed up as ItemPivotGridModel's Flavor Map grouping that
+        // cabinet's column under the WRONG location header (colKeyFor reads
+        // tub.location, not the cabinet's).
+        'writeable' => ['state','use','amount','slot','location']
       ],
 
       'inventory_change' => [

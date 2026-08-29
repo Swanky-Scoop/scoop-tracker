@@ -7,7 +7,7 @@ All grid views are emitted by a single WordPress shortcode, **`[scoop_grid]`**, 
 | Attribute | Required | Default | Purpose |
 |---|---|---|---|
 | `type` | yes | — | Grid type identifier — case-sensitive. See list below. |
-| `location` | no | — | Location ID (e.g. `935` = Woodinville) to scope the grid. Omit for global / multi-location. |
+| `location` | no | — | Location ID (e.g. `935` = Woodinville) to scope the grid. Omit for global / multi-location. For a grid type with an in-GUI location picker (`Cabinet`, `CabinetWorkflow`, `FlavorTub`, `EmptiedLog` — see below), this is only the *initial* value; a viewer can switch it live from the grid's own Filters row, persisted per-control via the URL hash (`#loc.<type>=...`) rather than requiring a separate shortcode per location. Hardcoding `location=` on these four is now the exception, not the default — reach for it only when a page should deliberately stay pinned to one location with no picker at all. Every other grid type here (`Analytics`, `Popular`, `Flavors`, `DateActivity`, `BatchHistory`) has no picker yet, so `location=` is still the only way to scope those. |
 | `days` | no | `30` | Analysis window for **analytics-pattern** grids (`Analytics`, `Popular`, `Flavors`). |
 | `date_filters` | no | — | Comma-separated date-filter keys (e.g. `created`, `activity`). Triggers a server-side WHERE on the bundle. |
 | `filter_<key>` | no | preset default | Value for a date filter — one of `last_24_hours`, `last_48_hours`, `last_7_days`, `last_30_days`. |
@@ -21,10 +21,10 @@ The user must be logged in for any grid to render (`shortcode.php` short-circuit
 ### Daily ops — most-used surfaces
 
 #### `FlavorTub` — the central tub-state editor
-Lists tubs with inline editing of `state` / `use` / `amount`. Filterable by designation, allergens, and use. The grid most staff spend the most time in.
+Lists tubs with inline editing of `state` / `use` / `amount`. Filterable by designation, allergens, use, and (as of the second-location work) a location picker in the Filters row — switches which location's tubs are shown without a page reload. Omitting `location=` entirely defaults to Woodinville and lets the picker take it from there.
 
 ```
-[scoop_grid type="FlavorTub" location="935"]
+[scoop_grid type="FlavorTub"]
 ```
 
 #### `Batch` — create a new batch
@@ -67,11 +67,13 @@ The user can still change it via the widget regardless.
 ### Planning
 
 #### `Cabinet` — slot planning per cabinet
-Lists slots grouped by cabinet, with inline editing of `current_flavor` / `immediate_flavor` / `next_flavor`. The view ops uses to plan what flavors live where.
+Lists slots grouped by cabinet, with inline editing of `current_flavor` / `immediate_flavor` / `next_flavor`. The view ops uses to plan what flavors live where. Has a location picker in the Filters row (including an "All locations" option), same as `FlavorTub` — omit `location=` and let the picker default/switch.
 
 ```
-[scoop_grid type="Cabinet" location="935"]
+[scoop_grid type="Cabinet"]
 ```
+
+`CabinetWorkflow` (the physical change-tub tile view, not documented in its own section here yet) has the identical picker.
 
 ### Insight / analytics (read-only, self-fetching)
 

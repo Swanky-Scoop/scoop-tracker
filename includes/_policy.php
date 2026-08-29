@@ -151,7 +151,7 @@ function scoop_access_policy(): array {
         'CabinetWorkflow' => ['GET' => true],
       ],
       'entities' => [
-        'tub'  => ['state','use','amount','slot'],
+        'tub'  => ['state','use','amount','slot','location'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
         // Live from Pods, not hardcoded — see scoop_shift_reports_allowed_fields()
         // in _write_fields.php for why this entity's field list doesn't need
@@ -221,8 +221,9 @@ function scoop_access_policy(): array {
         // 'slot' added so add-next/leave-empty/Confirm Cabinet can write
         // tub.slot (the tub side of the bidirectional slot<->tub link —
         // see change-tub.md) — this is a normal CabinetWorkflow action,
-        // not an admin-only one.
-        'tub'  => ['state','slot'],
+        // not an admin-only one. 'location' rides along — always written in
+        // the same payload as 'slot' (see _specs.php's tub writeable comment).
+        'tub'  => ['state','slot','location'],
         // immediate_flavor/next_flavor added so 'leave slot empty' can
         // reschedule leftover stock into the planning fields (see
         // ConfirmSwapModal._confirmEmpty in confirm-swap-modal.js) — this
@@ -267,7 +268,7 @@ function scoop_access_policy(): array {
         'CabinetWorkflow' => ['GET' => true],
       ],
       'entities' => [
-        'tub'  => ['state','use','amount','slot'],
+        'tub'  => ['state','use','amount','slot','location'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
         // Live from Pods, not hardcoded — see scoop_shift_reports_allowed_fields()
         // in _write_fields.php for why this entity's field list doesn't need
@@ -317,7 +318,7 @@ function scoop_access_policy(): array {
         'esr' => ['GET' => true],
       ],
       'entities' => [
-        'tub'  => ['state','use','amount','slot'],
+        'tub'  => ['state','use','amount','slot','location'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
         // Live from Pods, not hardcoded — see scoop_shift_reports_allowed_fields()
         // in _write_fields.php for why this entity's field list doesn't need
@@ -437,7 +438,7 @@ function scoop_access_policy(): array {
         // (add-next, leave-empty, confirm swap) write through these tub/
         // slot fields regardless of which route the action came in
         // through.
-        'tub'  => ['state','use','amount','slot'],
+        'tub'  => ['state','use','amount','slot','location'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
       ],
     ],
