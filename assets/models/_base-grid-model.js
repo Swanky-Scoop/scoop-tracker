@@ -9,6 +9,7 @@
 import Indexer         from "../data/indexer.js";
 import Flavor          from "./_flavor.js";
 import ColumnsProvider from "./_column-provider.js";
+import HashState       from "../data/hash-state.js";
 
 // _formatTimeAgo's day-scale tiers past "yesterday" — first one whose
 // `under` (days) the actual gap still falls under wins, so keep it ordered
@@ -230,10 +231,56 @@ export default class BaseGridModel {
     return ids;
   }
 
+  // Generic 'location' filter support (see CabinetGridModel/
+  // CabinetWorkflowGridModel/EmptiedLogGridModel's getFilterDefs) — a model
+  // opts in just by putting _locationFilterDef() in its own getFilterDefs();
+  // getFilterValue/setFilterValue below need no per-model override for the
+  // 'location' key. A model with its own OTHER filter (e.g. BatchHistory's
+  // date range) overrides these wholesale already, so there's no conflict.
+  //
+  // key: 0 ("All locations") is a real, selectable value, not just an
+  // absent one — filterByLocation() below treats this.location <= 0 as
+  // "don't filter," so every location-scoped model gets an explicit
+  // "show everything" option, not just an implicit one.
+  _locationFilterDef(label = 'Location') {
+    const locations = this.domain?.location || [];
+    return {
+      key: 'location',
+      label,
+      type: 'find',
+      mode: 'client',
+      options: [
+        { key: 0, label: 'All locations' },
+        ...locations.map(l => ({ key: l.id, label: l._title || `Location ${l.id}` })),
+      ],
+    };
+  }
+
+  getFilterValue(key) {
+    return key === 'location' ? this.location : undefined;
+  }
+
+  setFilterValue(key, value) {
+    if (key !== 'location') return;
+    const id = Number(value) || 0;
+    if (id === this.location) return;
+    this.location = id;
+    // Per _resolveLocation()'s cascade (scoop-api.js) — the "in-GUI location
+    // picker" tier it was already documented to expect. Persists the choice
+    // across reload/sharing without affecting any other grid on the page.
+    HashState.set(`loc.${this.name}`, id);
+  }
+
   filterByLocation(list, { locationKey = "location" } = {}) {
     // Accept either array or full domain object
     const items = Array.isArray(list) ? list : (list?.[this.metaData?.primary] || []);
-    
+
+    // this.location <= 0 is the "All locations" filter value (see
+    // CabinetGridModel/CabinetWorkflowGridModel's getFilterDefs) — no
+    // existing caller ever set it to 0 before this, so this is purely new
+    // behavior, not a change to anything already relying on this method.
+    if (!this.location) return items;
+
     return items.filter(item =>
         item?.[locationKey] === this.location
     );

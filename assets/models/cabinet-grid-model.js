@@ -1,5 +1,4 @@
 import BaseGridModel from "./_base-grid-model.js";
-import HashState      from "../data/hash-state.js";
 
 export default class CabinetGridModel extends BaseGridModel{
   constructor(name = 'Cabinet', domain, attrs = {})
@@ -10,39 +9,16 @@ export default class CabinetGridModel extends BaseGridModel{
   }
 
   // Second-location support: a FindIt-style filter (see _list.js's
-  // _buildFilters 'find' branch) that shows this grid's current location by
-  // name and lets you switch to any other. 'client' mode — the bundle
-  // already fetches every location's cabinets/slots unfiltered (nothing on
-  // the client sends a `location` request param, despite bundle-fetch.php
-  // supporting it server-side); filterByLocation() in buildRows() is what
-  // narrows to this.location, so switching it is just a client-side
-  // re-filter, no refetch needed.
+  // _buildFilters 'find' branch, and BaseGridModel's _locationFilterDef/
+  // getFilterValue/setFilterValue) that shows this grid's current location
+  // by name and lets you switch to any other, or to every location at once.
+  // 'client' mode — the bundle already fetches every location's
+  // cabinets/slots unfiltered (nothing on the client sends a `location`
+  // request param, despite bundle-fetch.php supporting it server-side);
+  // filterByLocation() in buildRows() is what narrows to this.location, so
+  // switching it is just a client-side re-filter, no refetch needed.
   getFilterDefs() {
-    const locations = this.domain?.location || [];
-    return [
-      {
-        key: 'location',
-        label: 'Location',
-        type: 'find',
-        mode: 'client',
-        options: locations.map(l => ({ key: l.id, label: l._title || `Location ${l.id}` })),
-      },
-    ];
-  }
-
-  getFilterValue(key) {
-    return key === 'location' ? this.location : undefined;
-  }
-
-  setFilterValue(key, value) {
-    if (key !== 'location') return;
-    const id = Number(value);
-    if (!id || id === this.location) return;
-    this.location = id;
-    // Per _resolveLocation()'s cascade (scoop-api.js) — the "in-GUI location
-    // picker" tier it was already documented to expect. Persists the choice
-    // across reload/sharing without affecting any other grid on the page.
-    HashState.set(`loc.${this.name}`, id);
+    return [this._locationFilterDef()];
   }
 
   buildRows() {

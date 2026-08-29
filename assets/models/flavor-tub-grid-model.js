@@ -118,15 +118,26 @@ export default class FlavorTubGridModel extends BaseGridModel{
         default: '4h',
         options: EMPTIED_WINDOW_OPTIONS.map(({ key, label }) => ({ key, label })),
       },
+      // See BaseGridModel's _locationFilterDef — same location-switcher as
+      // Cabinet/CabinetWorkflow/EmptiedLog. Appended last rather than
+      // reordered to the front, to leave this grid's existing filter layout
+      // undisturbed.
+      this._locationFilterDef(),
     ];
   }
 
+  // 'location' delegates to BaseGridModel's generic implementation (updates
+  // this.location + persists via HashState — see filterByLocation() in
+  // _activeTubs below); every other key keeps this model's own
+  // filterValues-object storage, unchanged.
   setFilterValue(key, value) {
+    if (key === 'location') { super.setFilterValue(key, value); return; }
     if (!key) return;
     this.filterValues[key] = String(value ?? 'all');
   }
 
   getFilterValue(key) {
+    if (key === 'location') return super.getFilterValue(key);
     return this.filterValues?.[key] ?? 'all';
   }
 

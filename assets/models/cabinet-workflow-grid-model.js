@@ -9,7 +9,6 @@
 // object in buildItemDom(), so there are no per-column cells to describe.
 //////////////////////////////////
 import BaseGridModel from "./_base-grid-model.js";
-import HashState      from "../data/hash-state.js";
 
 const FRONT_OF_HOUSE_USE_ID = 1863;
 const OPEN_TUB_STATE = 'Opened';
@@ -91,32 +90,14 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     this.rebuildOnRefresh = true;
   }
 
-  // Same location-switcher filter as CabinetGridModel (see its own comment)
-  // — 'client' mode, since buildRows() below already re-filters this.domain
-  // by this.location on every rebuild; no refetch needed.
+  // Same location-switcher filter as CabinetGridModel (see its own comment,
+  // and BaseGridModel's _locationFilterDef/getFilterValue/setFilterValue) —
+  // 'client' mode, since buildRows() below already re-filters this.domain by
+  // this.location on every rebuild (already treats falsy/0 as "every
+  // location," so the shared "All locations" option needs no extra handling
+  // here); no refetch needed.
   getFilterDefs() {
-    const locations = this.domain?.location || [];
-    return [
-      {
-        key: 'location',
-        label: 'Location',
-        type: 'find',
-        mode: 'client',
-        options: locations.map(l => ({ key: l.id, label: l._title || `Location ${l.id}` })),
-      },
-    ];
-  }
-
-  getFilterValue(key) {
-    return key === 'location' ? this.location : undefined;
-  }
-
-  setFilterValue(key, value) {
-    if (key !== 'location') return;
-    const id = Number(value);
-    if (!id || id === this.location) return;
-    this.location = id;
-    HashState.set(`loc.${this.name}`, id);
+    return [this._locationFilterDef()];
   }
 
   // Every slot at the model's own location, grouped by cabinet — including

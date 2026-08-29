@@ -4,8 +4,12 @@
 // deliberately does NOT try to replace). Fixed 4-day window, one group per
 // calendar day (today first, including empty days so a quiet day still
 // shows), rows are individual emptied tubs. Like ItemPivotGridModel, it
-// ignores this.location — the point is seeing every location's activity
-// together, with location shown as its own column.
+// defaults to ignoring location — the point is seeing every location's
+// activity together, with location shown as its own column — but unlike
+// ItemPivotGridModel, a location filter (see getFilterDefs) lets a user
+// narrow it to one. See the constructor for why this.location starts at 0
+// ("All locations") here specifically, rather than inheriting the page's
+// normally-resolved location like every other grid.
 //
 // state/use are inline-editable (so an accidental close can be undone right
 // from this log) even though this grid has no _config.php route entry of
@@ -15,6 +19,7 @@
 // straight off SCOOP.metaData.FlavorTub rather than duplicated here.
 //////////////////////////////////
 import BaseGridModel from "./_base-grid-model.js";
+import HashState     from "../data/hash-state.js";
 
 // Matches SCOOP_TUB_EMPTIED_REVERT_HOURS (96h — see hooks/tub-state.php)
 // so this window can never be wider than the tub WHERE clause's own
@@ -28,6 +33,18 @@ export default class EmptiedLogGridModel extends BaseGridModel {
 
   constructor(name, domain, attrs = {}) {
     super(name, null, attrs);
+
+    // Override BaseGridModel's location resolution (attrs.location — the
+    // shortcode's data-location, dock default, or 935 fallback, per
+    // ScoopAPI._resolveLocation): this grid's whole point is "every
+    // location together" by default, so none of those page-level defaults
+    // should apply here. Only an explicit prior choice from THIS grid's own
+    // filter (getFilterDefs below, persisted the same way — see
+    // BaseGridModel.setFilterValue) should narrow it; anything else starts
+    // at 0 ("All locations").
+    const hashOverride = HashState.get(`loc.${this.name}`);
+    this.location = hashOverride != null ? Number(hashOverride) : 0;
+
     // Manual save, not autosave — same reasoning as FlavorTubGridModel
     // (see its own comment): autosave raced a background domain refresh
     // against active typing. This grid reuses that model's write route, so
@@ -47,13 +64,20 @@ export default class EmptiedLogGridModel extends BaseGridModel {
     if (domain) this.setDomain(domain);
   }
 
-  // Fixed window, no user-facing filter UI — see the module comment. Always
-  // sent (mountAllGrids collects this from the model instance before the
-  // very first bundle fetch), so the server-side date-scoped tub fetch (see
-  // _specs.php / bundle-fetch.php) narrows to this from the start rather
-  // than pulling full history.
+  // Fixed window, no user-facing filter UI for it — see the module comment
+  // (the location filter below is the one user-facing filter this grid
+  // has). Always sent (mountAllGrids collects this from the model instance
+  // before the very first bundle fetch), so the server-side date-scoped tub
+  // fetch (see _specs.php / bundle-fetch.php) narrows to this from the start
+  // rather than pulling full history.
   getServerFilterParams() {
     return { date_filters: 'activity', filter_activity: 'last_4_days' };
+  }
+
+  // See BaseGridModel's _locationFilterDef/getFilterValue/setFilterValue —
+  // 'client' mode, buildRows() below re-filters the already-fetched domain.
+  getFilterDefs() {
+    return [this._locationFilterDef()];
   }
 
   // state/use write-permission + state's option list live on the real Tub
@@ -95,9 +119,9 @@ export default class EmptiedLogGridModel extends BaseGridModel {
     if (!this.domain) return [];
 
     const tubs = Array.isArray(this.domain.tub) ? this.domain.tub : [];
-    const items = tubs
-      .filter(tub => String(tub.state ?? '') === 'Emptied')
-      .map(tub => this._itemFromTub(tub));
+    const items = this.filterByLocation(
+      tubs.filter(tub => String(tub.state ?? '') === 'Emptied').map(tub => this._itemFromTub(tub))
+    );
     const buckets = this._buildDayBuckets();
 
     items.forEach(item => {
