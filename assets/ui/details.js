@@ -17,6 +17,7 @@
 
 import { fillFields } from "./_detail-fields.js";
 import { renderTubDetails } from "./tub-detail-view.js";
+import { renderTaskDetails } from "./task-detail-view.js";
 
 export default class Details {
   static _api = null;
@@ -28,7 +29,7 @@ export default class Details {
   // (and its own <entity>-detail-view.js, see tub-detail-view.js) for any
   // entity that needs more than the generic field dump — a curated field
   // list, entity-only actions, etc. Entities with no entry just get fillFields.
-  static _VIEWS = { tub: renderTubDetails };
+  static _VIEWS = { tub: renderTubDetails, task: renderTaskDetails };
 
   static attach(api) {
     Details._api = api;

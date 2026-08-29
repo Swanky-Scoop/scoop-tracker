@@ -339,14 +339,16 @@ function scoop_entity_specs(string $key = ''): array {
           'target_name' => 'string',
           'post_date'   => 'datetime',
         ],
-        // 'done'/'target' are writeable through the TaskEdit route (see
-        // _config.php), not this one — the Tasks grid inline-edits them the
-        // same way EmptiedLogGridModel edits tub.state/use through
-        // FlavorTub's route: this entity spec's 'writeable' list is what
+        // 'done'/'target'/'other' are writeable through the TaskEdit route
+        // (see _config.php), not this one — the Tasks grid inline-edits
+        // done/target the same way EmptiedLogGridModel edits tub.state/use
+        // through FlavorTub's route, and the Details panel's edit mode
+        // (assets/ui/task-detail-view.js) edits all three, including the
+        // description textarea: this entity spec's 'writeable' list is what
         // scoop_client_metadata() intersects against each role's
         // 'task' entity grant (_policy.php) to compute the per-column
-        // `write` flag TasksGridModel reads client-side.
-        'writeable' => ['done','target']
+        // `write` flag those clients read.
+        'writeable' => ['done','target','other']
       ],
 
       // Read-only batch entity used by the BatchHistory grid, and (via its

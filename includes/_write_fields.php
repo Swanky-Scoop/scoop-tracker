@@ -30,14 +30,16 @@ function scoop_tasks_allowed_fields(\WP_User $u): array {
 }
 
 // Inline-edit path for existing tasks (the Tasks grid's Done toggle and
-// Assigned-to FindIt — see assets/models/tasks-grid-model.js). Separate
-// route from 'Task' above (which is create-only, mode:'create') since
-// scoop_handle_request() dispatches strictly on cfg['mode'] — one route
-// can't be both. 'completed' is deliberately NOT allowed here — it's
-// system-stamped by hooks/task-state.php whenever 'done' flips, same as
-// tub.emptied_at, never a real client-writable field.
+// Assigned-to FindIt — see assets/models/tasks-grid-model.js — plus the
+// Details panel's edit mode, assets/ui/task-detail-view.js, which also
+// edits 'other' as a textarea). Separate route from 'Task' above (which is
+// create-only, mode:'create') since scoop_handle_request() dispatches
+// strictly on cfg['mode'] — one route can't be both. 'completed' is
+// deliberately NOT allowed here — it's system-stamped by
+// hooks/task-state.php whenever 'done' flips, same as tub.emptied_at, never
+// a real client-writable field.
 function scoop_task_edits_allowed_fields(\WP_User $u): array {
-  return [ 'done','target' ];
+  return [ 'done','target','other' ];
 }
 
 function scoop_tubs_allowed_fields(\WP_User $u): array {

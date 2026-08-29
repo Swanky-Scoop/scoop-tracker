@@ -40,8 +40,11 @@ import Indexer       from "../data/indexer.js";
  * partial-autosave here, the whole grid is autosave-or-nothing (see
  * EmptiedLogGridModel's own comment on why a mixed grid was a bad idea).
  * Still no delete, and no edit UI at all for the Batches/Recipe production/
- * Ingredient prep list columns — see INGREDIENT-TRACKING.md / GUI-planning.md
- * for the still-open task-detail view those would eventually live in.
+ * Ingredient prep list columns. The Task column links to a read-only
+ * details panel (see assets/ui/task-detail-view.js, registered against
+ * entity 'task' in details.js) that re-derives the same three lists
+ * straight from the bundle domain, plain text, no drill-in — the grid's
+ * own list columns above stay the at-a-glance summary.
  */
 const DATE_FILTER_PRESETS = ['last_24_hours', 'last_48_hours', 'last_7_days', 'last_30_days'];
 const DEFAULT_PRESET = 'last_7_days';
@@ -89,12 +92,20 @@ export default class TasksGridModel extends BaseGridModel {
     this.columns = [
       { key: "post_date",       label: "Created",               type: "datetime" },
       { key: "target",          label: "Assignee",              type: "string", control: "find",   write: !!targetCol?.write },
-      { key: "_title",          label: "Task",                  type: "string", wrap: true },
+      { key: "_title",          label: "Task",                  type: "string", wrap: true, detailEntity: "task" },
       { key: "batches",         label: "Ice-cream Production",  type: "list" },
       { key: "recipe_counts",   label: "Recipe production",     type: "list" },
       { key: "preps",           label: "Ingredient prep",       type: "list" },
       { key: "done",            label: "Done",                 type: "string", control: "toggle", write: !!doneCol?.write },
     ];
+
+    // This model builds this.columns by hand (no server-driven metadata to
+    // extend, unlike InstockFlavorGridModel — see that model's buildCols()
+    // for the base-class-first pattern) — mirror the result into
+    // _allColumns so _applyDetailLinkGating()/_ensureRowDetailAccess() (run
+    // right after buildCols() in _buildColumns()) actually see the Task
+    // title column's detailEntity instead of no-op'ing on an empty array.
+    this._allColumns = this.columns;
 
     return this.columns;
   }
@@ -189,7 +200,7 @@ export default class TasksGridModel extends BaseGridModel {
     // lexically comparing the short display string.
     const dateMs = this._parseDateMs(t.post_date);
     row.post_date = { display: this._fmtShortDate(dateMs), value: dateMs };
-    row._title    = { display: t._title ?? "", value: t._title ?? "" };
+    row._title    = { display: t._title ?? "", value: t._title ?? "", id: t.id };
 
     row.target = {
       id: Number(t.target ?? 0),

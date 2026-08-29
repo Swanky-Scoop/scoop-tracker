@@ -2206,6 +2206,34 @@ ul.field-list {
   & li {
     padding: 0.05rem 0;
     font-size: 0.85em;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  /* Task Details panel's per-item remove button (assets/ui/task-detail-view.js)
+     — same button.row-delete class/look as Grid._renderDeleteCell's own icon
+     (see the `table.zList tr .delete-action button.row-delete` rule above),
+     just re-scoped here since this list lives outside a grid row. */
+  & button.row-delete {
+    width: 1.25rem;
+    height: 1.25rem;
+    line-height: 1.25rem;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background-color: transparent;
+    color: var(--color-alert-committed);
+    font-size: 0.9rem;
+    cursor: pointer;
+    flex: none;
+
+    &:hover,
+    &:focus {
+      background-color: var(--color-alert-committed);
+      color: var(--color-text-white);
+    }
   }
 }
 
