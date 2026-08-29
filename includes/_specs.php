@@ -30,6 +30,10 @@ function scoop_bundle_specs(): array {
     // 'location' added for the location-switcher filter (CabinetWorkflowGridModel's
     // getFilterDefs) — same as Cabinet, needs every Location's title.
     'CabinetWorkflow' => ['needs' => ['cabinet','slot','flavor','tub','allergen','use','location']],
+    // Tub-moving feature (worktree-tub-moving) — read-only "what needs to
+    // move where" list, grouped by destination location. See
+    // assets/models/moving-grid-model.js.
+    'Moving' => ['needs' => ['tub','flavor','location']],
     // End-of-shift report — see WHITEBOARD-INGESTION.md. Needs flavor,
     // location, and supply (the supplies_low picker), plus cabinet/slot so
     // the flavors_changed checklist can be filtered to slot.current_flavor
@@ -126,6 +130,11 @@ function scoop_entity_specs(string $key = ''): array {
           // association with a slot; slot.tub is never written directly by
           // client code, Pods keeps it in sync from this side.
           'slot'          => ['data_type' => 'int',      'control' => 'find', 'titleMap' => 'slot', 'hidden' => true],
+          // Tub-moving feature (see includes/hooks/cabinet-slot.php) —
+          // destination location this tub is earmarked to move to, 0/unset
+          // when not moving. Writeable so a tub can be pre-marked by hand;
+          // also set automatically by the slot-save hook.
+          'moving_to'     => ['data_type' => 'int',      'control' => 'find', 'titleMap' => 'location'],
         ],
         'post_fields' => [
           'editor_name'   => 'string',
@@ -216,7 +225,11 @@ function scoop_entity_specs(string $key = ''): array {
         // which showed up as ItemPivotGridModel's Flavor Map grouping that
         // cabinet's column under the WRONG location header (colKeyFor reads
         // tub.location, not the cabinet's).
-        'writeable' => ['state','use','amount','slot','location']
+        // 'moving_to' — tub-moving feature (worktree-tub-moving, see
+        // includes/hooks/cabinet-slot.php). Writeable so a tub can be
+        // pre-marked by hand via FlavorTub, same route the automatic
+        // slot-save hook's writes also land through.
+        'writeable' => ['state','use','amount','slot','location','moving_to']
       ],
 
       'inventory_change' => [

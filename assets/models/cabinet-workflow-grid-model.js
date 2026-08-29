@@ -398,6 +398,12 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
       Number(t.flavor) === Number(flavorId) &&
       isFrontOfHouseUse(t.use) &&
       !NON_PROMOTABLE_STATES.has(t.state) &&
+      // Tub-moving (see includes/hooks/cabinet-slot.php): a tub earmarked
+      // to move elsewhere isn't available to fill a DIFFERENT slot until
+      // that's resolved (arrives, or gets un-earmarked) — same "not
+      // selected for a slot" requirement whether the earmark was set
+      // automatically or by hand.
+      !Number(t.moving_to) &&
       (!excludeIds || !excludeIds.has(Number(t.id)))
     );
   }

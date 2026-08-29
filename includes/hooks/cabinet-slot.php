@@ -301,3 +301,113 @@ function scoop_slot_post_save_dedupe_other_slots($pieces, $is_new_item, $id) {
 
   return $pieces;
 }
+
+/* ------------------------------------------------------------
+ * Tub-moving (worktree-tub-moving): auto-earmark a tub from elsewhere
+ * as moving_to this slot's destination, whenever current_flavor/
+ * immediate_flavor is scheduled here and this location has no
+ * front-of-house-eligible stock of that flavor yet.
+ *
+ * Pods-level hook (not REST-layer logic), same reasoning as the
+ * designation-uniqueness hooks above — applies regardless of which write
+ * path set current_flavor/immediate_flavor (Cabinet grid, CabinetWorkflow,
+ * WP admin, direct Pods call).
+ * ------------------------------------------------------------ */
+
+if (!defined('SCOOP_FRONT_OF_HOUSE_USE_ID')) {
+  // Matches FRONT_OF_HOUSE_USE_ID in assets/models/cabinet-workflow-grid-model.js
+  // — same real Pods post id on this environment, kept in sync by hand.
+  define('SCOOP_FRONT_OF_HOUSE_USE_ID', 1863);
+}
+
+add_filter('pods_api_post_save_pod_item_slot', 'scoop_slot_post_save_mark_tub_moving', 20, 3);
+function scoop_slot_post_save_mark_tub_moving($pieces, $is_new_item, $id) {
+  $slot_id = (int) $id;
+  if (!$slot_id) return $pieces;
+  if (!function_exists('pods_api') || !is_object(pods_api())) return $pieces;
+
+  // Only the two fields that mean "this flavor is now actually wanted
+  // here" — next_flavor is a further-out plan, not yet acted on, so it
+  // doesn't trigger a move.
+  $incoming = [];
+  foreach (['current_flavor', 'immediate_flavor'] as $f) {
+    if (!isset($pieces['fields'][$f]['value'])) continue;
+    $fid = (int) scoop_rel_id($pieces['fields'][$f]['value']);
+    if ($fid > 0) $incoming[] = $fid;
+  }
+  if (!$incoming) return $pieces;
+
+  $slot = pods('slot', $slot_id);
+  if (!$slot || !$slot->exists()) return $pieces;
+
+  $cabinet_id = (int) $slot->field('cabinet.ID');
+  if (!$cabinet_id) return $pieces;
+
+  $destination_id = (int) pods('cabinet', $cabinet_id)->field('location.ID');
+  if (!$destination_id) return $pieces;
+
+  foreach (array_unique($incoming) as $flavor_id) {
+    scoop_mark_tub_moving_if_needed($flavor_id, $destination_id);
+  }
+
+  return $pieces;
+}
+
+/**
+ * If $destination_id has no front-of-house-eligible stock of $flavor_id
+ * already — in place, or already earmarked to arrive — earmarks ONE
+ * eligible tub from elsewhere by setting its moving_to. No-ops if nothing
+ * eligible exists elsewhere either — this only ever flags a real
+ * candidate, never invents stock.
+ *
+ * Eligibility mirrors CabinetWorkflowGridModel.promotablePool() (JS):
+ * front-of-house use, not Emptied/Opened/!Lost, not already earmarked
+ * elsewhere. Deliberately not scoped to Woodinville specifically — any
+ * OTHER location's stock is a valid source, same "tubs can be carried
+ * between this shop's own locations" philosophy as promotablePool's own
+ * comment.
+ */
+function scoop_mark_tub_moving_if_needed(int $flavor_id, int $destination_id): void {
+  if (!$flavor_id || !$destination_id || !function_exists('pods')) return;
+
+  $tubs = pods('tub', [
+    'where' => "flavor.ID = {$flavor_id}",
+    'limit' => -1,
+  ]);
+  if (!$tubs) return;
+
+  $already_satisfied = false;
+  $candidates = []; // [id, created_on] elsewhere, eligible to move
+
+  while ($tubs->fetch()) {
+    $use_id   = (int) scoop_rel_id($tubs->field('use'));
+    $is_front = !$use_id || $use_id === SCOOP_FRONT_OF_HOUSE_USE_ID;
+    if (!$is_front) continue;
+
+    $state = (string) $tubs->field('state');
+    if (in_array($state, ['Emptied', '!Lost'], true)) continue;
+
+    $loc_id    = (int) scoop_rel_id($tubs->field('location'));
+    $moving_to = (int) scoop_rel_id($tubs->field('moving_to'));
+
+    if ($loc_id === $destination_id || $moving_to === $destination_id) {
+      $already_satisfied = true;
+      break;
+    }
+
+    if ($state === 'Opened') continue; // already in service elsewhere — not a candidate to relocate
+    if ($moving_to) continue;          // already earmarked to move somewhere else
+
+    $candidates[] = [
+      'id'         => (int) $tubs->id(),
+      'created_on' => (string) $tubs->field('created_on'),
+    ];
+  }
+
+  if ($already_satisfied || empty($candidates)) return;
+
+  usort($candidates, fn($a, $b) => strcmp($a['created_on'], $b['created_on']));
+  $chosen = $candidates[0];
+
+  pods_api()->save_pod_item(['pod' => 'tub', 'id' => $chosen['id'], 'data' => ['moving_to' => $destination_id]]);
+}
