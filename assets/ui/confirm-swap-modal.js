@@ -51,10 +51,14 @@ export default class ConfirmSwapModal extends El {
     this._preferWhole = true;
     this._plan = null;
     // Set only via open(row, flavorId, { bulkCount }) — see openBulk() and
-    // _confirm()'s bulkActive branch. Every normal open() call resets this
-    // to 0 (its default), so switching flavors (Change Plan, a flavor-line
-    // click) or just reopening normally always drops a stale bulk intent
-    // rather than silently carrying it onto a different flavor.
+    // _confirm()'s bulkCount branch. Every normal open() call resets this
+    // to 0 (its default), so "Change Plan" / the FlavorPicker hand-off
+    // drops a stale bulk intent. NOTE: the in-modal flavor-line click does
+    // NOT call open() (it sets _selectedFlavorId then re-renders), so this
+    // value survives that path — but it's still safe, because _confirm()
+    // consumes it unconditionally and the `_selectedFlavorId ===
+    // row.flavorId` guard keeps a flavor-changed click from ever routing
+    // into the bulk write.
     this._pendingBulkCount = 0;
 
     this._buildDom();

@@ -200,6 +200,15 @@ function scoop_create_pod_item(string $pod_name, array $allowed_fields, array $d
       return new WP_Error('tub_split_missing_use', 'Tub split requires a use.');
     }
 
+    // The use id reaches $clean via scoop_tubs_allowed_fields (only roles
+    // that can already write tub.use get here), but nothing previously
+    // verified it resolves to a real 'use' record. Cheap exists() check so
+    // a malformed client can't mint a tub pointing at a nonexistent use.
+    $use_pod = pods('use', $use_id);
+    if (!$use_pod || !$use_pod->exists()) {
+      return new WP_Error('tub_split_bad_use', 'Tub split target use does not exist.');
+    }
+
     $requested = isset($clean['amount']) && is_numeric($clean['amount']) ? (float)$clean['amount'] : 0;
     if ($requested <= 0) {
       return new WP_Error('tub_split_missing_amount', 'Tub split requires a positive amount.');
@@ -276,14 +285,29 @@ function scoop_create_pod_item(string $pod_name, array $allowed_fields, array $d
   // for the true-split branch — the convert-in-place branch above already
   // returned early, before ever building $clean for a new tub.
   if ($pod_name === 'tub' && isset($origin_id, $origin_amount, $requested)) {
-    $origin_saved = pods_api()->save_pod_item([
-      'pod'  => 'tub',
-      'id'   => $origin_id,
-      'data' => ['amount' => $origin_amount - $requested],
-    ]);
+    // Re-read the origin's amount at write time rather than trusting the
+    // value captured at the top of this function. MyISAM has no
+    // transactions, so a concurrent split (another tab, or a retry after a
+    // timeout the client saw as failure but the server committed) could
+    // already have reduced the origin between the initial read and now —
+    // decrementing from the stale $origin_amount would over-split.
+    // Re-reading shrinks that window; if the origin is already below what's
+    // being taken, log and skip rather than drive it negative.
+    $origin = pods('tub', $origin_id);
+    $fresh_amount = ($origin && $origin->exists()) ? (float)$origin->field('amount') : 0.0;
 
-    if (is_wp_error($origin_saved)) {
-      error_log("scoop_create_pod_item (tub split): new tub {$id} created, but failed to reduce origin tub {$origin_id}'s amount: " . $origin_saved->get_error_message());
+    if ($fresh_amount < $requested) {
+      error_log("scoop_create_pod_item (tub split): new tub {$id} created, but origin tub {$origin_id}'s amount ({$fresh_amount}) is now below the requested split ({$requested}) — likely a concurrent split; origin left unchanged.");
+    } else {
+      $origin_saved = pods_api()->save_pod_item([
+        'pod'  => 'tub',
+        'id'   => $origin_id,
+        'data' => ['amount' => $fresh_amount - $requested],
+      ]);
+
+      if (is_wp_error($origin_saved)) {
+        error_log("scoop_create_pod_item (tub split): new tub {$id} created, but failed to reduce origin tub {$origin_id}'s amount: " . $origin_saved->get_error_message());
+      }
     }
   }
 
