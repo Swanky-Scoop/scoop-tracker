@@ -20,6 +20,7 @@ import InstockFlavorGridModel from "../models/instock-flavor-grid-model.js";
 import CabinetWorkflowGridModel from "../models/cabinet-workflow-grid-model.js";
 import CabinetWorkflowTile      from "../ui/cabinet-workflow-tile.js";
 import ItemPivotGridModel       from "../models/item-pivot-grid-model.js";
+import MovingGridModel          from "../models/moving-grid-model.js";
 import ItemPivotGrid            from "../ui/item-pivot-grid.js";
 import ShiftReportGridModel     from "../models/shift-report-grid-model.js";
 import ShiftReportForm          from "../ui/shift-report-form.js";
@@ -161,6 +162,7 @@ export default class ScoopAPI {
       "InstockFlavor": InstockFlavorGridModel,
       "CabinetWorkflow": CabinetWorkflowGridModel,
       "ItemPivot"      : ItemPivotGridModel,
+      "Moving"         : MovingGridModel,
       "ShiftReport"    : ShiftReportGridModel,
       "Task"           : TaskGridModel,
       "Tasks"          : TasksGridModel,

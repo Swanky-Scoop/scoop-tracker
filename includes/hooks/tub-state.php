@@ -295,3 +295,47 @@ function scoop_enforce_tub_rules( $pieces, $is_new_item, $id = 0 ) {
 
   return $pieces;
 }
+
+/**
+ * Tub-moving (worktree-tub-moving): a tub's moving_to auto-clears the
+ * moment its location actually becomes the place moving_to said it was
+ * headed — "arrival" is just location catching up, no separate confirm
+ * step. Checks the INCOMING location value against whichever moving_to
+ * value this same save will end up with (either explicitly set in this
+ * save, or whatever's already on the DB row) so a single write that sets
+ * both location and moving_to in the same request (or just location, with
+ * moving_to already on the row) both resolve correctly in one pass.
+ */
+add_filter('pods_api_pre_save_pod_item_tub', 'scoop_tub_pre_save_clear_moving_on_arrival', 10, 3);
+function scoop_tub_pre_save_clear_moving_on_arrival($pieces, $is_new_item, $id = 0) {
+  if (!isset($pieces['fields']['location']['value'])) return $pieces;
+
+  $incoming_location = (int) scoop_rel_id($pieces['fields']['location']['value']);
+  if (!$incoming_location) return $pieces;
+
+  $effective_moving_to = isset($pieces['fields']['moving_to']['value'])
+    ? (int) scoop_rel_id($pieces['fields']['moving_to']['value'])
+    : 0;
+
+  if (!$effective_moving_to) {
+    $tub_id = !empty($pieces['id']) ? (int) $pieces['id'] : (int) $id;
+    if ($tub_id && function_exists('pods')) {
+      $tub = pods('tub', $tub_id);
+      if ($tub && $tub->exists()) {
+        $effective_moving_to = (int) scoop_rel_id($tub->field('moving_to'));
+      }
+    }
+  }
+
+  if ($effective_moving_to && $effective_moving_to === $incoming_location) {
+    $pieces['fields']['moving_to']['value'] = 0;
+    if (!isset($pieces['fields_active']) || !is_array($pieces['fields_active'])) {
+      $pieces['fields_active'] = [];
+    }
+    if (!in_array('moving_to', $pieces['fields_active'], true)) {
+      $pieces['fields_active'][] = 'moving_to';
+    }
+  }
+
+  return $pieces;
+}

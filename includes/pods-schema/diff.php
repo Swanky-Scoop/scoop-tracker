@@ -122,6 +122,32 @@ function scoop_schema_comparable_val($val): string {
 }
 
 /**
+ * 'group' schema values are ['name' => slug, 'pod' => pod_name] (see the
+ * authoring note in _schema.php) — save_field() resolves that shape to a
+ * pod-scoped group id unambiguously, unlike a bare slug string, which isn't
+ * unique across the install (confirmed: 25+ pods share the literal slug
+ * 'more_fields'). Comparing that array shape directly against a live
+ * field's plain numeric group id would never match — wp_json_encode(array)
+ * vs. a string int — so every field using this shape would show as
+ * permanently "changed" even when correct. Resolves it to the SAME numeric
+ * id save_field() itself would land on, once, so the comparison is
+ * apples-to-apples. Returns $val unchanged for a plain int/string 'group'
+ * (the older shape, still valid) or any other key.
+ */
+function scoop_schema_resolve_group_id($val) {
+  if (!is_array($val) || empty($val['name'])) return $val;
+  if (!function_exists('pods_api')) return $val;
+
+  try {
+    $group = pods_api()->load_group($val, false);
+  } catch (\Throwable $e) {
+    return $val;
+  }
+
+  return is_object($group) ? $group->get_id() : $val;
+}
+
+/**
  * Compares $schema (from scoop_schema_definition()) against this
  * environment's live Pods config. Only keys present in $schema are ever
  * compared — see the authoring note in _schema.php.
@@ -197,7 +223,11 @@ function scoop_schema_diff(array $schema): array {
       $changed = [];
       foreach ($expected_field as $key => $expected_val) {
         $actual_val = $actual_field[$key] ?? null;
-        if (scoop_schema_comparable_val($actual_val) !== scoop_schema_comparable_val($expected_val)) {
+        // See scoop_schema_resolve_group_id()'s own comment — only affects
+        // comparison, the reported 'expected' below still shows the
+        // original ['name'=>..,'pod'=>..] shape for a meaningful report.
+        $compare_expected = $key === 'group' ? scoop_schema_resolve_group_id($expected_val) : $expected_val;
+        if (scoop_schema_comparable_val($actual_val) !== scoop_schema_comparable_val($compare_expected)) {
           $changed[$key] = ['expected' => $expected_val, 'actual' => $actual_val];
         }
       }

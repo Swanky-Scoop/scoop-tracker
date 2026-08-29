@@ -77,6 +77,17 @@ add_action('rest_api_init', function () {
   $routes = scoop_routes_config();
 
   foreach ($routes as $key => $cfg) {
+    // scoop_routes_config() deliberately also holds "display-only" entries
+    // for types with no REST write route of their own (Popular, Analytics,
+    // BatchHistory, ItemPivot, EmptiedLog, ...) — just a display_title/icon
+    // override for their dock button (see that function's own top comment).
+    // Those never had 'path'/'methods' to begin with; registering a route
+    // for them isn't just unnecessary, it's impossible (no path to match)
+    // and was firing "Undefined array key" on every single REST request —
+    // found while diagnosing an unrelated test failure whose JSON parse
+    // broke because this leaked ahead of the real response body.
+    if (empty($cfg['path']) || empty($cfg['methods'])) continue;
+
     register_rest_route(
       'scoop/v1',
       $cfg['path'],

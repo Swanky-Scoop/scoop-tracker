@@ -149,9 +149,15 @@ function scoop_access_policy(): array {
         // kiosk's new 'false' would silently deny everyone else too.
         'EmptiedLog'      => ['GET' => true],
         'CabinetWorkflow' => ['GET' => true],
+        // Tub-moving feature (worktree-tub-moving) — same GET grant as
+        // CabinetWorkflow, since Moving is that same operational staff's
+        // companion view. Writes ride through FlavorTub's own route/policy
+        // (see MovingGridModel's writeEnvelope), so no POST entry needed
+        // here, same reasoning as CabinetWorkflow having none of its own.
+        'Moving'          => ['GET' => true],
       ],
       'entities' => [
-        'tub'  => ['state','use','amount','slot','location'],
+        'tub'  => ['state','use','amount','slot','location','moving_to'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
         // Live from Pods, not hardcoded — see scoop_shift_reports_allowed_fields()
         // in _write_fields.php for why this entity's field list doesn't need
@@ -189,6 +195,12 @@ function scoop_access_policy(): array {
         // true here preserves this role's existing unconditional access.
         'EmptiedLog'      => ['GET' => true],
         'CabinetWorkflow' => ['GET' => true],
+        // Tub-moving feature (worktree-tub-moving) — same GET grant as
+        // CabinetWorkflow, since Moving is that same operational staff's
+        // companion view. Writes ride through FlavorTub's own route/policy
+        // (see MovingGridModel's writeEnvelope), so no POST entry needed
+        // here, same reasoning as CabinetWorkflow having none of its own.
+        'Moving'          => ['GET' => true],
         'ShiftReport'     => ['GET' => true],
       ],
       'entities' => [
@@ -215,6 +227,12 @@ function scoop_access_policy(): array {
         'InstockFlavor' => ['GET' => true],
         'EmptiedLog'      => ['GET' => true],
         'CabinetWorkflow' => ['GET' => true],
+        // Tub-moving feature (worktree-tub-moving) — same GET grant as
+        // CabinetWorkflow, since Moving is that same operational staff's
+        // companion view. Writes ride through FlavorTub's own route/policy
+        // (see MovingGridModel's writeEnvelope), so no POST entry needed
+        // here, same reasoning as CabinetWorkflow having none of its own.
+        'Moving'          => ['GET' => true],
         'ShiftReport'     => ['GET' => true],
       ],
       'entities' => [
@@ -223,7 +241,9 @@ function scoop_access_policy(): array {
         // see change-tub.md) — this is a normal CabinetWorkflow action,
         // not an admin-only one. 'location' rides along — always written in
         // the same payload as 'slot' (see _specs.php's tub writeable comment).
-        'tub'  => ['state','slot','location'],
+        // 'moving_to' — tub-moving feature, same normal-CabinetWorkflow-action
+        // reasoning; this role does real slot planning/promotion.
+        'tub'  => ['state','slot','location','moving_to'],
         // immediate_flavor/next_flavor added so 'leave slot empty' can
         // reschedule leftover stock into the planning fields (see
         // ConfirmSwapModal._confirmEmpty in confirm-swap-modal.js) — this
@@ -266,9 +286,15 @@ function scoop_access_policy(): array {
         // See author's EmptiedLog/CabinetWorkflow comment above.
         'EmptiedLog'      => ['GET' => true],
         'CabinetWorkflow' => ['GET' => true],
+        // Tub-moving feature (worktree-tub-moving) — same GET grant as
+        // CabinetWorkflow, since Moving is that same operational staff's
+        // companion view. Writes ride through FlavorTub's own route/policy
+        // (see MovingGridModel's writeEnvelope), so no POST entry needed
+        // here, same reasoning as CabinetWorkflow having none of its own.
+        'Moving'          => ['GET' => true],
       ],
       'entities' => [
-        'tub'  => ['state','use','amount','slot','location'],
+        'tub'  => ['state','use','amount','slot','location','moving_to'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
         // Live from Pods, not hardcoded — see scoop_shift_reports_allowed_fields()
         // in _write_fields.php for why this entity's field list doesn't need
@@ -311,6 +337,12 @@ function scoop_access_policy(): array {
         'RecipeCount'   => ['GET' => true],
         'EmptiedLog'      => ['GET' => true],
         'CabinetWorkflow' => ['GET' => true],
+        // Tub-moving feature (worktree-tub-moving) — same GET grant as
+        // CabinetWorkflow, since Moving is that same operational staff's
+        // companion view. Writes ride through FlavorTub's own route/policy
+        // (see MovingGridModel's writeEnvelope), so no POST entry needed
+        // here, same reasoning as CabinetWorkflow having none of its own.
+        'Moving'          => ['GET' => true],
         // New grant (didn't have 'KitchenReport' before this rename) — no
         // mode/url override, same as administrator: inherits _config.php's
         // external-link default (that Google Form can't be embedded for
@@ -318,7 +350,7 @@ function scoop_access_policy(): array {
         'esr' => ['GET' => true],
       ],
       'entities' => [
-        'tub'  => ['state','use','amount','slot','location'],
+        'tub'  => ['state','use','amount','slot','location','moving_to'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
         // Live from Pods, not hardcoded — see scoop_shift_reports_allowed_fields()
         // in _write_fields.php for why this entity's field list doesn't need
@@ -353,6 +385,7 @@ function scoop_access_policy(): array {
         'Analytics'       => ['GET' => false],
         'EmptiedLog'      => ['GET' => false],
         'CabinetWorkflow' => ['GET' => false],
+        'Moving'          => ['GET' => false],
         'ShiftReport'     => ['GET' => false],
         'Task'            => ['GET' => false],
         'Prep'            => ['GET' => false],
@@ -388,6 +421,7 @@ function scoop_access_policy(): array {
         'Analytics'       => ['GET' => false],
         'EmptiedLog'      => ['GET' => false],
         'CabinetWorkflow' => ['GET' => false],
+        'Moving'          => ['GET' => false],
         'ShiftReport'     => ['GET' => false],
         'Task'            => ['GET' => false],
         'Prep'            => ['GET' => false],
@@ -417,6 +451,12 @@ function scoop_access_policy(): array {
         'Music'           => ['GET' => true],
         'EmptiedLog'      => ['GET' => true],
         'CabinetWorkflow' => ['GET' => true],
+        // Tub-moving feature (worktree-tub-moving) — same GET grant as
+        // CabinetWorkflow, since Moving is that same operational staff's
+        // companion view. Writes ride through FlavorTub's own route/policy
+        // (see MovingGridModel's writeEnvelope), so no POST entry needed
+        // here, same reasoning as CabinetWorkflow having none of its own.
+        'Moving'          => ['GET' => true],
         'ItemPivot'       => ['GET' => true],
         // Same as shift_lead — full read/write.
         'FlavorTub'       => ['GET' => true, 'POST' => true],
@@ -438,7 +478,7 @@ function scoop_access_policy(): array {
         // (add-next, leave-empty, confirm swap) write through these tub/
         // slot fields regardless of which route the action came in
         // through.
-        'tub'  => ['state','use','amount','slot','location'],
+        'tub'  => ['state','use','amount','slot','location','moving_to'],
         'slot' => ['current_flavor','immediate_flavor','next_flavor','tub','confirm_state'],
       ],
     ],
