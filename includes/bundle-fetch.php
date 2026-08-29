@@ -117,6 +117,11 @@ function scoop_date_filter_presets(): array {
   return [
     'last_24_hours' => 24 * $hour,
     'last_48_hours' => 48 * $hour,
+    // Matches SCOOP_TUB_EMPTIED_REVERT_HOURS (hooks/tub-state.php, 96h) —
+    // EmptiedLogGridModel requests this specifically so its window can
+    // never exceed the tub WHERE clause's own fallback cutoff for a
+    // non-date-scoped fetch (see bundle-fetch.php's is_date_scoped comment).
+    'last_4_days'   => 4 * $day,
     'last_7_days'   => 7 * $day,
     'last_30_days'  => 30 * $day,
   ];
@@ -129,6 +134,9 @@ function scoop_normalize_date_filter_preset( $raw ): string {
     '24_hours'      => 'last_24_hours',
     '48hrs'         => 'last_48_hours',
     '48_hours'      => 'last_48_hours',
+    '4_days'        => 'last_4_days',
+    '96hrs'         => 'last_4_days',
+    '96_hours'      => 'last_4_days',
     '1_week'        => 'last_7_days',
     'week'          => 'last_7_days',
     '1_month'       => 'last_30_days',
@@ -686,7 +694,7 @@ function scoop_fetch_entities( string $key, array $ctx = [], bool $fields_only =
     //
     // Skipped entirely for a date-scoped fetch ($is_date_scoped below): that
     // path already ANDs in its own OR(opened_on/emptied_at/created_on) range
-    // clause, which is the real, caller-chosen bound (EmptiedLog's 7-day
+    // clause, which is the real, caller-chosen bound (EmptiedLog's 4-day
     // window, DateActivity's picker — up to last_30_days). ANDing this fixed
     // 96h revert-window clause on top silently clipped every Emptied-tub
     // result to whichever window is tighter, so EmptiedLog/DateActivity never

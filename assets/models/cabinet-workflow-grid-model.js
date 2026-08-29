@@ -359,6 +359,21 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
     return this._fohTubsExcluding(Number(flavorId), locationId, DISPLAY_EXCLUDED_STATES);
   }
 
+  // Every tub of a flavor that isn't Emptied, minus a given set of ids —
+  // used by ConfirmSwapModal's "[unless lost]" review dialog to show what
+  // WON'T be touched by that action. Deliberately not front-of-house-only
+  // or location-scoped like remainingTubs above — this is "what else is
+  // out there" context for a human reviewing the mark-lost prompt, not an
+  // eligibility filter.
+  otherNonEmptiedTubs(flavorId, excludeIds) {
+    const tubs = Array.isArray(this.domain.tub) ? this.domain.tub : [];
+    return tubs.filter(t =>
+      Number(t.flavor) === Number(flavorId) &&
+      t.state !== 'Emptied' &&
+      !excludeIds.has(Number(t.id))
+    );
+  }
+
   // Deliberately NOT location-scoped: a tub of the right flavor can be
   // physically carried between this shop's own locations (see
   // change-tub.md's Add Flavor / Confirm Cabinet decisions) — whichever

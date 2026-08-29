@@ -2447,6 +2447,13 @@ body > .modal{
   }
 }
 
+/* ConfirmSwapModal's "(N remaining [unless lost])" line under the outgoing
+   flavor's title (assets/ui/confirm-swap-modal.js) — smaller than the
+   surrounding h2/h3, per the body > .modal `& *` rule's default sizing. */
+body > .modal.confirm_swap .remaining-note {
+  font-size: 1rem;
+}
+
 /* Details panel (assets/ui/details.js) reuses body > .modal's overlay/panel
    CSS as-is (same class, see that file's _ensureHost comment) — this block
    only overrides what the base .modal's `& * { display:flex; ... }` rule

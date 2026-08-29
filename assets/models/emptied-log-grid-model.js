@@ -1,7 +1,7 @@
 ///////////////////////////////////
 // EmptiedLogGridModel — "what got emptied, by day" log for a non-staff
 // audience (see DateActivity for the staff-facing full audit trail this
-// deliberately does NOT try to replace). Fixed 7-day window, one group per
+// deliberately does NOT try to replace). Fixed 4-day window, one group per
 // calendar day (today first, including empty days so a quiet day still
 // shows), rows are individual emptied tubs. Like ItemPivotGridModel, it
 // ignores this.location — the point is seeing every location's activity
@@ -16,7 +16,13 @@
 //////////////////////////////////
 import BaseGridModel from "./_base-grid-model.js";
 
-const DAY_WINDOW = 7;
+// Matches SCOOP_TUB_EMPTIED_REVERT_HOURS (96h — see hooks/tub-state.php)
+// so this window can never be wider than the tub WHERE clause's own
+// fallback cutoff on a bundle request that shares the page with another
+// grid type (see bundle-fetch.php's is_date_scoped comment) — keeps the
+// displayed window and the server's actual data pool always in sync,
+// regardless of page composition.
+const DAY_WINDOW = 4;
 
 export default class EmptiedLogGridModel extends BaseGridModel {
 
@@ -47,7 +53,7 @@ export default class EmptiedLogGridModel extends BaseGridModel {
   // _specs.php / bundle-fetch.php) narrows to this from the start rather
   // than pulling full history.
   getServerFilterParams() {
-    return { date_filters: 'activity', filter_activity: 'last_7_days' };
+    return { date_filters: 'activity', filter_activity: 'last_4_days' };
   }
 
   // state/use write-permission + state's option list live on the real Tub

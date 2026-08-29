@@ -79,6 +79,20 @@ export default class ConfirmSwapModal extends El {
 
     this.REMOVE_TITLE = el('h2');
 
+    // "(N remaining [unless lost])" under the outgoing flavor's title — see
+    // _render() and _markOutgoingFlavorLost() below. [unless lost] is a
+    // link that marks every remaining front-of-house tub of THIS row's
+    // current flavor as lost, after a window.confirm review — same
+    // underlying data (model.remainingTubs) as the flavorChanged/staleTubs
+    // prompt in _confirm(), just triggered directly instead of only as a
+    // side effect of completing a swap.
+    this.REMAINING_P = el('p', { classes: ['remaining-note'] });
+    this.REMAINING_LOST_LINK = el('a', { text: '[unless lost]', attrs: { href: '#mark_flavor_lost' } });
+    this.REMAINING_LOST_LINK.addEventListener('click', (e) => {
+      e.preventDefault();
+      this._markOutgoingFlavorLost();
+    });
+
     this.IMG_BOX   = el('div', { classes: ['img'] });
     this.IMG       = el('img', { attrs: { alt: '' } });
     this.IMG_TITLE = el('h3');
@@ -138,6 +152,7 @@ export default class ConfirmSwapModal extends El {
       this.CLOSE,
       this.REPLACE_LABEL,
       this.REMOVE_TITLE,
+      this.REMAINING_P,
       el('p', { text: 'with' }),
       this.IMG_BOX,
       PARTIAL_LABEL,
@@ -242,6 +257,14 @@ export default class ConfirmSwapModal extends El {
     // has no current flavor to name as being replaced.
     this.REPLACE_LABEL.textContent = row.empty ? 'Add flavor' : 'Replace flavor';
     this.REMOVE_TITLE.textContent = row.empty ? '(slot is empty)' : row.flavorTitle;
+
+    // Only meaningful when there's an actual outgoing flavor with stock
+    // still believed remaining — nothing to offer marking lost otherwise.
+    this.REMAINING_P.replaceChildren();
+    const outgoingRemaining = row.empty ? 0 : this.model.remainingSummary(row.flavorId, row.location);
+    if (outgoingRemaining > 0) {
+      this.REMAINING_P.append(`(${outgoingRemaining} remaining `, this.REMAINING_LOST_LINK, ')');
+    }
 
     const target = this.model.flavorInfo(this._selectedFlavorId);
     this._plan = this.model.planTubChange(row, this._selectedFlavorId, this._preferWhole);
@@ -391,6 +414,66 @@ export default class ConfirmSwapModal extends El {
 
     const freshRow = this.getRow?.(row.slotId) ?? row;
     this.open(freshRow, resumeFlavorId);
+  }
+
+  // "[unless lost]" link next to REMAINING_P — standalone version of the
+  // flavorChanged/staleTubs prompt inside _confirm(): here the flavor isn't
+  // changing, the user is just flagging that the outgoing flavor's believed
+  // remaining stock can't actually be found. Starts from the same target set
+  // as that prompt (model.remainingTubs — front-of-house, this location, not
+  // already Opened/Emptied/!Lost) but narrows further to state === 'Freezing'
+  // only, per developer direction: Opened/Emptied tubs are never candidates
+  // here (remainingTubs already excludes them), and Tempering/Hardening/
+  // __override__ tubs are still active enough in the pipeline that this
+  // shortcut shouldn't touch them — only tubs sitting in the freezer,
+  // unaccounted for, are what "[unless lost]" is meant to sweep up. Same
+  // write shape (state: '!Lost') either way, just triggered directly instead
+  // of only as a side effect of completing a swap. Reopens this dialog
+  // afterward (same row) rather than closing — the user was mid-review of a
+  // swap, not trying to leave.
+  async _markOutgoingFlavorLost() {
+    const row = this._row;
+    if (!row || row.empty || !row.flavorId) return;
+
+    const lostTubs = this.model.remainingTubs(row.flavorId, row.location).filter(t => t.state === 'Freezing');
+    if (!lostTubs.length) return;
+
+    const flavorTitle = row.flavorTitle || 'this flavor';
+    const excludeIds = new Set(lostTubs.map(t => Number(t.id)));
+    const otherTubs = this.model.otherNonEmptiedTubs(row.flavorId, excludeIds);
+    const useOptions = this.model.getOptions(0, 'use');
+    const useTitle = (useId) => useOptions.find(o => Number(o.key) === Number(useId))?.label || 'Front-of-House';
+
+    const lostLines = lostTubs.map(t => `  ${t._title ?? `Tub #${t.id}`} — ${t.state}`).join('\n');
+    const otherLines = otherTubs.length
+      ? otherTubs.map(t => `  ${t._title ?? `Tub #${t.id}`} — ${useTitle(t.use)}, ${t.state}`).join('\n')
+      : '  (none)';
+
+    const n = lostTubs.length;
+    const confirmed = window.confirm(
+      `Mark ${n} tub${n === 1 ? '' : 's'} of ${flavorTitle} as lost?\n\n`
+      + `Tubs to be marked lost:\n${lostLines}\n\n`
+      + `Other non-emptied tubs of ${flavorTitle} (not affected):\n${otherLines}`
+    );
+    if (!confirmed) return;
+
+    const tubCells = {};
+    for (const t of lostTubs) tubCells[t.id] = { state: '!Lost' };
+
+    const rTubs = await this.api.postJson({ cells: tubCells, source: 'workflow' }, 'FlavorTub');
+    if (!rTubs.ok || !rTubs.data?.ok) {
+      Toast.addMessage({ title: 'Marking tubs lost failed', message: rTubs?.data?.error ?? `HTTP ${rTubs?.status}` });
+      return;
+    }
+
+    Toast.addMessage({
+      title: 'Tubs marked lost',
+      changes: [{ sentence: `Marked ${n} tub${n === 1 ? '' : 's'} of ${flavorTitle} as lost.` }],
+    });
+
+    await this.api.refreshPageDomain({ force: true });
+    const freshRow = this.getRow?.(row.slotId) ?? row;
+    this.open(freshRow, this._selectedFlavorId);
   }
 
   async _confirm() {

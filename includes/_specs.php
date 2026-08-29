@@ -21,7 +21,10 @@ function scoop_bundle_specs(): array {
     // 'allergen' is a small fixed reference table (unlike 'batch' — see the
     // comment on that one elsewhere in change-tub.md) — cheap to fetch
     // whole, needed for the allergen icon URLs shown on each slot's flavor.
-    'CabinetWorkflow' => ['needs' => ['cabinet','slot','flavor','tub','allergen']],
+    // 'use' is needed by ConfirmSwapModal's "[unless lost]" review dialog,
+    // to label tubs of the outgoing flavor by their use (Front-of-House,
+    // etc.) rather than a raw id.
+    'CabinetWorkflow' => ['needs' => ['cabinet','slot','flavor','tub','allergen','use']],
     // End-of-shift report — see WHITEBOARD-INGESTION.md. Needs flavor,
     // location, and supply (the supplies_low picker), plus cabinet/slot so
     // the flavors_changed checklist can be filtered to slot.current_flavor
