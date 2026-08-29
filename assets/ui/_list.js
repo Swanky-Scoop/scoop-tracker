@@ -680,6 +680,34 @@ export default class List extends Dockable{
         return;
       }
 
+      if (def.type === 'find') {
+        label.append(labelText);
+
+        const options = (def.options ?? []).map(o => ({ key: o.key, label: o.label ?? String(o.key) }));
+        const currentOption = options.find(o => String(o.key) === String(selected));
+
+        const findIt = new FindIt(label, {
+          id: selected ?? '',
+          rowId: 0,
+          colKey: key,
+          display: currentOption?.label ?? '',
+          type: 'filter',
+          options,
+          // Override FindIt's default `${formKey}[cells][${rowId}][${colKey}]`
+          // name — a filter control isn't a row edit, and that bracket shape
+          // would otherwise false-match _handleCellChange's cells[] guard
+          // (formCodec.parseBracketName) and get treated as a phantom edit
+          // to a row that doesn't exist.
+          fieldName: `filter-${key}`,
+        }, this.name);
+        findIt.INP.id = id; // lets the refocus-after-rebuild logic below find it
+        findIt.HDN.dataset.filterKey = key;
+        findIt.HDN.dataset.filterMode = def.mode ?? 'client';
+
+        target.append(label);
+        return;
+      }
+
       if (def.type !== 'select') return;
 
       const select = this.el('select', {
@@ -1609,6 +1637,18 @@ export default class List extends Dockable{
       const control = e.target.closest('select[data-filter-key], input[type="checkbox"][data-filter-key]');
       if (!control || !this.FORM.contains(control)) return;
       await this._applyFilterChange(control);
+    });
+
+    // A 'find' filter control (see _buildFilters) is a FindIt, which reports
+    // selection via this custom event on its hidden input rather than
+    // 'change' — separate listener from the unconditional ts:findit-change →
+    // _handleCellChange one above (this filter's hidden input has no
+    // data-filter-key there, so it's a silent no-op for those; this listener
+    // is scoped the other way, only firing for elements that DO carry it).
+    this.FORM.addEventListener('ts:findit-change', async (e) => {
+      const hdn = e.target.closest('input[type="hidden"][data-filter-key]');
+      if (!hdn || !this.FORM.contains(hdn)) return;
+      await this._applyFilterChange(hdn);
     });
 
     // Text filters apply live as the user types, debounced the same as

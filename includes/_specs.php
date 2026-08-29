@@ -3,7 +3,10 @@
 function scoop_bundle_specs(): array {
   
   $specs = [
-    'Cabinet'      => ['needs' => ['cabinet','slot','flavor','tub']],
+    // 'location' added for the location-switcher filter (CabinetGridModel's
+    // getFilterDefs) — needs every Location's title, not just the id already
+    // on each cabinet row.
+    'Cabinet'      => ['needs' => ['cabinet','slot','flavor','tub','location']],
     'FlavorTub'    => ['needs' => ['tub','flavor','use','slot','location']],
     'Batch'        => ['needs' => ['flavor']],
     'BatchHistory' => ['needs' => ['batch','flavor']],
@@ -24,7 +27,9 @@ function scoop_bundle_specs(): array {
     // 'use' is needed by ConfirmSwapModal's "[unless lost]" review dialog,
     // to label tubs of the outgoing flavor by their use (Front-of-House,
     // etc.) rather than a raw id.
-    'CabinetWorkflow' => ['needs' => ['cabinet','slot','flavor','tub','allergen','use']],
+    // 'location' added for the location-switcher filter (CabinetWorkflowGridModel's
+    // getFilterDefs) — same as Cabinet, needs every Location's title.
+    'CabinetWorkflow' => ['needs' => ['cabinet','slot','flavor','tub','allergen','use','location']],
     // End-of-shift report — see WHITEBOARD-INGESTION.md. Needs flavor,
     // location, and supply (the supplies_low picker), plus cabinet/slot so
     // the flavors_changed checklist can be filtered to slot.current_flavor
