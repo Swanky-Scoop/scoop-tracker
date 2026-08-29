@@ -418,11 +418,25 @@ export default class BaseGridModel {
             }));
     }
     
-    if (fieldKey === 'flavor' || fieldKey === 'current_flavor' || 
+    if (fieldKey === 'flavor' || fieldKey === 'current_flavor' ||
         fieldKey === 'immediate_flavor' || fieldKey === 'next_flavor') {
         return this.flavorMeta?.optionsAll || [];  // ← Safe access
     }
-    
+
+    // Generic fallback for any other domain-backed relationship column
+    // (recipe, ingredient, unit, task, ...) — same {key, label} shape as
+    // location/use above, just without their own special-cased
+    // sort/fallback rules. Added for RecipeCountGridModel's 'recipe'
+    // picker (see the Batch/BatchHistory-pattern generalization pilot);
+    // covers any future domain entity the same way without needing its
+    // own branch here first.
+    if (Array.isArray(this.domain?.[fieldKey])) {
+        return [...this.domain[fieldKey]].map(u => ({
+            key: u.id,
+            label: u._title || u.title?.rendered || ''
+        }));
+    }
+
     return [];
   }
   

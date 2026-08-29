@@ -67,6 +67,14 @@ function scoop_access_policy(): array {
         'InstockFlavor' => ['GET' => true, 'POST' => true],
         'Analytics'     => ['GET' => true],
         'ShiftReport'   => ['POST' => true],
+        // Task authoring is a manager job (see the 'Task' entry in
+        // _config.php's comment) — administrator/kitchen_manager only,
+        // same split as everything else in this block. RecipeCount/Prep
+        // are the sub-items created inline as part of that same form
+        // (see TaskCreateForm), so they get the same grant.
+        'Task'          => ['GET' => true, 'POST' => true],
+        'RecipeCount'   => ['GET' => true, 'POST' => true],
+        'Prep'          => ['GET' => true, 'POST' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],
@@ -131,6 +139,11 @@ function scoop_access_policy(): array {
         'Closeout'      => ['GET' => false, 'POST' => false],
         'Analytics'     => ['GET' => false],
         'ShiftReport'   => ['POST' => true],
+        // Task authoring — this is the role the wife actually logs in as
+        // in practice, not administrator, so the real grant lives here.
+        'Task'          => ['GET' => true, 'POST' => true],
+        'RecipeCount'   => ['GET' => true, 'POST' => true],
+        'Prep'          => ['GET' => true, 'POST' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot'],

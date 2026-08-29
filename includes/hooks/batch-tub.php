@@ -223,6 +223,36 @@ function scoop_create_tubs_for_new_batch($pieces, $is_new_item, $id) {
   $batch_id = scoop_batch_saved_id($pieces, $id);
   if (!$batch_id || !function_exists('pods')) return $pieces;
 
+  // 'done' (added for task-tracked batches — see includes/hooks/kitchen-report.php
+  // and the 'task' pod) is a brand-new field with no default_value configured.
+  // Confirmed directly against real batch rows (PHP CLI, 2026-08-15): every
+  // existing Batch-GUI-created batch resolves 'done' to '0' via $pod->field()
+  // even though that path never sets it — Pods coerces an unset boolean the
+  // same as an explicit "No". Reading the resolved value alone would make
+  // every ordinary Batch-GUI save look like "done=No" and silently disable
+  // tub creation for the feature this hook exists for.
+  //
+  // The correct signal instead is whether THIS save actually included
+  // 'done' at all: PodsAPI::save_pod_item() builds fields_active only from
+  // the keys present in the incoming $data array (confirmed by reading
+  // PodsAPI.php directly, not assumed) — so an ordinary batch-GUI create
+  // (which only ever sends flavor/count/post_title/post_name/post_status,
+  // see scoop_create_pod_item()) never puts 'done' in fields_active, while
+  // a task-completion save that explicitly sets done=false does. Skip the
+  // cascade ONLY when 'done' was explicitly part of this save AND resolved
+  // falsy — matches the requested rule ("a batch with done set to 'no'
+  // does not create tubs") without touching the untouched-by-done,
+  // always-cascades Batch-GUI path at all.
+  $done_was_set = in_array('done', $pieces['fields_active'] ?? [], true);
+  if ($done_was_set) {
+    $done_value = $pieces['fields']['done']['value'] ?? null;
+    $done_is_falsy = in_array($done_value, [false, 0, '0', 'no', 'No'], true);
+    if ($done_is_falsy) {
+      scoop_log("scoop_create_tubs_for_new_batch: batch {$batch_id} done=No, skipping tub cascade (task-tracked, not yet made)");
+      return $pieces;
+    }
+  }
+
   return scoop_guard("create_tubs_for_batch:{$batch_id}", function() use ($pieces, $batch_id) {
     $request_start = microtime(true);
     $lap_start = $request_start;

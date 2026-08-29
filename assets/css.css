@@ -606,12 +606,12 @@ html > body.TS_GRID-UPDATING .scoop-grid {
 }
 
 /* see css.md#scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id */
-.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zList-form {
+.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not([data-grid-type="Task"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state)) > form.zList-form {
   min-height: 13.5rem;
 }
 
 /* see css.md#scoop-grid-not-batch-not-has-tbody-tr-not-has-li-data-row-id-2 */
-.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state))::after {
+.scoop-grid:not(.Batch):not([data-grid-type="ShiftReport"]):not([data-grid-type="Task"]):not(:has(tbody tr)):not(:has(li[data-row-id])):not(:has(.empty-state))::after {
   content: '';
   position: absolute;
   top: 0;

@@ -1021,3 +1021,140 @@
       'errors'  => $errors,
     ], $ok ? 200 : 400);
   }
+
+  /**
+   * GET /scoop/v1/kitchen-staff — read-only user list for target pickers
+   * (Task's own 'Add task' form, and Kitchen Report's task-review/reassign
+   * UI once built). Deliberately its own tiny endpoint rather than a new
+   * entity threaded through scoop_fetch_entities() (includes/bundle-fetch.php)
+   * — that function is a heavily-tuned, Pods-only pipeline (per-entity
+   * caching, bulk relationship reads keyed off wp_podsrel, etc. — see its
+   * own header comment), and WP users aren't a Pods pod at all, so there's
+   * nowhere clean to plug them in without adding a special case to code
+   * this performance-sensitive. Same "give it its own endpoint" precedent
+   * as Analytics for data that doesn't fit the bundle's shared shape.
+   *
+   * Scoped to the three kitchen-facing roles (see includes/_policy.php's
+   * role reference comment) — not every WP user, and not 'kiosk' (a shared
+   * tablet login, not a person a task could meaningfully target).
+   */
+  function scoop_kitchen_staff_handler(\WP_REST_Request $req) {
+    $users = get_users([
+      'role__in' => ['ice_cream_maker', 'kitchen_manager', 'shift_lead'],
+      'orderby'  => 'display_name',
+      'order'    => 'ASC',
+      'fields'   => ['ID', 'display_name'],
+    ]);
+
+    $staff = array_map(function($u) {
+      return ['id' => (int)$u->ID, 'title' => $u->display_name];
+    }, $users);
+
+    return new \WP_REST_Response(['ok' => true, 'staff' => array_values($staff)], 200);
+  }
+
+  /**
+   * GET /scoop/v1/my-tasks — the current user's Kitchen Report task list:
+   * tasks with no target at all (up for grabs) OR targeted at them
+   * specifically. See the design discussion this implements: "If Sam is
+   * our kitchen staff... 'Sam's Kitchen Report' would list tasks that are
+   * unassigned and those assigned to Sam."
+   *
+   * Deliberately NOT a bundle entity — the bundle is cached per-type under
+   * one shared, globally-versioned transient key (see bundle-fetch.php's
+   * header comment and CLAUDE.md's cache section), with no concept of "the
+   * requesting user" baked in; a per-user-filtered result cached under a
+   * type-wide key would leak between users the moment two different
+   * people's requests raced. Same "bypass the shared shape when it
+   * genuinely doesn't fit" precedent as Analytics and GET /kitchen-staff.
+   *
+   * Filters in PHP rather than a Pods relationship WHERE clause
+   * ("target.ID IS NULL OR target.ID = X") — Pods relationship WHERE
+   * semantics for "field has no value at all" have been a real source of
+   * bugs elsewhere in this codebase (see the wp_podsrel/sister_id notes in
+   * hooks/batch-tub.php); fetching every task and checking target in PHP
+   * sidesteps that risk entirely. Tasks are manager-authored, not bulk
+   * data, so the full-scan cost here is expected to stay small — revisit
+   * with a real WHERE/JOIN only if task volume ever makes that untrue.
+   *
+   * Each batch/recipe_count/prep sub-item is resolved with its own
+   * pods() call (N+1, not batched) for the same "correctness first,
+   * measure before optimizing" reasoning — task lists are short (a
+   * handful of sub-items each), not the thousands-of-rows case the
+   * bundle's own bulk-fetch optimizations (see bundle-fetch.php) exist for.
+   */
+  function scoop_my_tasks_handler(\WP_REST_Request $req) {
+    if (!function_exists('pods')) {
+      return new \WP_REST_Response(['ok' => false, 'error' => 'Pods API not available.'], 500);
+    }
+
+    $user_id = get_current_user_id();
+    $tasks = pods('task', ['limit' => -1, 'orderby' => 't.post_date DESC']);
+    $out = [];
+
+    if ($tasks) {
+      while ($tasks->fetch()) {
+        $target_id = scoop_rel_id($tasks->field('target'));
+        if ($target_id !== 0 && $target_id !== $user_id) continue;
+
+        $task_id = $tasks->id();
+
+        // task.batches was originally pick_format_type=single (a task
+        // could hold at most one batch) — reconfigured to multi in Pods
+        // admin partway through building this, so this resolves the same
+        // way recipe_counts/preps do now, not the old single-id shape.
+        $batches = [];
+        foreach (scoop_relation_ids_out($tasks->field('batches')) as $batch_id) {
+          $b = pods('batch', $batch_id);
+          if ($b && $b->exists()) {
+            $batches[] = [
+              'id'     => $batch_id,
+              'flavor' => (string)$b->field('flavor.post_title'),
+              'count'  => (float)$b->field('count'),
+              'done'   => (bool)$b->field('done'),
+            ];
+          }
+        }
+
+        $recipe_counts = [];
+        foreach (scoop_relation_ids_out($tasks->field('recipe_counts')) as $rc_id) {
+          $rc = pods('recipe_count', $rc_id);
+          if ($rc && $rc->exists()) {
+            $recipe_counts[] = [
+              'id'     => $rc_id,
+              'recipe' => (string)$rc->field('recipe.post_title'),
+              'count'  => (float)$rc->field('count'),
+              'done'   => (bool)$rc->field('done'),
+            ];
+          }
+        }
+
+        $preps = [];
+        foreach (scoop_relation_ids_out($tasks->field('preps')) as $prep_id) {
+          $p = pods('prep', $prep_id);
+          if ($p && $p->exists()) {
+            $preps[] = [
+              'id'         => $prep_id,
+              'ingredient' => (string)$p->field('ingredient.post_title'),
+              'count'      => (float)$p->field('count'),
+              'units'      => (string)$p->field('units.post_title'),
+              'other'      => (string)$p->field('other'),
+              'done'       => (bool)$p->field('done'),
+            ];
+          }
+        }
+
+        $out[] = [
+          'id'            => $task_id,
+          'title'         => get_the_title($task_id),
+          'other'         => (string)$tasks->field('other'),
+          'target'        => $target_id ?: null,
+          'batches'       => $batches,
+          'recipe_counts' => $recipe_counts,
+          'preps'         => $preps,
+        ];
+      }
+    }
+
+    return new \WP_REST_Response(['ok' => true, 'tasks' => $out], 200);
+  }

@@ -22,6 +22,10 @@ import ItemPivotGridModel       from "../models/item-pivot-grid-model.js";
 import ItemPivotGrid            from "../ui/item-pivot-grid.js";
 import ShiftReportGridModel     from "../models/shift-report-grid-model.js";
 import ShiftReportForm          from "../ui/shift-report-form.js";
+import TaskGridModel            from "../models/task-grid-model.js";
+import TaskCreateForm           from "../ui/task-create-form.js";
+import RecipeCountGridModel        from "../models/recipe-count-grid-model.js";
+import RecipeCountHistoryGridModel from "../models/recipe-count-history-grid-model.js";
 import HashState                from "./hash-state.js";
 
 // Some grid types run visibly heavier cold-cache queries than the rest of
@@ -34,6 +38,18 @@ const ETA_DEFAULT_BUST_MS = 15000;
 const ETA_TYPE_DEFAULT_BUST_MS = {
   DateActivity: 25000,
   BatchHistory: 25000,
+};
+
+// A create-type's `history="true"` shortcode attribute (see
+// includes/shortcode.php) embeds its paired read-only history grid right
+// inside the create widget — see _mountEmbeddedHistory() below. Originally
+// Batch-only (hardcoded to BatchHistoryGridModel); generalized here into a
+// lookup so any create+history pair can opt in just by adding a line —
+// RecipeCount/RecipeCountHistory is the second one, built to compare
+// side-by-side with Batch/BatchHistory before generalizing further.
+const HISTORY_TYPE_MAP = {
+  Batch: 'BatchHistory',
+  RecipeCount: 'RecipeCountHistory',
 };
 
 
@@ -112,6 +128,15 @@ export default class ScoopAPI {
     return 935;
   }
 
+  // RecipeCountHistory's fixed scope (see that model's own header comment)
+  // — deliberately simpler than _resolveLocation() above: just the
+  // shortcode's own `task=` attribute, no hash-state override cascade (no
+  // "switch which task you're viewing" UI exists yet). 0 means "no task
+  // scope configured" (shows everything — see that model's buildRows()).
+  _resolveTask(dom) {
+    return dom?.dataset?.task ? Number(dom.dataset.task) : 0;
+  }
+
   _normalizeRoutes(routes = {}) {
     const out = {};
     for (const [k, v] of Object.entries(routes)) out[k] = this._absUrl(v);
@@ -158,6 +183,9 @@ export default class ScoopAPI {
       "CabinetWorkflow": CabinetWorkflowGridModel,
       "ItemPivot"      : ItemPivotGridModel,
       "ShiftReport"    : ShiftReportGridModel,
+      "Task"           : TaskGridModel,
+      "RecipeCount"        : RecipeCountGridModel,
+      "RecipeCountHistory" : RecipeCountHistoryGridModel,
     };
   }
 
@@ -171,6 +199,7 @@ export default class ScoopAPI {
       "CabinetWorkflow": CabinetWorkflowTile,
       "ItemPivot"      : ItemPivotGrid,
       "ShiftReport"    : ShiftReportForm,
+      "Task"           : TaskCreateForm,
     };
   }
 
@@ -788,57 +817,79 @@ export default class ScoopAPI {
   }
 
 
-  // Batch's `history` shortcode attribute (see includes/shortcode.php) embeds
-  // a read-only BatchHistory listing right inside the Batch widget instead of
-  // requiring a separate [scoop_grid type="BatchHistory"] shortcode. It gets
-  // no host div and no dock toggle of its own — mounted against a throwaway
-  // detached element, so dockToggle() (called by the caller, same as every
-  // other grid) no-ops since that element is never inside an .in-dock
-  // ancestor — then its <form> is moved to sit immediately after Batch's own
-  // <form>, so it opens/closes together with Batch's own toggle instead of
-  // needing one of its own. Safe to co-locate in Batch's host div because
-  // List's delegated click listener is scoped to `this.FORM`, not
-  // `this.target` — see the comment in _list.js's _bindEvents.
-  _mountEmbeddedBatchHistory(batchDom, batchGrid, formCodec) {
-    const location = this._resolveLocation(batchDom);
-    const modelInstance = new BatchHistoryGridModel("BatchHistory", null, {
+  // A create-type's `history` shortcode attribute (see includes/shortcode.php,
+  // HISTORY_TYPE_MAP above) embeds its read-only "<Type>History" listing
+  // right inside the create widget instead of requiring a separate
+  // [scoop_grid type="<Type>History"] shortcode. It gets no host div and no
+  // dock toggle of its own — mounted against a throwaway detached element,
+  // so dockToggle() (called by the caller, same as every other grid) no-ops
+  // since that element is never inside an .in-dock ancestor — then its
+  // <form> is moved to sit immediately after the create grid's own <form>,
+  // so it opens/closes together with the create grid's own toggle instead
+  // of needing one of its own. Safe to co-locate in the create grid's host
+  // div because List's delegated click listener is scoped to `this.FORM`,
+  // not `this.target` — see the comment in _list.js's _bindEvents.
+  //
+  // Originally Batch-only (_mountEmbeddedBatchHistory, hardcoded to
+  // BatchHistoryGridModel) — generalized to look its model class up via
+  // getModelsBom() so any type in HISTORY_TYPE_MAP works the same way.
+  // `task` is passed alongside `location` unconditionally, same "pass a
+  // superset, let each model use what it needs" approach the main
+  // bundle-grid loop already uses for location/dateFilters/group/filters —
+  // BatchHistoryGridModel ignores it, RecipeCountHistoryGridModel is
+  // scoped by it (see that model's own header comment).
+  _mountEmbeddedHistory(baseDom, baseGrid, formCodec, historyType) {
+    const location = this._resolveLocation(baseDom);
+    const task = this._resolveTask(baseDom);
+    const ModelClass = this.getModelsBom()[historyType];
+    if (typeof ModelClass !== 'function') {
+      console.warn(`ScoopAPI._mountEmbeddedHistory: no model for history type "${historyType}"`);
+      return null;
+    }
+
+    const modelInstance = new ModelClass(historyType, null, {
       location,
-      metaData: SCOOP.metaData?.BatchHistory,
+      task,
+      metaData: SCOOP.metaData?.[historyType],
     });
 
-    const grid = new Grid(document.createElement('div'), "BatchHistory", {
+    const grid = new Grid(document.createElement('div'), historyType, {
       api: this,
       modelInstance,
       formCodec,
       columns: modelInstance.columns,
-      pageStatusId: `${batchDom.id}::history`,
+      pageStatusId: `${baseDom.id}::history`,
     });
 
     grid.dockToggle?.();
-    grid.FORM.classList.add('batch-history-embedded');
-    batchGrid.FORM.after(grid.FORM);
+    // Kebab-cased from historyType ('BatchHistory' -> 'batch-history-embedded',
+    // matching the original hardcoded class exactly) plus a type-agnostic
+    // 'history-embedded' class for any shared CSS not written per-type yet.
+    const kebabType = historyType.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
+    grid.FORM.classList.add('history-embedded', `${kebabType}-embedded`);
+    baseGrid.FORM.after(grid.FORM);
 
-    // Min/max toggle, placed right after Batch's own Save button — lets the
-    // history receipt be tucked away without closing Batch's whole popup.
-    // State lives as a class on the Batch host div (not on the embedded
-    // form itself) so plain CSS drives the show/hide, and the state is
-    // inspectable from outside this method without reaching into either
-    // grid instance.
+    // Min/max toggle, placed right after the create grid's own Save button
+    // — lets the history receipt be tucked away without closing the create
+    // grid's whole popup. State lives as a class on the create grid's host
+    // div (not on the embedded form itself) so plain CSS drives the
+    // show/hide, and the state is inspectable from outside this method
+    // without reaching into either grid instance.
     const minMaxBtn = document.createElement('button');
     minMaxBtn.type = 'button';
     minMaxBtn.className = 'history-min-max';
-    minMaxBtn.title = 'Toggle batch history';
-    batchGrid.SUBMIT.after(minMaxBtn);
+    minMaxBtn.title = `Toggle ${historyType}`;
+    baseGrid.SUBMIT.after(minMaxBtn);
 
     const setHistoryOpen = (isOpen) => {
-      batchDom.classList.toggle('history-open', isOpen);
+      baseDom.classList.toggle('history-open', isOpen);
       minMaxBtn.classList.toggle('active', isOpen);
     };
 
     // Unconditional toggle — works the same whether the list is currently
     // empty or populated, so an empty receipt can still be opened by hand.
     minMaxBtn.addEventListener('click', () => {
-      setHistoryOpen(!batchDom.classList.contains('history-open'));
+      setHistoryOpen(!baseDom.classList.contains('history-open'));
     });
 
     // Default open/closed once real data has actually loaded (grid.FORM's
@@ -849,10 +900,10 @@ export default class ScoopAPI {
       setHistoryOpen(!grid.FORM.classList.contains('empty'));
     }, { once: true });
 
-    // A freshly-created batch is exactly the thing this receipt exists to
+    // A freshly-created row is exactly the thing this receipt exists to
     // show — reopen it even if the user had minimized it or it was
     // defaulted closed for having nothing to show yet.
-    batchGrid.FORM.addEventListener('ts:list:saved', () => setHistoryOpen(true));
+    baseGrid.FORM.addEventListener('ts:list:saved', () => setHistoryOpen(true));
 
     return grid;
   }
@@ -890,13 +941,15 @@ export default class ScoopAPI {
         location: resolvedLocation || '',
       });
 
-      // Batch's `history` shortcode attribute embeds a BatchHistory grid
-      // with no host div of its own (see _mountEmbeddedBatchHistory) — give
-      // it its own PageStatus entry anyway so its load state is still visible.
-      if (dom.dataset.gridType === 'Batch' && dom.dataset.history) {
+      // A create type's `history` shortcode attribute embeds its paired
+      // history grid with no host div of its own (see
+      // _mountEmbeddedHistory) — give it its own PageStatus entry anyway
+      // so its load state is still visible.
+      const historyType = HISTORY_TYPE_MAP[dom.dataset.gridType];
+      if (historyType && dom.dataset.history) {
         PageStatus.register(`${dom.id}::history`, {
-          label: `Batch History (${resolvedLocation || 'no location'})`,
-          type: 'BatchHistory',
+          label: `${historyType} (${resolvedLocation || 'no location'})`,
+          type: historyType,
           location: resolvedLocation || '',
         });
       }
@@ -912,14 +965,15 @@ export default class ScoopAPI {
     const bundleTypeHosts = this._hosts.filter(dom => !analyticsTypes.has(dom.dataset.gridType));
     this.gridTypes = new Set(bundleTypeHosts.map(dom => dom.dataset.gridType).filter(Boolean));
 
-    // A Batch host with data-history="1" embeds BatchHistory's <form>
-    // directly inside the Batch widget instead of via its own host div (see
-    // _mountEmbeddedBatchHistory below), so its type wouldn't otherwise make
-    // it into the bundle request below — add it explicitly so the fetched
-    // domain includes what BatchHistoryGridModel needs (batch/flavor).
-    if (bundleTypeHosts.some(dom => dom.dataset.gridType === 'Batch' && dom.dataset.history)) {
-      this.gridTypes.add('BatchHistory');
-    }
+    // A create-type host with data-history="1" embeds its history grid's
+    // <form> directly inside the create widget instead of via its own host
+    // div (see _mountEmbeddedHistory below), so its type wouldn't otherwise
+    // make it into the bundle request below — add each one explicitly so
+    // the fetched domain includes what that history model needs.
+    bundleTypeHosts.forEach(dom => {
+      const historyType = HISTORY_TYPE_MAP[dom.dataset.gridType];
+      if (historyType && dom.dataset.history) this.gridTypes.add(historyType);
+    });
 
     this._setPageTypes();
 
@@ -1014,8 +1068,9 @@ export default class ScoopAPI {
       bundleGrids.push(grid);
       allGrids.push(grid);
 
-      if (type === 'Batch' && dom.dataset.history) {
-        const historyGrid = this._mountEmbeddedBatchHistory(dom, grid, formCodec);
+      const historyType = HISTORY_TYPE_MAP[type];
+      if (historyType && dom.dataset.history) {
+        const historyGrid = this._mountEmbeddedHistory(dom, grid, formCodec, historyType);
         bundleGrids.push(historyGrid);
         allGrids.push(historyGrid);
       }

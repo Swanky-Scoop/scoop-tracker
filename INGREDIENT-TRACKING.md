@@ -2,7 +2,259 @@
 
 **Branch:** `worktree-ingredient-tracking` (worktree at `.claude/worktrees/ingredient-tracking`), based on `main` @ `aa9a37b` ("Shift report and DOM clean-up for doc").
 
-Read this file first on this branch. It captures two features deliberately
+Read this file first on this branch.
+
+## ⚡ STATUS AS OF 2026-08-15 evening — READ THIS FIRST
+
+Everything below this section (down to "Feature 1: sub-ingredient production
+log") is the **original planning doc**, written before any code existed.
+Substantial implementation has happened since — this section is the
+up-to-date picture. The original two "features" framing is now partly
+superseded (see "How the plan actually diverged" below) — the Pods schema
+the user built and the client architecture direction from this session are
+the current source of truth, not the original doc's guesses.
+
+### Environment state
+- Local WP's plugin junction (`Local Sites/swank-tracker/.../plugins/scoop_rest`)
+  is pointed at **this worktree** (`.claude/worktrees/ingredient-tracking`) —
+  swap tool: `.claude/tools/local-plugin-link.ps1` (see
+  `[[local-plugin-symlink-swap]]` memory). Verify before assuming — it
+  doesn't reset on its own.
+- Local dev login: see `[[local-dev-login]]` memory (user-approved to store,
+  local-only).
+- **Known testing gotcha, hit repeatedly this session:** only `assets/app.js`
+  gets `?ver=filemtime()` cache-busting (see `enqueue.php`). Every file it
+  `import`s (all of `assets/models/*.js`, `assets/ui/*.js`,
+  `assets/data/scoop-api.js`) does NOT — editing one of those and reloading
+  the page can silently keep running the OLD cached copy, even across
+  `about:blank` round-trips and new tabs (same browser profile shares HTTP
+  cache). **Workaround:** dynamically import the specific file with a
+  `?bust=<timestamp>` query string in `browser_evaluate` to get a genuinely
+  fresh copy — see `[[eta-timer-immediate-feedback]]` memory for the first
+  time this was hit. This is a real, recurring cost — worth fixing properly
+  (extend the cache-busting scheme to child modules) if it keeps coming up,
+  but nobody's asked for that yet.
+- Test/scratch pages on local: **Production** page (id 8140, published,
+  slug `/production/`) has
+  `[scoop_grid type="Batch" history="true" location="935"]`,
+  `[scoop_grid type="Task"]`, `BatchHistory`, `Cabinet`, `ItemPivot`.
+  **tasks** page (id 15210, published, slug `/tasks/`) has
+  `[scoop_grid type="Task"]` and a **stale** `[scoop_grid type="RecipeCount"
+  task="15233" history="true"]` — task 15233 was a throwaway test task and
+  is already deleted, so that shortcode currently shows nothing useful.
+  Update the `task="..."` id to a real task before relying on it.
+
+### Pods schema — built by the user directly in Pods admin (not in code)
+
+Confirmed live on local via `pods_api()->load_field()`, not just read off
+the admin screenshots:
+
+- **`task`**: `recipe_counts` (multi → `recipe_count`), `batches` (multi →
+  `batch` — **was briefly `single`, user changed it to `multi` mid-session**),
+  `preps` (multi → `prep`), `other` (text), `target` (→ Users, single).
+  `task.recipe_counts` / `task.batches` / `task.preps` are genuine Pods
+  bidirectional (sister_id) pairs with `recipe_count.task` / `batch.task` /
+  `prep.task` — setting the child's own `task` field is enough, Pods syncs
+  the task's reverse list automatically, no follow-up write needed.
+- **`recipe_count`**: `recipe` (→ recipe), `count`, `task` (→ task),
+  `done` (bool), `report` (→ kitchen_report, unused so far).
+- **`prep`**: `ingredient` (→ ingredient), `other` (text), `count`,
+  `units` (→ unit), `task` (→ task), `done` (bool). User flagged this one
+  may be worth simplifying (drop `other`) to match the 2-field
+  batch/recipe_count shape once its own create+history grid gets built.
+- **`base_pack`**: `base`, `count`, `cooling` (custom list, fridge/freezer),
+  `report` (→ kitchen_report). **Not touched yet** — no client code, no
+  entity spec.
+- **`batch`** (pre-existing pod, extended): added `task` (→ task, single)
+  and `done` (bool, new field, no default configured). Existing
+  Batch-GUI-created batches never set either — confirmed via direct
+  DB/field-config inspection that Pods resolves an *unset* `done` to the
+  same `'0'` as an *explicit* false, which is why the guard below can't
+  just check the resolved value.
+- **`kitchen_report`**: `target`, `recipe_counts`, `base_counts`,
+  `supplies_low` (→ supply), `tasks`, `kitchen_visitors` (custom list),
+  `notes`. **Not touched by any code yet** — this is the branch's actual
+  original goal and hasn't been started.
+
+### What's actually been built (server)
+
+All in this worktree, uncommitted (check `git status`):
+
+- **`includes/hooks/kitchen-report.php`** (new file) — auto-title pre-save
+  hooks for `prep`, `task`, `recipe_count`. Patterns:
+  - `prep`: `"{other }{ingredient} {count} {unit} {date}"`
+  - `task`: `"{other, trimmed to 8 words} ({target name|Unassigned}) {date}"`
+  - `recipe_count`: `"{recipe} {count} (Task {task_id})"` — **deliberately
+    no timestamp**, per explicit user request; task id instead, omitted
+    entirely if no task is linked. Verified live: `"Runny Sauce 4 (Task
+    15243)"` vs `"Runny Sauce 2"` with no task.
+- **`includes/hooks/batch-tub.php`** — added a guard at the top of
+  `scoop_create_tubs_for_new_batch()`: skips the tub-creation cascade only
+  when `done` was **explicitly** part of *this* save's payload AND
+  resolved falsy (checked via Pods' own `fields_active`, not the resolved
+  value — see the reasoning above). Ordinary Batch-GUI saves (which never
+  touch `done`) are completely unaffected — verified directly: a
+  task-tracked batch saved with `done:false` created 0 tubs; the existing
+  Batch GUI path still creates tubs normally.
+- **`includes/_config.php`** — new `'Task'`, `'RecipeCount'`, `'Prep'`
+  route entries, `mode: 'create'`, mirroring `'Batch'` exactly (minimal
+  fields, `target: 'action'`).
+- **`includes/_write_fields.php`** — `scoop_tasks_allowed_fields()`
+  (`target`,`other`), `scoop_recipe_counts_allowed_fields()`
+  (`recipe`,`count`,`task`), `scoop_preps_allowed_fields()`
+  (`ingredient`,`other`,`count`,`units`,`task`); broadened
+  `scoop_batches_allowed_fields()` to also allow `task`,`done` (ordinary
+  Batch GUI never sends them, so this is additive-only). **Real bug fixed**
+  in `scoop_create_pod_item()`: every pod created through it now defaults
+  `post_status` to `publish` unless the caller set it explicitly — before
+  this, `task`/`recipe_count`/`prep` rows silently saved as WordPress
+  `draft`, which makes them invisible to Pods relationship queries (same
+  class of bug this project has hit before for tubs/supply items).
+- **`includes/_policy.php`** — `'Task'`, `'RecipeCount'`, `'Prep'` routes
+  granted to `administrator` and `kitchen_manager` (task/sub-item
+  *authoring* is a manager job — the wife, per the design discussion).
+  Staffers (`ice_cream_maker`/`shift_lead`) do **not** have these grants
+  yet — they'll need at least read access once the actual Kitchen Report
+  form (task confirmation) gets built.
+- **`includes/_specs.php`** — new entity specs: `recipe`, `ingredient`,
+  `unit` (all minimal id+title, not writeable from this app), `recipe_count`
+  (recipe, count, task [hidden], done). New bundle specs: `'Task'` (needs
+  flavor/recipe/ingredient/unit — from the now-mostly-superseded
+  TaskCreateForm work), `'RecipeCount'` (needs `recipe`),
+  `'RecipeCountHistory'` (needs `recipe_count`,`recipe`).
+- **`includes/rest.php`** — `scoop_kitchen_staff_handler()` (`GET
+  /kitchen-staff`, role-filtered `get_users()` for target pickers — its own
+  endpoint, not threaded through the Pods-only bundle pipeline, since WP
+  Users aren't a Pods pod); `scoop_my_tasks_handler()` (`GET /my-tasks`,
+  the current user's unassigned-or-mine task list with nested
+  batches/recipe_counts/preps resolved — also its own endpoint, since the
+  bundle's cache is a single shared-per-type transient with no per-user
+  concept, and a personalized result can't safely ride it). Both verified
+  live with real filtering (unassigned + mine shown, someone-else's task
+  correctly excluded).
+- **`includes/_routes.php`** — registered `/kitchen-staff`, `/my-tasks`.
+  **Real pre-existing bug fixed**, unrelated to this branch's own new code:
+  the generic per-type route-registration loop indexed
+  `$cfg['path']`/`$cfg['methods']` unconditionally, but 6 existing types
+  (`Popular`,`BatchHistory`,`ItemPivot`,`EmptiedLog`,`Flavors`,`Analytics`)
+  are deliberately bundle-only with neither key set — this threw PHP
+  warnings on **every single REST request** (confirmed on `/bundle` itself,
+  which predates this branch entirely), and with this local site's
+  `display_errors` on, that warning HTML silently corrupted every JSON
+  response's body. Only ever tolerated because `res.json().catch(()=>null)`
+  swallows the parse failure everywhere it's called. Fixed with a guard
+  clause skipping config entries missing either key.
+- **`includes/shortcode.php`** — new `task="..."` attribute (parallel to
+  `location`), emits `data-task` on the host div. Generalized the `history`
+  attribute's own doc comment off "Batch-only" phrasing.
+
+### What's actually been built (client)
+
+- **`assets/models/_single-relation-count-grid-model.js`** (new,
+  underscored = abstract base) — the generalized "pick one relationship +
+  a count, single blank row" create-grid shape, extracted after
+  `RecipeCountGridModel` turned out identical to `BatchGridModel` except
+  for one string (the relation field name). `BatchGridModel` and
+  `RecipeCountGridModel` are now ~3-line subclasses naming their field.
+  **Not yet done:** the *history*-grid half (`BatchHistoryGridModel` vs
+  `RecipeCountHistoryGridModel`) is NOT generalized — they diverge more
+  (date-range filter + delete action vs. fixed task-scope + no delete) —
+  deliberately left alone until a third instance clarifies the common
+  shape, same reasoning that held off generalizing the create side until
+  RecipeCount existed to compare against Batch.
+- **`assets/models/recipe-count-grid-model.js`**,
+  **`recipe-count-history-grid-model.js`** — the second concrete
+  create+history pair (after Batch/BatchHistory), built specifically to
+  find the generalizable seam. History grid filters to one `task` (fixed
+  at construction, no runtime switcher UI) instead of a date range.
+- **`assets/models/_base-grid-model.js`** — added a generic fallback in
+  `getOptions()`: any `this.domain[fieldKey]` array not already
+  special-cased (state/location/use/flavor) gets the same `{key,label}`
+  treatment — this is what `recipe` (and any future domain-backed picker)
+  rides on for free.
+- **`assets/data/scoop-api.js`** — generalized `_mountEmbeddedBatchHistory`
+  → `_mountEmbeddedHistory(dom, grid, formCodec, historyType)`, driven by
+  a new `HISTORY_TYPE_MAP` (`{Batch: 'BatchHistory', RecipeCount:
+  'RecipeCountHistory'}`) instead of being hardcoded to Batch. Added
+  `_resolveTask(dom)` (reads `data-task`, no hash-state cascade yet —
+  simpler than `_resolveLocation`). `getModelsBom()` includes
+  `Task`/`RecipeCount`/`RecipeCountHistory` now.
+- **`assets/models/task-grid-model.js`**, **`assets/ui/task-create-form.js`**
+  — a **bespoke, hand-built** "Add task" form (target select, description,
+  repeatable batch/recipe-count/prep rows via hand-wired `FindIt`
+  instances, sequential multi-endpoint POST orchestration on submit). This
+  was built **before** the user redirected toward the Batch/BatchHistory
+  generalized-grid pattern for RecipeCount — it still works (fully tested,
+  including multi-batch rows and FindIt search), but its approach is now
+  somewhat orphaned relative to the newer, cleaner pattern. **Open
+  question for next session: does Task get the same create+history-grid
+  treatment (in which case this bespoke form gets replaced/retired), or
+  does it stay bespoke because `target`+`other` doesn't fit the "one
+  relation + a count" shape the new base class assumes?** Leaning toward
+  the latter (Task isn't really a "single-relation-count" thing — it has
+  no count field at all — so it may legitimately need its own shape), but
+  this wasn't explicitly settled with the user.
+- **`assets/css.css`** — added `Task` to the shimmer-overlay exclusion
+  selector (alongside the pre-existing `ShiftReport` one) — standalone
+  bespoke forms need this or they render correctly but stay visually
+  covered forever. **Note:** if the Task bespoke form does get retired in
+  favor of a real grid, this exclusion becomes dead and could be removed;
+  if RecipeCount or Prep ever need a *non-embedded*, standalone-form
+  treatment (unlikely, they're grid-based), they'd need the same
+  treatment `Batch`/`ShiftReport`/`Task` already have.
+
+### How the plan actually diverged from the original doc below
+
+The original doc (rest of this file) framed this branch as designing a
+**new pod** for sub-ingredient production. What actually happened: the user
+had already designed and built (in Pods admin) a much richer, more general
+system — `task` as a central assignment unit bundling typed "counter"
+sub-items (`batch`, `recipe_count`, `prep`), rather than one dedicated
+production-log pod. `recipe_count` (recipe + count) turned out to likely
+*be* the answer to "sub-ingredient production log," since recipes already
+carry their own ingredient lists — a `recipe_count.done` provides the path
+to real ingredient-consumption tracking later, without a new pod. **Feature
+2 (standing shopping list) has not been touched at all.**
+
+**`ingredients_low` was explicitly decided against** (see `kitchen_report`
+schema above — no such field): the user's call was that real signal should
+come from actual consumption (`recipe_count.done` × the recipe's own
+ingredient list) rather than staff manually flagging "running low" — this
+directly avoids CLAUDE.md's documented ingredient-data-quality problem
+instead of adding another unreliable manually-entered signal on top of it.
+
+### Immediate next steps (not yet started)
+
+1. Decide Task's own UI treatment (see open question above) — probably
+   worth just asking the user directly rather than guessing again.
+2. If continuing the grid-pattern generalization: **Prep** is next
+   (`ingredient`+`count`+`units`+`other` — one more field than
+   Batch/RecipeCount's 2; user suggested dropping `other` for consistency).
+   This does NOT fit `_single-relation-count-grid-model.js` as-is (extra
+   fields) — will need either a variant base class or to stay hand-built.
+3. Generalize the *history*-grid pattern once Prep's history grid exists
+   as a third data point (see the "not yet done" note above).
+4. **The actual Kitchen Report form** — the branch's original goal,
+   entirely unstarted: a staffer-facing form reading `/my-tasks`, letting
+   them review/confirm assigned+unassigned tasks and mark
+   batch/recipe_count/prep sub-items done (which is what should trigger
+   real tub creation for a task-tracked batch, per the `done` guard
+   already built), plus `supplies_low`/`base_counts`/`kitchen_visitors`/
+   `notes` fields on `kitchen_report` itself (none of which have any code
+   yet). Needs its own design pass on how "mark this task's items done"
+   actually works in the UI.
+5. Feature 2 (shopping list) — completely unstarted, not even revisited
+   since the original planning doc below.
+6. Minor: fix the stale `task="15233"` on the tasks page test shortcode
+   (or remove it) so it isn't confusing to whoever looks at it next.
+
+---
+
+## Original planning doc (superseded in large part by the above — kept for
+## historical context, e.g. the "sharpen data clarity" rule and the CSV data
+## discussion are still directly relevant)
+
+It captures two features deliberately
 deferred out of a longer main-branch session about generalizing
 `assets/ui/shift-report-form.js` into a reusable form builder (for Shift
 Report + a new Kitchen Report + future forms) — that generalization work

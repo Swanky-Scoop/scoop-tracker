@@ -40,6 +40,7 @@ scoop_require('includes/hooks/batch-tub.php');
 scoop_require('includes/hooks/tub-state.php');
 scoop_require('includes/hooks/closeout.php');
 scoop_require('includes/hooks/nightly-sales.php');
+scoop_require('includes/hooks/kitchen-report.php');
 
 /**
  * REST + bundle

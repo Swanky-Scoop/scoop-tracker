@@ -76,7 +76,24 @@ add_action('rest_api_init', function () {
   // REST endpoints (write)
   $routes = scoop_routes_config();
 
+  // Pre-existing bug, found while adding /my-tasks (confirmed it predates
+  // that work — /bundle exhibits the same corruption): several
+  // scoop_routes_config() entries (Popular, BatchHistory, ItemPivot,
+  // EmptiedLog, Flavors, Analytics) are deliberately bundle-only, with no
+  // 'path'/'methods' of their own (see their own comments in _config.php —
+  // "No path/methods/mode/envelope_key here... read purely through the
+  // /bundle endpoint"). This loop indexed $cfg['path']/$cfg['methods']
+  // unconditionally for every entry, so those six threw "Undefined array
+  // key" warnings on literally every single REST request (this code runs
+  // on every rest_api_init, regardless of which route is actually being
+  // called) — with WP_DEBUG display on for this local site, that warning
+  // HTML gets prepended to every REST response body, corrupting the JSON.
+  // Silently tolerated everywhere else because res.json().catch(()=>null)
+  // patterns swallow the parse failure — confirmed directly that it's been
+  // silently breaking every endpoint's response, not just new ones.
   foreach ($routes as $key => $cfg) {
+    if (empty($cfg['path']) || empty($cfg['methods'])) continue;
+
     register_rest_route(
       'scoop/v1',
       $cfg['path'],
@@ -128,6 +145,26 @@ add_action('rest_api_init', function () {
     'callback' => function(\WP_REST_Request $req) {
       return new \WP_REST_Response(['ok' => true] + scoop_shift_report_field_schema(), 200);
     },
+    'permission_callback' => 'scoop_require_authenticated_user_read_only',
+  ]);
+
+  // Read-only staff list for target pickers (Task's create form, Kitchen
+  // Report's task UI) — see scoop_kitchen_staff_handler() in rest.php.
+  // Same permission tier as /bundle/shift-report-fields: any authenticated
+  // user, not gated per-route, since it's just reference data for a
+  // dropdown.
+  register_rest_route('scoop/v1', '/kitchen-staff', [
+    'methods'  => ['GET'],
+    'callback' => 'scoop_kitchen_staff_handler',
+    'permission_callback' => 'scoop_require_authenticated_user_read_only',
+  ]);
+
+  // The current user's Kitchen Report task list — see
+  // scoop_my_tasks_handler() in rest.php. Same permission tier: personalized
+  // by the requesting user internally, not gated per-route.
+  register_rest_route('scoop/v1', '/my-tasks', [
+    'methods'  => ['GET'],
+    'callback' => 'scoop_my_tasks_handler',
     'permission_callback' => 'scoop_require_authenticated_user_read_only',
   ]);
 });

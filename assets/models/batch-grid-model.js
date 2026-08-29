@@ -1,58 +1,10 @@
-import BaseGridModel from "./_base-grid-model.js";
-import Indexer       from "../data/indexer.js";
+import SingleRelationCountGridModel from "./_single-relation-count-grid-model.js";
 
-export default class BatchGridModel extends BaseGridModel{
-
-  constructor(name = 'Batch', domain, attrs = {}, metaData = null) 
-  {
-    super(name, domain, attrs, metaData );
-    this._flavorsById  = Indexer.byId(domain?.flavor) || {};
-    this.submitMode = 'all';
-    // Always a single blank "create new batch" row, not a view onto
-    // persisted data — a background refresh from some other grid's save has
-    // nothing here to bring up to date, so don't let it repaint mid-typing.
-    // See the repaintOnRefresh check in _list.js's _onDomainUpdated.
-    this.repaintOnRefresh = false;
-    this._build();
+// "Add batch" — flavor + count. See _single-relation-count-grid-model.js
+// for the shared shape (extracted from this file once RecipeCountGridModel
+// turned out identical except for the relation field name).
+export default class BatchGridModel extends SingleRelationCountGridModel {
+  constructor(name = 'Batch', domain, attrs = {}, metaData = null) {
+    super(name, 'flavor', domain, attrs, metaData);
   }
-
-  buildCols() {
-    this.columns = [
-      { key: "flavor", label: "flavor", write: true, type: "flavor", titleMap: "flavor" },
-      { key: "count", label: "count", write: true, control: "text", type: "number", step:0.01 }
-    ];
-    return this.columns;
-  }
-  
-  buildRows() {
-    // single row
-    const rowId = 0;
-    
-    this.rows = [
-      {
-        id: rowId,
-        // flavor cell (FindIt expects id/display/options/etc.)
-        flavor: {
-          id: 0,
-          rowId,
-          colKey: "flavor",
-          type: "flavor",
-          display: "",
-          options: this.getOptions("flavor", "flavor", 0),
-          badges: []
-        },
-        // count cell (TextIt expects value/display + rowId/colKey/type)
-        count: { 
-          rowId,
-          colKey: "count",
-          type: "number",
-          step: 0.01,
-          value: ""          // default blank
-        }        
-      }
-    ];
-
-    return this.rows;
-  } 
-
 }

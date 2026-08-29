@@ -13,8 +13,45 @@ function scoop_planning_allowed_slot_fields(\WP_User $u): array {
   return scoop_allowed_fields_for_entity($u, 'slot', $route_fields);
 }
 
+// 'task'/'done' added for task-tracked batches created inline from the
+// 'Add task' form (see TaskCreateForm) — the ordinary Batch GUI
+// (assets/models/batch-grid-model.js) never sends either field, so
+// broadening what's allowed here doesn't change its behavior at all, it
+// just lets a caller that DOES send them (this one) actually write them.
+// TaskCreateForm always sends done=false explicitly for a batch it
+// creates (never omits it) — see the tub-cascade guard's own comment in
+// includes/hooks/batch-tub.php for why that distinction (explicitly false
+// vs. simply absent) is exactly what it's keyed on.
 function scoop_batches_allowed_fields(\WP_User $u): array {
-  return [ 'flavor','count' ];
+  return [ 'flavor','count','task','done' ];
+}
+
+// Same fixed-list shape as scoop_batches_allowed_fields() above, not the
+// live-Pods-field-names pattern shift_report/cake_order use — task's
+// authoring form is deliberately just target+other (see the 'Task' entry
+// in _config.php), so there's no reason for every field Pods admin might
+// grow on the task pod later (recipe_counts/batches/preps — those get set
+// by their own counter records, not this form) to automatically become
+// writeable from this one route.
+function scoop_tasks_allowed_fields(\WP_User $u): array {
+  return [ 'target','other' ];
+}
+
+// Unlike scoop_tasks_allowed_fields() above, 'task' IS included here — a
+// recipe_count/prep created inline from the 'Add task' form (see
+// TaskCreateForm) needs to write its own 'task' field to attach itself
+// back to the task that was just created. task.recipe_counts/task.preps
+// are configured as bidirectional (sister) Pods fields with
+// recipe_count.task/prep.task (confirmed directly via
+// pods_api()->load_field() against the real local pod config), so setting
+// this one field is enough — Pods syncs the task's own reverse list
+// itself, no follow-up write to the task needed.
+function scoop_recipe_counts_allowed_fields(\WP_User $u): array {
+  return [ 'recipe','count','task' ];
+}
+
+function scoop_preps_allowed_fields(\WP_User $u): array {
+  return [ 'ingredient','other','count','units','task' ];
 }
 
 function scoop_tubs_allowed_fields(\WP_User $u): array {
@@ -97,6 +134,23 @@ function scoop_create_pod_item(string $pod_name, array $allowed_fields, array $d
     }
   } elseif (empty($clean)) {
     return new WP_Error('create_empty_payload', 'Create failed: no writeable fields were provided.');
+  }
+
+  // Same class of bug this project has hit (and fixed the same way) for
+  // tub and supply: pods_api()->save_pod_item() without an explicit
+  // post_status defaults new posts to 'draft', and Pods relationship
+  // fields default to pick_post_status=publish — so a draft item is
+  // silently invisible to any relationship pointing at it (task.other,
+  // kitchen_report.recipe_counts, etc.) even though the row itself saved
+  // fine. Confirmed directly: a Task created through this exact path
+  // landed as 'draft' before this line existed. batch's own branch above
+  // already set this explicitly; generalized here so every other pod
+  // created through this one helper (task, recipe_count, prep, base_pack,
+  // kitchen_report) gets it too, without needing its own copy of the same
+  // fix. Only applies when the caller didn't already set post_status
+  // itself (batch's branch above still wins for its own value).
+  if (!isset($clean['post_status'])) {
+    $clean['post_status'] = 'publish';
   }
 
   $params = ['pod' => $pod_name, 'data' => $clean];

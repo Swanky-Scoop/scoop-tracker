@@ -53,6 +53,61 @@ function scoop_routes_config(string $batch_key = ''): array {
       'cascades_to'  => ['tub'],
       'allowed_fields_cb' => 'scoop_batches_allowed_fields',
     ],
+    // Minimal "Add task" quick-create — the wife authors tasks (target
+    // staffer + a short description), same "type is admin/manager-only,
+    // creation is deliberately one shallow form, not a spreadsheet" shape
+    // as Batch above. Deliberately just target+other: a task's actual work
+    // (recipe_count/batch/prep sub-items) gets attached separately by
+    // creating those records with this task's id in their own 'task'
+    // field, not by this form — same reasoning Batch's own GUI never sets
+    // 'tubs' directly (see cascades_to below the fold on Batch). No
+    // 'cascades_to' here: unlike Batch, creating a bare task has no
+    // side-effect write to any other pod.
+    'Task' => [
+      'display_title' => 'Add task',
+      'icon'         => 'if:plus',
+      'target'       => 'action',
+      'path'         => '/tasks',
+      'methods'      => ['GET','POST'],
+      'mode'         => 'create',
+      'envelope_key' => 'Task',
+      'post_type'    => 'task',
+      'pod_name'     => 'task',
+      'allowed_fields_cb' => 'scoop_tasks_allowed_fields',
+    ],
+    // 'recipe_count' and 'prep' rows created inline as part of the 'Add
+    // task' form (see TaskCreateForm) — unlike Batch/Task's own creation
+    // forms above, 'task' IS in the allowed-fields list here, since the
+    // whole point of creating one of these from the task form is to point
+    // it back at the task that was just created (see
+    // scoop_recipe_counts_allowed_fields/scoop_preps_allowed_fields in
+    // _write_fields.php). Both cascade nothing of their own — recipe_count/
+    // prep don't create any other pod's rows as a side effect the way
+    // Batch's cascades_to tub does.
+    'RecipeCount' => [
+      'display_title' => 'Add recipe count',
+      'icon'         => 'if:plus',
+      'target'       => 'action',
+      'path'         => '/recipe-counts',
+      'methods'      => ['GET','POST'],
+      'mode'         => 'create',
+      'envelope_key' => 'RecipeCount',
+      'post_type'    => 'recipe_count',
+      'pod_name'     => 'recipe_count',
+      'allowed_fields_cb' => 'scoop_recipe_counts_allowed_fields',
+    ],
+    'Prep' => [
+      'display_title' => 'Add prep',
+      'icon'         => 'if:plus',
+      'target'       => 'action',
+      'path'         => '/preps',
+      'methods'      => ['GET','POST'],
+      'mode'         => 'create',
+      'envelope_key' => 'Prep',
+      'post_type'    => 'prep',
+      'pod_name'     => 'prep',
+      'allowed_fields_cb' => 'scoop_preps_allowed_fields',
+    ],
     'Popular' => [
       'display_title' => 'Popular plot',
       'icon'         => 'if:z',

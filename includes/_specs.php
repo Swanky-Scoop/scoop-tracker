@@ -7,6 +7,13 @@ function scoop_bundle_specs(): array {
     'FlavorTub'    => ['needs' => ['tub','flavor','use','slot','location']],
     'Batch'        => ['needs' => ['flavor']],
     'BatchHistory' => ['needs' => ['batch','flavor']],
+    // Add Recipe Count — the Batch/BatchHistory create+history pattern's
+    // second concrete instance (built to compare side-by-side before
+    // generalizing the pattern into a shared base). Same split: the
+    // create-grid only needs 'recipe' for its own picker; the embedded
+    // history grid additionally needs 'recipe_count' itself.
+    'RecipeCount'        => ['needs' => ['recipe']],
+    'RecipeCountHistory' => ['needs' => ['recipe_count','recipe']],
     'Closeout'     => ['needs' => ['flavor','use']],
     'DateActivity' => ['needs' => ['tub','inventory_change','flavor','use','location','slot','cabinet']],
     // Read-only "what got emptied, grouped by day" log for a non-staff
@@ -37,6 +44,15 @@ function scoop_bundle_specs(): array {
     // generic per-type create dispatch (exactly one row, one pod) can't
     // express.
     'ShiftReport' => ['needs' => ['flavor','location','supply','cabinet','slot']],
+    // 'Add task' quick-create (see the 'Task' entry in _config.php).
+    // 'target' (staffer) is a WP user, not a Pods relationship, so it's
+    // fetched directly from GET /kitchen-staff instead of the bundle (see
+    // that endpoint's own comment in rest.php and TaskCreateForm's header
+    // comment) — but a task also bundles recipe_count/batch/prep rows
+    // (see the task pod's own recipe_counts/batches/preps fields), each
+    // needing its own picker: flavor (batch), recipe (recipe_count),
+    // ingredient + unit (prep).
+    'Task' => ['needs' => ['flavor','recipe','ingredient','unit']],
   ];
   
   return $specs;
@@ -296,6 +312,30 @@ function scoop_entity_specs(string $key = ''): array {
         'writeable' => []
       ],
 
+      // Read-only recipe_count entity used by the RecipeCountHistory grid —
+      // same shape/reasoning as batch above, RecipeCount's own create-pilot
+      // pairing (see WHITEBOARD-INGESTION.md-style design discussion on
+      // generalizing Batch/BatchHistory to recipe_count/prep). 'task' is
+      // included specifically so RecipeCountHistoryGridModel can filter its
+      // rows to one task (the "recipe_count pairs that match this task"
+      // requirement) — no date-range filter here, unlike BatchHistory.
+      'recipe_count' => [
+        'post_type' => 'recipe_count',
+        'pod'       => 'recipe_count',
+        'title'     => true,
+        'fields'    => [
+          'count'  => ['data_type' => 'float'],
+          'recipe' => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'recipe'],
+          'task'   => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'task', 'hidden' => true],
+          'done'   => ['data_type' => 'bool'],
+        ],
+        'post_fields' => [
+          'author_name' => 'string',
+          'post_date'   => 'datetime',
+        ],
+        'writeable' => []
+      ],
+
       'use' => [
         'post_type' => 'use',
         'pod'       => 'use',
@@ -357,6 +397,43 @@ function scoop_entity_specs(string $key = ''): array {
         'fields'    => [
           'group' => ['data_type' => 'string', 'control' => 'enum'],
         ],
+        'writeable' => [],
+      ],
+
+      // recipe_count's target entity — see the 'Task' bundle spec and
+      // TaskCreateForm's recipe-count rows. Minimal id+title only, same
+      // "not writeable from this app" shape as supply above: recipes
+      // themselves (ingredients + quantities) are managed elsewhere in
+      // Pods admin / the recipe/ingredient/flavor cost chain, not created
+      // through this REST layer — this app only ever picks an existing
+      // recipe to log a count against.
+      'recipe' => [
+        'post_type' => 'recipe',
+        'pod'       => 'recipe',
+        'title'     => true,
+        'fields'    => [],
+        'writeable' => [],
+      ],
+
+      // prep's target entity — id+title only, same reasoning as recipe
+      // above. NOT the same thing as scoop_client_metadata()'s use of
+      // 'ingredient' anywhere else — this app has never had a real
+      // ingredient grid/route (see CLAUDE.md); this is purely a reference
+      // list for prep's ingredient picker.
+      'ingredient' => [
+        'post_type' => 'ingredient',
+        'pod'       => 'ingredient',
+        'title'     => true,
+        'fields'    => [],
+        'writeable' => [],
+      ],
+
+      // prep's unit picker (e.g. oz/lb/each) — id+title only.
+      'unit' => [
+        'post_type' => 'unit',
+        'pod'       => 'unit',
+        'title'     => true,
+        'fields'    => [],
         'writeable' => [],
       ],
 

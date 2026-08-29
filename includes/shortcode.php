@@ -15,6 +15,13 @@ function scoop_render_grid_host($raw_atts, string $view) {
     $atts = shortcode_atts([
         'type'     => 'Cabinet', // Cabinet | tub | etc
         'location'       => null,
+        // RecipeCountHistory's fixed scope (see that model's own header
+        // comment) — which task's recipe_count/prep/batch rows to show.
+        // Simpler than 'location': a plain pass-through attribute, no
+        // hash-state override cascade (no per-page "switch which task
+        // you're viewing" UI exists yet — add one the way _resolveLocation()
+        // layers hash state over this if that's ever needed).
+        'task'           => null,
         'days'           => null,
         'date_filters'   => null,
         'modified_range' => null,
@@ -24,10 +31,13 @@ function scoop_render_grid_host($raw_atts, string $view) {
         // date-range-specific mechanism used by DateActivity/BatchHistory.
         'group'          => null,
         'filter'         => null,
-        // Batch-only: when truthy, the JS mounts a read-only BatchHistory
-        // listing right inside the Batch widget, its <form> placed
-        // immediately after Batch's own — see
-        // ScoopAPI._mountEmbeddedBatchHistory() in assets/data/scoop-api.js.
+        // When truthy, the JS mounts a read-only "<Type>History" listing
+        // right inside this widget, its <form> placed immediately after
+        // this one's own — see ScoopAPI._mountEmbeddedHistory() in
+        // assets/data/scoop-api.js. Originally Batch-only (embeds
+        // BatchHistory); generalized to any type with a registered
+        // create+history pair (see HISTORY_TYPE_MAP in scoop-api.js) —
+        // RecipeCount (embeds RecipeCountHistory) is the second one.
         'history'        => null,
         // Disambiguates two hosts of the same `type` on one page (e.g. two
         // FlavorTub grids for different locations) for the location hash's
@@ -89,6 +99,9 @@ function scoop_render_grid_host($raw_atts, string $view) {
     data-grid-type="<?php echo esc_attr($atts['type']); ?>"
     data-view="<?php echo esc_attr($view); ?>"
     data-location="<?php echo esc_attr($atts['location']); ?>"
+    <?php if (!empty($atts['task'])) : ?>
+    data-task="<?php echo esc_attr($atts['task']); ?>"
+    <?php endif; ?>
     <?php if (!empty($atts['slug'])) : ?>
     data-slug="<?php echo esc_attr($atts['slug']); ?>"
     <?php endif; ?>
