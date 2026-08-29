@@ -528,6 +528,13 @@
 
     if ($entity === 'batch' && $mode === 'create') return 'created';
     if ($entity === 'closeout' && $mode === 'create') return 'emptied';
+    // TubSplit (the only tub create) always records the split-off portion as
+    // already-used, i.e. 'Emptied' — both the real-split branch (new tub,
+    // state Emptied) and the convert-in-place branch (origin relabeled
+    // Emptied). The update-mode loop below can't see this because a create's
+    // $updated is the flat {use, amount, origin_tub_id} field map, not the
+    // tub-id => fields shape.
+    if ($entity === 'tub' && $mode === 'create') return 'emptied';
 
     if ($entity === 'tub') {
       foreach ($updated as $fields) {
@@ -699,6 +706,22 @@
     $flavors = [];
 
     if ($entity === 'tub') {
+      // Tub CREATE (TubSplit) — $updated is the flat {use, amount,
+      // origin_tub_id} field map, not the update-mode (tub-id => fields)
+      // shape the loop below expects, so that loop finds nothing and the
+      // split would otherwise log no tub/flavor references. Reference the
+      // created tub directly and fold in the origin (the other side of the
+      // split; == $created_id in the convert-in-place case, so no dup).
+      if ($created_id > 0) {
+        $tubs[]    = $created_id;
+        $flavors[] = scoop_inventory_change_tub_flavor_id($created_id);
+        $origin_id = (int)($updated['origin_tub_id'] ?? 0);
+        if ($origin_id > 0 && $origin_id !== $created_id) {
+          $tubs[]    = $origin_id;
+          $flavors[] = scoop_inventory_change_tub_flavor_id($origin_id);
+        }
+      }
+
       foreach ($updated as $row_id => $fields) {
         $tub_id = (int)$row_id;
         if ($tub_id <= 0) continue;
@@ -892,11 +915,21 @@
     $ok = empty($errors);
 
     if( $mode === 'create' && $ok ) {
-      $flav     = $updated['flavor'] ?? 0;
-      $count    = $updated['count'] ?? 0;
-      $flav_t   = get_the_title($flav);
-      $s        = ($count > 1)?'s':'';
-      $title    = "created {$count} {$entity} of {$flav_t}{$s} on {$date}";
+      // TubSplit has no 'flavor'/'count' in its flat {use, amount,
+      // origin_tub_id} row, so the generic batch-style title below would
+      // read "created 0 tub of  on …". Give it a split-specific title
+      // (covers both the real-split and convert-in-place outcomes).
+      if ($entity === 'tub') {
+        $origin_id = (int)($updated['origin_tub_id'] ?? 0);
+        $origin_t  = get_the_title($origin_id) ?: "tub {$origin_id}";
+        $title     = "split {$origin_t} for another use on {$date}";
+      } else {
+        $flav     = $updated['flavor'] ?? 0;
+        $count    = $updated['count'] ?? 0;
+        $flav_t   = get_the_title($flav);
+        $s        = ($count > 1)?'s':'';
+        $title    = "created {$count} {$entity} of {$flav_t}{$s} on {$date}";
+      }
     }
 
     $detail_rows = ($mode === 'create')
