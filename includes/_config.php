@@ -227,6 +227,27 @@ function scoop_routes_config(string $batch_key = ''): array {
       'pod_name'     => 'tub',
       'allowed_fields_cb' => 'scoop_tubs_allowed_fields',
     ],
+    // "Split for another use" — see OTHER-USES.md. No grid/shortcode UI of
+    // its own (unlike every other type here) — invoked only from the tub
+    // Details modal's inline use-picker (assets/ui/tub-detail-view.js). The
+    // only client-supplied fields are 'use' and 'amount' (both already
+    // granted via tub's writeable list); everything else about the new tub
+    // (title, flavor/location/batch/closeout, state, emptied_at) is
+    // computed server-side from the origin tub — see the pod_name==='tub'
+    // branch in scoop_create_pod_item() (_write_fields.php). Reuses
+    // FlavorTub's own allowed_fields_cb: a role that can't already write
+    // tub.use can't split a tub either, same underlying grant.
+    'TubSplit' => [
+      'display_title' => 'Split tub',
+      'icon'         => 'if:f',
+      'path'         => '/tub-split',
+      'methods'      => ['GET','POST'],
+      'mode'         => 'create',
+      'envelope_key' => 'TubSplit',
+      'post_type'    => 'tub',
+      'pod_name'     => 'tub',
+      'allowed_fields_cb' => 'scoop_tubs_allowed_fields',
+    ],
     'Closeout' => [
       'display_title' => 'Closeouts',
       'icon'         => 'if:x',

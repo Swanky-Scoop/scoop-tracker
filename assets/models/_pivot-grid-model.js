@@ -8,10 +8,20 @@
 //
 // A concrete child must implement, in matching pairs per axis:
 //   primaryEntityKey()  -> which domain[] array is "the items" (e.g. 'tub')
-//   getRowDefs(items)   -> ordered [{ key, label, groupKey, groupLabel, forceShow }]
+//   getRowDefs(items)   -> ordered [{ key, label, groupKey, groupLabel, forceShow, detailEntity, id }]
 //   rowKeyFor(item)     -> which row bucket (a getRowDefs().key) this item falls into
 //   getColumnDefs(items)-> ordered [{ key, label, groupKey, groupLabel, forceShow }]
 //   colKeyFor(item)     -> which column bucket (a getColumnDefs().key) this item falls into
+//
+// detailEntity/id on a rowDef are optional — set both when the row bucket IS
+// a real Pods item (e.g. item-pivot-grid-model.js's rows are flavors, so
+// detailEntity: 'flavor', id: f.id) so its label links to that item's
+// Details (see buildRows' fillRow below and item-pivot-grid.js's '_row_label'
+// case). rowDef.key stays whatever shape bucketing needs (item-pivot-grid-
+// model.js's is a prefixed string, 'flavor_123', not the bare id) —
+// detailEntity/id are a separate, purely-for-linking pair, not a replacement
+// for key. Leave both unset for a bucket that isn't backed by one real item
+// (e.g. a date bucket, a synthetic category) and the label stays plain text.
 //
 // Row and column defs are deliberately the SAME shape (not just superficially
 // — groupKey/groupLabel/forceShow mean the same thing on both) precisely so
@@ -140,7 +150,16 @@ export default class PivotGridModel extends BaseGridModel {
       getGroupLabel: (groupKey) => groupLabels.get(groupKey) ?? String(groupKey),
       makeRowId: (rowDef) => rowDef.key,
       fillRow: (row, rowDef) => {
-        row._row_label = rowDef.label;
+        // Object shape (not a bare string) only when the bucket is a real
+        // Pods item AND that type is actually linkable (this.detailLinks /
+        // this.detailLinkTypes, see _base-grid-model.js's
+        // isDetailLinkEnabled) — see this file's header comment. _list.js's
+        // _getSortValue already handles both shapes (falls to .display for
+        // an object, returns a bare string as-is), so this doesn't disturb
+        // the existing alphabetical row sort.
+        row._row_label = (rowDef.detailEntity && this.isDetailLinkEnabled(rowDef.detailEntity))
+          ? { display: rowDef.label, id: rowDef.id, detailEntity: rowDef.detailEntity }
+          : rowDef.label;
         const rowMap = matrix.get(rowDef.key) ?? new Map();
         for (const col of usedColDefs) {
           row[col.key] = rowMap.get(col.key) ?? [];

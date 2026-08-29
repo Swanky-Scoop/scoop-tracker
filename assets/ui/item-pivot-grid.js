@@ -95,10 +95,11 @@ export default class ItemPivotGrid extends Grid {
 
   buildMetaFieldDom(field) {
     if (field.key === '_row_label') {
-      // '_row_label' is a bare string (the flavor name — see
-      // PivotGridModel.buildRows' fillRow), so List's own _getSortValue
-      // already sorts it correctly (localeCompare) with no further changes
-      // needed — only bucket columns' bare-array cells needed a fix, see
+      // '_row_label' is a bare string OR { display, id, detailEntity } (see
+      // _pivot-grid-model.js's fillRow) — List's own _getSortValue already
+      // handles both shapes (falls to .display for the object case, see
+      // _list.js), so sorting needs no further changes here either way —
+      // only bucket columns' bare-array cells needed a fix, see
       // _list.js's _getSortValue.
       return this.el('th', {
         text: 'Flavor',
@@ -114,11 +115,24 @@ export default class ItemPivotGrid extends Grid {
 
   buildFieldDom(col, data, row) {
     if (col.key === '_row_label') {
-      return this.el('th', {
-        text: String(data ?? ''),
-        classes: ['row-label'],
-        attrs: { scope: 'row' },
-      });
+      const TH = this.el('th', { classes: ['row-label'], attrs: { scope: 'row' } });
+
+      // Object shape (see _pivot-grid-model.js's fillRow) means this bucket
+      // IS a real Pods item (a flavor, today) — link its label to Details,
+      // same [data-detail-entity] convention every other link uses. A bare
+      // string (a bucket not backed by one real item) stays plain text.
+      if (data && typeof data === 'object' && data.detailEntity) {
+        TH.append(this.el('a', {
+          text: String(data.display ?? ''),
+          classes: ['detail-link'],
+          attrs: { href: `#details=${encodeURIComponent(data.detailEntity)}%3A${data.id}` },
+          data: { detailEntity: data.detailEntity, detailId: data.id },
+        }));
+      } else {
+        TH.append(String(data ?? ''));
+      }
+
+      return TH;
     }
 
     const CELL = this.el('td', { classes: ['pivot-cell'] });
@@ -135,7 +149,7 @@ export default class ItemPivotGrid extends Grid {
 
     tubs.forEach(tub => {
       CELL.append(this.el('button', {
-        classes: ['tub-square', this._squareStateClass(tub)],
+        classes: ['item-square', 'tub-square', this._squareStateClass(tub)],
         attrs: {
           type: 'button',
           title: `${tub.state}${tub.amount != null ? ' · ' + tub.amount : ''}`,

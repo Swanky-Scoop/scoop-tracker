@@ -11,18 +11,6 @@ if (!defined('ABSPATH')) exit;
  * fields relating to both, so all three need to land on an environment
  * together or the relationship fields point at pods that don't exist yet.
  *
- * Also tracks tub.alt_uses (hand-authored here, not exported from a live
- * environment - there's nothing to export until Apply creates it
- * somewhere first): multi-value relationship to `use`, recording every
- * OTHER use a tub has ever been assigned besides its current one. Written
- * by a pre-save hook (includes/hooks/tub-state.php), not user-editable -
- * see the discussion in conversation history for why this exists (tubs
- * partially consumed for an event, then returned to front-of-house
- * service, previously left no record of the switch). Only this ONE field
- * is listed for the `tub` pod deliberately - diff/apply only ever touch
- * keys actually present in this file (see diff.php), so tub's other ~20
- * existing fields and pod-level attrs are untouched no matter what drift
- * exists between environments.
  *
  * Field 'group' values are group SLUGS (e.g. 'who_are_you'), not the
  * numeric local group id scoop_schema_export_live() actually exports -
@@ -877,57 +865,6 @@ Other',
         'type' => 'paragraph',
         'paragraph_allowed_html_tags' => 'strong em a ul ol li b i',
         'paragraph_max_length' => '-1',
-        'default_evaluate_tags' => '0',
-        'default_empty_fields' => '0',
-        'roles_allowed' => 'administrator',
-        'enable_conditional_logic' => '0',
-        'conditional_logic_save_value' => '0',
-        'rest_pick_response' => 'array',
-        'rest_pick_depth' => '1',
-        'required' => '0',
-        'required_help_boolean' => '0',
-        'unique' => '0',
-        'groups' => 
-        array (
-        ),
-        'fields' => 
-        array (
-        ),
-      ),
-    ),
-  ),
-  'tub' => 
-  array (
-    'fields' => 
-    array (
-      'alt_uses' => 
-      array (
-        'object_type' => 'field',
-        'object_storage_type' => 'post_type',
-        'name' => 'alt_uses',
-        'parent' => 66,
-        'group' => 'more_fields',
-        'label' => 'Alternate uses',
-        'description' => 'Every other use this tub has been recorded as, besides its current one. Written automatically when `use` changes - not user-editable.',
-        'type' => 'pick',
-        'pick_object' => 'post_type',
-        'pick_val' => 'use',
-        'pick_format_type' => 'multi',
-        'pick_format_single' => 'dropdown',
-        'pick_format_multi' => 'autocomplete',
-        'pick_display_format_multi' => 'custom',
-        'pick_display_format_separator' => ', ',
-        'pick_allow_add_new' => '0',
-        'pick_taggable' => '0',
-        'pick_show_icon' => '1',
-        'pick_show_edit_link' => '1',
-        'pick_show_view_link' => '1',
-        'pick_limit' => '0',
-        'pick_user_role' => 'Administrator',
-        'pick_sync_taxonomy' => '0',
-        'pick_sync_taxonomy_hide_taxonomy_ui' => '0',
-        'pick_post_status' => 'publish',
-        'pick_post_author' => '0',
         'default_evaluate_tags' => '0',
         'default_empty_fields' => '0',
         'roles_allowed' => 'administrator',

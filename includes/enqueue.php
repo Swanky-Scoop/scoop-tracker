@@ -259,6 +259,11 @@ function scoop_enqueue_assets() {
         'isAdmin' => current_user_can( 'manage_options' ),
         'routes'  => scoop_client_routes(),
         'metaData'=> scoop_client_metadata(), //scoop_fetch_entities
+        // null = unrestricted (current default for every role, see
+        // _policy.php's SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW), an array = only
+        // these entity types may open a Details view for this user — see
+        // _base-grid-model.js's isDetailLinkEnabled().
+        'detailViewableEntities' => scoop_client_detail_viewable_entities($user),
         'entityRelations' => scoop_entity_relations(),
         'refreshScope'    => scoop_client_refresh_scope(),
         // Assigned-to FindIt options for the Tasks grid (see

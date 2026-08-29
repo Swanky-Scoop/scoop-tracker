@@ -105,6 +105,9 @@ function scoop_access_policy(): array {
       'routes' => [
         'Cabinet'       => ['GET' => true, 'POST' => true],
         'FlavorTub'     => ['GET' => true, 'POST' => true],
+        // "Split for another use" (see OTHER-USES.md) — granted alongside
+        // FlavorTub, same underlying tub-write capability.
+        'TubSplit'      => ['GET' => true, 'POST' => true],
         'Batch'         => ['GET' => true, 'POST' => true, 'DELETE' => true],
         'Closeout'      => ['GET' => true, 'POST' => true],
         'DateActivity'  => ['GET' => true, 'POST' => true],
@@ -198,6 +201,8 @@ function scoop_access_policy(): array {
       'routes' => [
         'Cabinet'   => ['GET' => true, 'POST' => true],
         'FlavorTub' => ['GET' => true, 'POST' => true],
+        // See administrator's TubSplit comment above — same reasoning.
+        'TubSplit'  => ['GET' => true, 'POST' => true],
         'Batch'     => ['GET' => true, 'POST' => true],
         'Closeout'  => ['GET' => true, 'POST' => true],
         'DateActivity' => ['GET' => true, 'POST' => true],  // ← ADDED THIS
@@ -235,6 +240,8 @@ function scoop_access_policy(): array {
         'Batch'         => ['GET' => true, 'POST' => true, 'DELETE' => true],
         'Cabinet'       => ['GET' => true, 'POST' => true],
         'FlavorTub'     => ['GET' => true, 'POST' => true],
+        // See administrator's TubSplit comment above — same reasoning.
+        'TubSplit'      => ['GET' => true, 'POST' => true],
         'DateActivity'  => ['GET' => true, 'POST' => true],
         'InstockFlavor' => ['GET' => true, 'POST' => true],
         'Closeout'      => ['GET' => false, 'POST' => false],
@@ -286,6 +293,8 @@ function scoop_access_policy(): array {
         'Batch'         => ['GET' => true, 'POST' => false],
         'Cabinet'       => ['GET' => true, 'POST' => true],
         'FlavorTub'     => ['GET' => true, 'POST' => true],
+        // See administrator's TubSplit comment above — same reasoning.
+        'TubSplit'      => ['GET' => true, 'POST' => true],
         'DateActivity'  => ['GET' => true, 'POST' => true],
         'InstockFlavor' => ['GET' => true, 'POST' => false],
         'Closeout'      => ['GET' => false, 'POST' => false],
@@ -410,6 +419,8 @@ function scoop_access_policy(): array {
         'ItemPivot'       => ['GET' => true],
         // Same as shift_lead — full read/write.
         'FlavorTub'       => ['GET' => true, 'POST' => true],
+        // See administrator's TubSplit comment above — same reasoning.
+        'TubSplit'        => ['GET' => true, 'POST' => true],
         'Batch'           => ['GET' => false, 'POST' => false],
         'ProductionPlan'  => ['GET' => false],
         'DateActivity'    => ['GET' => false, 'POST' => false],
@@ -478,6 +489,68 @@ function scoop_user_can_route(\WP_User $user, string $route, string $method): bo
   $can = $policy['routes'][$route][$method] ?? false;
 
   return $can;
+}
+
+// TEMPORARY (2026-08-21): while the click-to-details GUI is being built out
+// (see OTHER-USES.md), an unset detail_views defaults to "every entity
+// allowed" — no role below has a detail_views key yet, so this is
+// currently a no-op everywhere, on purpose, so the linking behavior can be
+// exercised without first populating policy data for all 8 roles. Flip
+// this to false once that flow is settled (per conversation) — that
+// changes the DEFAULT to deny, at which point every role needs its own
+// explicit detail_views list, matching how 'entities' write-lists already
+// work (see scoop_user_writeable_fields — same deny-unless-listed shape).
+// NOTE this only hides the clickable links — it is NOT a data boundary
+// (see the detail_views comment just above scoop_client_detail_viewable_entities()).
+if (!defined('SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW')) {
+  define('SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW', true);
+}
+
+// detail_views is a CLIENT-SIDE LINK-VISIBILITY control, not a security
+// boundary. The Details view (assets/ui/details.js) renders read-only from
+// the already-loaded bundle — there is no separate detail-serving endpoint
+// to gate, and a user who can GET the grids that pull a given entity
+// (FlavorTub/Cabinet/ItemPivot — gated by route GET + entity bundle
+// inclusion) already has that entity's data rendered in the grid. So this
+// key only decides whether the client even offers a clickable "open
+// details" link for a type; it can never hide the underlying data.
+// (The former scoop_user_can_view_details() "server-side gate" was removed
+// in review: it was never called anywhere, and its presence read as
+// enforcement that isn't there. If a real server-side detail endpoint is
+// ever added, gate it there on top of this.)
+//
+// Role → which entity/pod types (lowercase — 'tub', 'flavor', 'use', ...,
+// same vocabulary as col.detailEntity/titleMap client-side) that role may
+// open a Details view for at all. Unlike scoop_user_writeable_fields'
+// $fields ?? [] (always deny-unless-listed), this distinguishes "no
+// detail_views key at all" (falls to SCOOP_DETAIL_VIEWS_DEFAULT_ALLOW)
+// from "detail_views explicitly set" (an allow-list, including an
+// explicit [] meaning deny everything) — see
+// scoop_client_detail_viewable_entities() below for how this reaches the
+// client as SCOOP.detailViewableEntities, and _base-grid-model.js's
+// isDetailLinkEnabled() for how the client combines it with a model's own
+// detailLinks/detailLinkTypes.
+
+// What enqueue.php ships to the client as SCOOP.detailViewableEntities —
+// null (no restriction, current default for every role) rather than
+// enumerating every entity name Scoop knows about, so isDetailLinkEnabled()
+// client-side can tell "unrestricted" apart from "restricted to this exact
+// (possibly empty) list" without the two ever needing to define the same
+// canonical entity list twice. Once a role's detail_views is set, this
+// mirrors it verbatim. This is the ONLY place detail_views is consulted:
+// the client gates link visibility off SCOOP.detailViewableEntities alone
+// (see isDetailLinkEnabled()), and nothing server-side reads it — there is
+// no detail endpoint to gate, and the data is already in the bundle (see
+// the detail_views comment above).
+function scoop_client_detail_viewable_entities(\WP_User $user): ?array {
+
+  $policy = scoop_get_user_policy($user);
+
+  if (!array_key_exists('detail_views', $policy)) {
+    return null;
+  }
+
+  return array_values($policy['detail_views']);
 }
 
 /**

@@ -746,6 +746,107 @@
   }
 
 
+  /**
+   * Audit shaping for mode:'create' tub writes — i.e. TubSplit, "split for
+   * another use" (see OTHER-USES.md and scoop_create_pod_item's tub branch
+   * in _write_fields.php). NOT the shapes the generic branches expect: the
+   * client row is a flat {use, amount, origin_tub_id} map (not the
+   * update-mode tub-id => fields shape refs/phase iterate), and $created_id
+   * is either the NEW tub (true split) or the ORIGIN itself
+   * (convert-in-place, because that branch updates the origin and returns
+   * its own id). Feeding this shape to the batch-flavored create title and
+   * the update-shaped refs/phase branches logged junk — phase 'unknown',
+   * empty tubs/flavors relations, title "created 0 tub of  on …".
+   *
+   * Returns the override slices scoop_log_post() merges into its record:
+   *
+   *   - True split (created_id != origin_tub_id): phase 'created', tubs =
+   *     [new tub, origin], details under the new tub's title naming
+   *     use/amount/origin, plus a row for the origin's post-split amount
+   *     (the origin-reduction second write has already run by the time this
+   *     is called, so the fresh amount read here IS what the origin shows;
+   *     if that write failed the row just shows the amount it still has).
+   *   - Convert-in-place (created_id == origin_tub_id): the origin was
+   *     UPDATED (use + state Emptied), not created — mode 'update', phase
+   *     'converted', details = the fields actually written. The envelope
+   *     still identifies the TubSplit endpoint, so recording the record as
+   *     an update keeps it honest about the write shape without losing
+   *     endpoint forensics.
+   *   - No origin_tub_id (no such route today): a plain new-tub create.
+   *
+   * Returns null only when there is no created item at all (failed/error
+   * create) — the generic error-record path handles those unchanged.
+   */
+  function scoop_inventory_change_tub_create_audit(array $updated, int $created_id, string $user, string $date): ?array {
+    if ($created_id <= 0) return null;
+
+    $origin_id  = (int)($updated['origin_tub_id'] ?? 0);
+    $use_id     = (int)($updated['use'] ?? 0);
+    $amount     = isset($updated['amount']) && is_numeric($updated['amount']) ? (float)$updated['amount'] : 0.0;
+    $is_convert = ($origin_id > 0 && $origin_id === $created_id);
+
+    $origin = ($origin_id > 0 && function_exists('pods')) ? pods('tub', $origin_id) : null;
+    $origin_exists = $origin && $origin->exists();
+
+    // The new tub carries the origin's flavor (copied in scoop_create_pod_item).
+    $flavor_id = $origin_exists
+      ? scoop_rel_id($origin->field('flavor'))
+      : scoop_inventory_change_tub_flavor_id($created_id);
+
+    $flavor_t = get_the_title($flavor_id) ?: '';
+    $use_t    = get_the_title($use_id) ?: ($use_id > 0 ? "Use {$use_id}" : '');
+    $origin_t = get_the_title($origin_id) ?: "Tub {$origin_id}";
+    $of       = ($flavor_t !== '') ? " of {$flavor_t}" : '';
+
+    // Read fresh at log time: by now scoop_create_pod_item's second write
+    // has already reduced the origin's amount (or failed and left it as-is
+    // — either way this is what the origin actually shows right now).
+    $origin_amount_now = ($origin_exists && is_object($origin)) ? (float)$origin->field('amount') : 0.0;
+
+    if ($is_convert) {
+      return [
+        'mode'  => 'update',
+        'phase' => 'converted',
+        'count' => 1,
+        'title' => "{$user} converted {$origin_t}{$of}" . ($use_t !== '' ? " to {$use_t}" : '') . " on {$date}",
+        // Exactly what the convert branch wrote — amount is deliberately
+        // absent (it was left untouched).
+        'detail_rows' => [$origin_id => ['use' => $use_id, 'state' => 'Emptied']],
+        'tubs'    => [$origin_id],
+        'flavors' => $flavor_id > 0 ? [$flavor_id] : [],
+      ];
+    }
+
+    if ($origin_id <= 0) {
+      return [
+        'mode'  => 'create',
+        'phase' => 'created',
+        'count' => 1,
+        'title' => "{$user} created 1 tub{$of} on {$date}",
+        'detail_rows' => [$created_id => $updated],
+        'tubs'    => [$created_id],
+        'flavors' => $flavor_id > 0 ? [$flavor_id] : [],
+      ];
+    }
+
+    return [
+      'mode'  => 'create',
+      'phase' => 'created',
+      'count' => 2,
+      'title' => "{$user} split {$amount} off {$origin_t}{$of}" . ($use_t !== '' ? " for {$use_t}" : '') . " on {$date}",
+      'detail_rows' => [
+        $created_id => [
+          'use'           => $use_id,
+          'amount'        => $amount,
+          'origin_tub_id' => $origin_id,
+        ],
+        $origin_id => ['amount' => $origin_amount_now],
+      ],
+      'tubs'    => [$created_id, $origin_id],
+      'flavors' => $flavor_id > 0 ? [$flavor_id] : [],
+    ];
+  }
+
   function scoop_inventory_change_expected_fields(): string {
     return 'title, change_count, entity, envelope, mode, phase, source, problem, tubs, flavors, details, post_content';
   }
@@ -891,7 +992,28 @@
 
     $ok = empty($errors);
 
-    if( $mode === 'create' && $ok ) {
+    // TubSplit (mode:'create', pod 'tub') gets its own audit shape: the
+    // generic create title below is batch-flavored (count/flavor) and the
+    // tub refs/phase branches iterate the update-mode shape (tub-id =>
+    // fields) — neither matches the flat {use, amount, origin_tub_id} row
+    // this route receives, and the convert-in-place branch is really an
+    // update of the origin (see scoop_inventory_change_tub_create_audit).
+    // The override slice supplies mode/title/count/phase/detail_rows/refs;
+    // a null return (no created item, i.e. an error record) leaves the
+    // generic behavior completely alone.
+    $tub_create_override = null;
+    if ($mode === 'create' && $entity === 'tub' && $ok) {
+      $tub_create_override = scoop_inventory_change_tub_create_audit($updated, $created_id, $user, $date);
+      if ($tub_create_override !== null) {
+        $mode        = $tub_create_override['mode'];
+        $title       = $tub_create_override['title'];
+        $count       = $tub_create_override['count'];
+        $detail_rows = $tub_create_override['detail_rows'];
+        $updated     = []; // generic refs/phase must not re-read the flat row
+      }
+    }
+
+    if( $mode === 'create' && $ok && $tub_create_override === null ) {
       $flav     = $updated['flavor'] ?? 0;
       $count    = $updated['count'] ?? 0;
       $flav_t   = get_the_title($flav);
@@ -899,9 +1021,11 @@
       $title    = "created {$count} {$entity} of {$flav_t}{$s} on {$date}";
     }
 
-    $detail_rows = ($mode === 'create')
-      ? [($created_id > 0 ? $created_id : 0) => $updated]
-      : $updated;
+    if ($tub_create_override === null) {
+      $detail_rows = ($mode === 'create')
+        ? [($created_id > 0 ? $created_id : 0) => $updated]
+        : $updated;
+    }
 
     foreach ($detail_rows as $row_id => $fields) {
       if (!is_array($fields)) {
@@ -919,7 +1043,16 @@
       'br'         => [],
     ];
 
-    $refs = scoop_inventory_change_refs($cfg, $updated, $created_id);
+    $refs = ($tub_create_override !== null)
+      ? [
+          'tubs'    => $tub_create_override['tubs'],
+          'flavors' => $tub_create_override['flavors'],
+        ]
+      : scoop_inventory_change_refs($cfg, $updated, $created_id);
+
+    $phase = ($tub_create_override !== null)
+      ? $tub_create_override['phase']
+      : scoop_inventory_change_phase($cfg, $updated);
 
     if (!function_exists('pods')) {
       error_log('scoop_log_post: Pods function unavailable; inventory_change log skipped.');
@@ -939,7 +1072,7 @@
         'entity'      => $entity,
         'envelope'    => $envelope,
         'mode'        => $mode,
-        'phase'       => scoop_inventory_change_phase($cfg, $updated),
+        'phase'       => $phase,
         // $source_override lets a specific client feature (e.g.
         // CabinetWorkflow — see scoop_handle_cells_post's source-hint
         // handling below) identify itself distinctly from

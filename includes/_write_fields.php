@@ -140,6 +140,123 @@ function scoop_create_pod_item(string $pod_name, array $allowed_fields, array $d
     }
   }
 
+  // TubSplit — "split for another use" (see OTHER-USES.md, assets/ui/
+  // tub-detail-view.js). Client chooses 'use' AND 'amount' (both already
+  // filtered into $clean above, from scoop_tubs_allowed_fields — same grant
+  // a role needs to edit tub.use/tub.amount anywhere else). Everything else
+  // about a new tub is derived from the origin tub named by
+  // 'origin_tub_id' — a plain request value, not a Pods field, so (like
+  // task's post_title above) it's read straight off raw $data, never added
+  // to any allowed-fields list, never persisted anywhere itself.
+  //
+  // Two outcomes, decided here by comparing the requested amount to the
+  // origin's CURRENT amount (read fresh, not trusted from the client):
+  //   requested >= origin's amount -> nothing left over worth its own tub
+  //     record. No new tub — the origin itself is converted: use + state
+  //     change, amount untouched. Handled as a plain update through the
+  //     normal pods_api() path (not this function's create flow at all),
+  //     returning the origin's own id. scoop_enforce_tub_rules
+  //     (tub-state.php) — the normal update-path hook — auto-stamps
+  //     emptied_at the same way it already does for every other state
+  //     change into 'Emptied'; nothing tub-split-specific needed for that.
+  //   requested < origin's amount -> a real split: new tub for the
+  //     requested amount, origin's own amount reduced by that same amount
+  //     (not halved — see the second write further down).
+  //
+  // No split_tubs link is written either way (deliberately dropped — see
+  // OTHER-USES.md: "nice-to-have... even a single bidirectional link adds
+  // complexity for small gains").
+  //
+  // opened_on is copied from the origin (split branch only) because it's
+  // read straight off $data at create time, same as the fields above — the
+  // tub pre-save hook that normally reverts opened_on/emptied_at edits
+  // (scoop_enforce_tub_rules, includes/hooks/tub-state.php) explicitly
+  // skips new items entirely, so this isn't fighting that hook. created_on,
+  // by contrast, CANNOT be copied — scoop_auto_set_tub_created_on (same
+  // file) force-sets it to now on every new tub unconditionally; not
+  // attempted here.
+  if ($pod_name === 'tub') {
+    $origin_id = (int)($data['origin_tub_id'] ?? 0);
+    if ($origin_id <= 0) {
+      return new WP_Error('tub_split_missing_origin', 'Tub split requires origin_tub_id.');
+    }
+
+    if (!function_exists('pods')) {
+      return new WP_Error('pods_missing', 'Pods API not available.');
+    }
+
+    $origin = pods('tub', $origin_id);
+    if (!$origin || !$origin->exists()) {
+      return new WP_Error('tub_split_origin_not_found', 'Origin tub not found.');
+    }
+
+    $origin_amount = (float)$origin->field('amount');
+    if ($origin_amount <= 0) {
+      return new WP_Error('tub_split_no_amount', 'Origin tub has no amount to split.');
+    }
+
+    $use_id = (int)($clean['use'] ?? 0);
+    if ($use_id <= 0) {
+      return new WP_Error('tub_split_missing_use', 'Tub split requires a use.');
+    }
+
+    // The use id reaches $clean via scoop_tubs_allowed_fields (only roles
+    // that can already write tub.use get here), but nothing previously
+    // verified it resolves to a real 'use' record. Cheap exists() check so
+    // a malformed client can't mint a tub pointing at a nonexistent use.
+    $use_pod = pods('use', $use_id);
+    if (!$use_pod || !$use_pod->exists()) {
+      return new WP_Error('tub_split_bad_use', 'Tub split target use does not exist.');
+    }
+
+    $requested = isset($clean['amount']) && is_numeric($clean['amount']) ? (float)$clean['amount'] : 0;
+    if ($requested <= 0) {
+      return new WP_Error('tub_split_missing_amount', 'Tub split requires a positive amount.');
+    }
+
+    // Nothing meaningful would be left on the origin — convert it in place
+    // instead of creating a new tub for what's effectively the whole thing.
+    // >= (not just >): an exact match leaves a zero-amount origin behind if
+    // treated as a split, which is a worse outcome than just relabeling
+    // the one tub that exists.
+    if ($requested >= $origin_amount) {
+      $converted = pods_api()->save_pod_item([
+        'pod'  => 'tub',
+        'id'   => $origin_id,
+        'data' => ['use' => $use_id, 'state' => 'Emptied'],
+      ]);
+
+      if (is_wp_error($converted)) return $converted;
+      return $origin_id;
+    }
+
+    $origin_title = get_the_title($origin_id) ?: "Tub {$origin_id}";
+    $use_title    = get_the_title($use_id) ?: "Use {$use_id}";
+
+    $clean['post_title'] = "{$origin_title}/{$use_title}";
+    $clean['post_name']  = sanitize_title($clean['post_title']);
+    $clean['flavor']     = scoop_rel_id($origin->field('flavor'));
+    $clean['location']   = scoop_rel_id($origin->field('location'));
+    $clean['batch']      = scoop_rel_id($origin->field('batch'));
+    $clean['closeout']   = scoop_rel_id($origin->field('closeout'));
+    $clean['opened_on']  = $origin->field('opened_on');
+    $clean['amount']     = $requested;
+    $clean['state']      = 'Emptied';
+    $clean['emptied_at'] = current_time('mysql');
+
+    // Origin's own amount is reduced further down, AFTER the new tub is
+    // confirmed created (see the pod_name==='tub' check right after
+    // save_pod_item() below) — not before. If that second save fails, the
+    // worse outcome is a visible over-count (origin still shows its old
+    // amount, alongside a real new tub for the split-off portion) rather
+    // than a silent loss (origin already reduced, but no new tub exists to
+    // show where the rest went). MyISAM, no transaction to fall back on
+    // either way — see CLAUDE.md's data repair policy. $origin_id/
+    // $origin_amount/$requested stay in scope for the rest of this function
+    // (PHP is function-scoped, not block-scoped) — no need to stash them
+    // anywhere.
+  }
+
   // Pods relationship pick fields default to pick_post_status=publish, so a
   // draft child (wp_insert_post()'s own default when post_status isn't set
   // explicitly) is silently invisible to any relationship pointing at it —
@@ -157,6 +274,42 @@ function scoop_create_pod_item(string $pod_name, array $allowed_fields, array $d
 
   $id = (int)$id;
   if ($id <= 0) return new WP_Error('create_failed', 'Create failed (no id returned).');
+
+  // TubSplit's second write: the new tub above already exists at this
+  // point, so a failure here is logged, not returned as an error — the
+  // split itself succeeded (there's a real new tub for the new use); only
+  // the origin's own amount is left stale, a visible inconsistency for
+  // someone to reconcile rather than a reason to make the client think the
+  // whole split failed (which would invite a retry that creates a
+  // duplicate split tub — see the comment above this block). Only reached
+  // for the true-split branch — the convert-in-place branch above already
+  // returned early, before ever building $clean for a new tub.
+  if ($pod_name === 'tub' && isset($origin_id, $origin_amount, $requested)) {
+    // Re-read the origin's amount at write time rather than trusting the
+    // value captured at the top of this function. MyISAM has no
+    // transactions, so a concurrent split (another tab, or a retry after a
+    // timeout the client saw as failure but the server committed) could
+    // already have reduced the origin between the initial read and now —
+    // decrementing from the stale $origin_amount would over-split.
+    // Re-reading shrinks that window; if the origin is already below what's
+    // being taken, log and skip rather than drive it negative.
+    $origin = pods('tub', $origin_id);
+    $fresh_amount = ($origin && $origin->exists()) ? (float)$origin->field('amount') : 0.0;
+
+    if ($fresh_amount < $requested) {
+      error_log("scoop_create_pod_item (tub split): new tub {$id} created, but origin tub {$origin_id}'s amount ({$fresh_amount}) is now below the requested split ({$requested}) — likely a concurrent split; origin left unchanged.");
+    } else {
+      $origin_saved = pods_api()->save_pod_item([
+        'pod'  => 'tub',
+        'id'   => $origin_id,
+        'data' => ['amount' => $fresh_amount - $requested],
+      ]);
+
+      if (is_wp_error($origin_saved)) {
+        error_log("scoop_create_pod_item (tub split): new tub {$id} created, but failed to reduce origin tub {$origin_id}'s amount: " . $origin_saved->get_error_message());
+      }
+    }
+  }
 
   return $id;
 }

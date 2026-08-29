@@ -1,22 +1,34 @@
 ///////////////////////////////////
 // Details panel(s)
-// shows every loaded field for one Pods item, with relationship fields
-// (per SCOOP.entityRelations) resolved to a title and drilled into a second
-// panel on click. Two levels only: DETAILS (grid-opened) and DETAILS2
-// (opened from within a details panel) — a second-level click always
-// replaces DETAILS2, it never stacks a third panel.
+// Generic click-an-item -> modal mechanism: any element carrying
+// [data-detail-entity]/[data-detail-id] (a grid's .tub-square, a
+// detail-link, a delete column — anything) opens this. What renders
+// *inside* the modal is per-entity: entities with a registered view in
+// _VIEWS (below) get that; everything else falls back to a plain dump of
+// every loaded field via _detail-fields.js's fillFields, with relationship
+// fields (per SCOOP.entityRelations) resolved to a title and drilled into a
+// second panel on click. Two levels only: DETAILS (grid-opened) and
+// DETAILS2 (opened from within a details panel) — a second-level click
+// always replaces DETAILS2, it never stacks a third panel.
 //
 // URL hash (#details=entity:id&details2=entity:id) is pushed on every open/
 // close so the browser back/forward buttons step through panel state.
 //////////////////////////////////
 
-import { resolveRelationIds } from "../data/relations.js";
+import { fillFields } from "./_detail-fields.js";
+import { renderTubDetails } from "./tub-detail-view.js";
 
 export default class Details {
   static _api = null;
   static _state1 = null; // { entity, id } | null
   static _state2 = null;
   static _docBound = false;
+
+  // entity -> (BODY, entity, item, api, ACTIONS) => void. Add an entry here
+  // (and its own <entity>-detail-view.js, see tub-detail-view.js) for any
+  // entity that needs more than the generic field dump — a curated field
+  // list, entity-only actions, etc. Entities with no entry just get fillFields.
+  static _VIEWS = { tub: renderTubDetails };
 
   static attach(api) {
     Details._api = api;
@@ -55,18 +67,26 @@ export default class Details {
     return n;
   }
 
+  // 'modal' reuses CabinetWorkflow's body > .modal / .modal.show CSS
+  // (assets/css.css) as-is — same overlay + centered panel treatment,
+  // same class names, no parallel modal styling of its own. The extra
+  // <form> wrapper matches that CSS's `& > form` panel selector; it's
+  // structural only; nothing here submits it.
   static _ensureHost(level) {
     const cls = level === 2 ? 'DETAILS2' : 'DETAILS';
     let HOST = document.querySelector(`body > .${cls}`);
     if (HOST) return HOST;
 
-    HOST = Details._el('div', '', cls);
+    HOST = Details._el('div', '', cls, 'modal');
+    const PANEL = Details._el('form');
     const CLOSE = Details._el('button', 'x', 'close');
     const TITLE = Details._el('h3', '', 'title');
     const BODY  = Details._el('dl', '', 'fields');
+    const ACTIONS = Details._el('div', '', 'actions');
 
     CLOSE.type = 'button';
     CLOSE.addEventListener('click', () => Details.close(level));
+    PANEL.addEventListener('submit', (e) => e.preventDefault());
 
     // Relation links rendered inside either panel always open into level 2.
     // preventDefault so the real href doesn't also trigger a native hash
@@ -78,7 +98,8 @@ export default class Details {
       Details.open(link.dataset.detailEntity, Number(link.dataset.detailId), { level: 2 });
     });
 
-    HOST.append(CLOSE, TITLE, BODY);
+    PANEL.append(CLOSE, TITLE, BODY, ACTIONS);
+    HOST.append(PANEL);
     document.body.append(HOST);
 
     return HOST;
@@ -114,83 +135,21 @@ export default class Details {
     HOST.querySelector('.title').textContent = item?._title || `${entity} ${numId}`;
 
     const BODY = HOST.querySelector('.fields');
+    const ACTIONS = HOST.querySelector('.actions');
     BODY.replaceChildren();
+    ACTIONS.replaceChildren();
 
     if (!item) {
       BODY.append(Details._el('dd', 'Not loaded on this page.', 'missing'));
     } else {
-      Details._fillFields(BODY, entity, item);
+      const render = Details._VIEWS[entity] ?? fillFields;
+      render(BODY, entity, item, Details._api, ACTIONS);
     }
 
     HOST.classList.add('show');
 
     if (level === 1) Details._state1 = { entity, id: numId };
     else Details._state2 = { entity, id: numId };
-  }
-
-  static _fillFields(BODY, entity, item) {
-    const relations = (window.SCOOP?.entityRelations ?? {})[entity] ?? {};
-
-    Object.entries(item ?? {})
-      .filter(([key]) => key !== 'id' && !key.startsWith('_'))
-      .forEach(([key, value]) => {
-        const DT = Details._el('dt', Details._label(key));
-        const DD = Details._el('dd');
-        const rel = relations[key];
-
-        if (rel) Details._fillRelation(DD, rel, value);
-        else Details._fillPlain(DD, value);
-
-        BODY.append(DT, DD);
-      });
-  }
-
-  // Renders one or more relationship ids as clickable, title-resolved links.
-  // Falls back to a plain (non-clickable) "pod #id" label when that pod
-  // isn't loaded in the current page's bundle domain.
-  static _fillRelation(DD, rel, value) {
-    const ids = Array.isArray(value) ? value : (value ? [value] : []);
-    if (!ids.length) { DD.append('—'); return; }
-
-    const resolved = resolveRelationIds(rel.pod, ids, Details._api?.getDomainSnapshot?.() ?? {});
-
-    resolved.forEach(({ id, title, found }, i) => {
-      if (found) {
-        const LINK = Details._el('a', title, 'detail-link');
-        LINK.href = `#details2=${encodeURIComponent(rel.pod)}%3A${id}`;
-        LINK.dataset.detailEntity = rel.pod;
-        LINK.dataset.detailId = String(id);
-        DD.append(LINK);
-      } else {
-        DD.append(title);
-      }
-
-      if (i < resolved.length - 1) DD.append(', ');
-    });
-  }
-
-  static _fillPlain(DD, value) {
-    if (Array.isArray(value)) {
-      DD.append(value.length ? value.join(', ') : '—');
-      return;
-    }
-
-    const str = (value == null || value === '') ? '—' : String(value);
-
-    if (/^https?:\/\//.test(str)) {
-      const A = Details._el('a', str);
-      A.href = str;
-      A.target = '_blank';
-      A.rel = 'noopener';
-      DD.append(A);
-      return;
-    }
-
-    DD.append(str);
-  }
-
-  static _label(key) {
-    return String(key).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
 
   // --- URL hash state, so back/forward steps through panel history ---

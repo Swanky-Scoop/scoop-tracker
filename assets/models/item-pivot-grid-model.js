@@ -121,8 +121,11 @@ export default class ItemPivotGridModel extends PivotGridModel {
     const dairy = flavors.filter(isDairy).sort(byTitle);
     const nonDairy = flavors.filter(f => !isDairy(f)).sort(byTitle);
 
+    // detailEntity/id (see _pivot-grid-model.js's header comment) make the
+    // row label a Details link to that flavor — key stays the prefixed
+    // bucket id, id is the flavor's own bare post id.
     const pushFlavor = (f, groupKey, groupLabel) =>
-      ({ key: `flavor_${f.id}`, label: f._title, groupKey, groupLabel });
+      ({ key: `flavor_${f.id}`, label: f._title, groupKey, groupLabel, detailEntity: 'flavor', id: f.id });
 
     return [
       ...dairy.map(f => pushFlavor(f, 'dairy', 'Dairy')),
