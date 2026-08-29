@@ -99,7 +99,13 @@ export default class Tile extends List {
           data: { detailEntity: group.detailEntity, detailId: group.groupId },
         })
       : el('h2', { text: group.label, classes: ['groupLabel'] });
-    if (group.detailEntity) LB.append(el('h2', { text: group.label }));
+    // The inner <h2> needs its own 'groupLabel' class too — it's a
+    // separate element from the <a> above, not just text inside it (that's
+    // what preserves the heading semantics for a linked group, same as the
+    // plain-text case), so it doesn't inherit the <a>'s class list and was
+    // rendering at the raw browser-default <h2> size (48px, bold) instead
+    // of the reset plain-label look every other group header has.
+    if (group.detailEntity) LB.append(el('h2', { text: group.label, classes: ['groupLabel'] }));
 
     if (group.collapsible) SP.append(OC);
     if (group.badges && group.badges[0]) GD.append(this._getBadgeDom(group.badges));
