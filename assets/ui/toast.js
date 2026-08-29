@@ -57,6 +57,17 @@ export default class Toast {
     TOASTER.querySelector('.SCROLLER').append(TOAST);
     TOASTER.classList.add('show');
 
+    // TOASTER itself is the scroll container (overflow:auto, max-height:90vh
+    // — see css.css), not SCROLLER. A pile of tall toasts (e.g.
+    // ConfirmSwapModal's multi-line swapNotes) can exceed that cap well
+    // before the DOM stops accepting new ones — without this, scrollTop
+    // stays wherever it was (0, on first overflow), so a 2nd/3rd toast lands
+    // fully in the DOM but below the visible scroll window: "added but never
+    // visible." New toasts are appended at the end of SCROLLER (flex-end
+    // packs them toward the bottom), so scrolling to bottom is always
+    // "scroll to newest."
+    TOASTER.scrollTop = TOASTER.scrollHeight;
+
     // Fades out on its own after a few seconds (see the .expired rule in
     // css.css) — deliberately NOT removed from the DOM, unlike the close
     // button's handler above. Keeping it around is what a future "review
