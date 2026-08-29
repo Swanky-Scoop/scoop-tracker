@@ -25,7 +25,15 @@ jobs:
     # exactly (see tests/visual/README.md) — a mismatched browser/test-runner
     # pair is a common, confusing source of spurious diffs or hard failures.
     container:
-      image: mcr.microsoft.com/playwright:v1.48.2-jammy
+      # Digest-pinned (2026-08-29) to the v1.48.2-jammy tag as it exists
+      # TODAY. The tag is mutable — Microsoft re-pushes it with base-package
+      # updates, which silently changed font/subpixel rendering after
+      # 2026-08-20 and made every screenshot fail against the (old-runner)
+      # baselines. A future drift now changes THIS line and fails loudly
+      # here, instead of failing every screenshot. If you bump the image,
+      # re-run `npx playwright test --update-snapshots` in the new image
+      # and commit the refreshed baselines in the same PR.
+      image: mcr.microsoft.com/playwright@sha256:96dc479be9a603227fafc7126bd7d5e8152ae3e63749f377b2c49a4314b28ae1
       # Chromium under Docker's default 64MB /dev/shm frequently crashes on
       # anything non-trivial; --ipc=host is the standard fix recommended by
       # Playwright's own Docker docs.
