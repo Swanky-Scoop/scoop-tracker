@@ -26,6 +26,15 @@ if (!defined('ABSPATH')) exit;
  * duplicate groups rather than recognizing the existing ones. Not needed
  * for fields to resolve their group by slug either way, so simplest safe
  * fix is just not shipping it once a pod is past first creation.
+ *
+ * shift_report/supply/cake_order's promotion to every environment is still
+ * in progress (see WHITEBOARD-INGESTION.md) - they exist on local and OPS
+ * but not everywhere, so Apply against a brand-new environment (no prior
+ * shift_report at all) will hit "Group (Slug: X) not found" on every field,
+ * since there are no groups yet for those slugs to resolve against. Not a
+ * bug to fix reflexively - confirm the environment actually needs this
+ * feature promoted before creating the groups (by hand or by restoring the
+ * pod-level 'groups' array above) rather than working around the error.
  */
 function scoop_schema_definition(): array {
   return array (
