@@ -437,10 +437,24 @@ function scoop_create_batch_tubs_direct(int $batch_id, int $flavor_id, float $co
 
   if (empty($created)) return [];
 
-  // ── Step 2: one multi-row INSERT into wp_pods_tub ─────────────────────────
+  // ── Step 2: one multi-row UPSERT into wp_pods_tub ─────────────────────────
   // This is the row that makes the tub visible to Pods queries. Writing it
   // directly (rather than via pods('tub', $id)->save()) is what's new in
   // 2026-05-27 late — see the history note in the docblock.
+  //
+  // ON DUPLICATE KEY UPDATE, not a bare INSERT: Pods 2.8.23 (and 3.x) hooks
+  // wp_insert_post → PodsMeta::save_post, which auto-creates an EMPTY
+  // wp_pods_tub row (id, created_on, changed_on only) for every new tub
+  // post — verified on a fresh CI-parity stack (the plain wp_insert_post
+  // probe materializes the row with state=''). On the mirror this never
+  // happens (its wp_pods_tub predates the pod's save_post wiring / its
+  // Pods copy behaves differently), which is why the plain INSERT worked
+  // there: on this stack the bare INSERT collides ("Duplicate entry") and
+  // the batch-created tub is invisible to every Pods consumer. The upsert
+  // is correct in BOTH worlds: when the auto-row exists it upgrades it to
+  // the real values; when it doesn't, the insert behaves exactly as before.
+  // Confirmed on a live stack: empty auto-row + failed INSERT → upsert →
+  // bundle read returns state/amount correctly.
   $tub_table = $wpdb->prefix . 'pods_tub';
   $step_start = microtime(true);
   $values    = [];
@@ -451,12 +465,13 @@ function scoop_create_batch_tubs_direct(int $batch_id, int $flavor_id, float $co
     );
   }
   $sql = "INSERT INTO {$tub_table} (id, state, `index`, amount, created_on, changed_on) VALUES "
-       . implode(',', $values);
+       . implode(',', $values)
+       . " ON DUPLICATE KEY UPDATE state = VALUES(state), `index` = VALUES(`index`), amount = VALUES(amount), changed_on = VALUES(changed_on)";
   $result = $wpdb->query($sql);
   if ($result === false) {
-    scoop_batch_debug("scoop_create_batch_tubs_direct: wp_pods_tub bulk insert FAILED: " . $wpdb->last_error);
+    scoop_batch_debug("scoop_create_batch_tubs_direct: wp_pods_tub bulk upsert FAILED: " . $wpdb->last_error);
   } else {
-    scoop_batch_debug("batch {$batch_id}: wp_pods_tub bulk insert {$result} rows in " . scoop_batch_elapsed_ms($step_start) . "ms");
+    scoop_batch_debug("batch {$batch_id}: wp_pods_tub bulk upsert {$result} rows in " . scoop_batch_elapsed_ms($step_start) . "ms");
   }
 
   // ── Step 3: bulk INSERT relationships into wp_podsrel ─────────────────────
