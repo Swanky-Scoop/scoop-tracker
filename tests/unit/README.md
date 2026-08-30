@@ -13,9 +13,11 @@ request parser stay protected by tests that run outside any one agent's box.
 # everything (PHP suite auto-skips with a note if php-cli is absent)
 node tests/unit/run-all.mjs
 
-# individually
-node tests/unit/debt-model.test.mjs     # pure computeDebtRows() arithmetic
-node tests/unit/debt-class.test.mjs     # DebtGridModel class behavior
+# individually — on node < 21.3 (no --disable-warning) you may see a harmless
+# MODULE_TYPELESS_PACKAGE_JSON warning on these single-file runs; the run-all
+# entry point suppresses it itself.
+node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/debt-model.test.mjs     # pure computeDebtRows() arithmetic
+node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/debt-class.test.mjs     # DebtGridModel class behavior
 php  tests/unit/debt-requests.php       # scoop_parse_debt_requests() parser
 
 # or from tests/smoke (also wired there)
