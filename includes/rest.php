@@ -370,6 +370,190 @@
    * simply left out of shift_report.cake_orders and reported back, while the
    * report itself still saves cleanly either way.
    */
+  /* ------------------------------------------------------------
+   * Debt board — /debt-requests (worktree-tub-moving)
+   *
+   * The Debt grid's rows are SYNTHETIC (destination, flavor) pairs, not
+   * flavor_request post ids, so the generic update-mode cells dispatch
+   * (scoop_handle_cells_post, which saves by numeric row id) structurally
+   * cannot serve them. This dedicated POST route upserts one
+   * flavor_request row per (location, flavor) instead — the same
+   * "dedicated route because the row shape doesn't fit the generic
+   * dispatch" reasoning as ShiftReport's /shift-reports above.
+   *
+   * Body shape (envelope key = route key, the same client contract as
+   * every other write — see ScoopAPI.postJson's "THE RULE"):
+   *   { "Debt": { "cells": { "1010:600": { "wanted": 3 } } } }
+   * Each cell key is "<locationId>:<flavorId>". wanted=0 deletes the
+   * override row (a missing row means "no override, slots rule"); a
+   * positive wanted upserts/replaces the row's wanted.
+   *
+   * flavor_request is NOT in inventory_change scope: like slot flavor
+   * designations (see scoop_should_log_inventory_change), this is
+   * planning intent, not a stock movement — the audit table stays free
+   * of it.
+   * ------------------------------------------------------------ */
+
+  /**
+   * Parse + validate one /debt-requests body into upsert/delete ops.
+   * Pure (no WP/Pods calls) so it's testable in-box; the handler below
+   * owns all persistence. Returns [ops, errors] where each op is
+   * ['type' => 'upsert'|'delete', 'location' => int, 'flavor' => int,
+   * 'wanted' => int (upsert only)].
+   *
+   * Cell keys are the Debt grid's SYNTHETIC NUMERIC row ids —
+   * location*100000 + flavor (see PAIR_ID_MULTIPLIER in
+   * assets/models/debt-grid-model.js; List's write path Number()s row ids,
+   * so the "1010:600" string form would die as NaN client-side). Decoded
+   * here by divmod, never trusted blindly: flavor must be 1..99999 and
+   * location >= 1.
+   */
+  function scoop_parse_debt_requests(array $payload): array {
+    $errors = [];
+    $ops    = [];
+
+    $cells = $payload['cells'] ?? null;
+    if (!is_array($cells)) {
+      return [[], ['Missing Debt[cells].']];
+    }
+
+    foreach ($cells as $row_key => $fields) {
+      if (!is_array($fields)) {
+        $errors[] = 'Cell ' . (string) $row_key . ': not an object.';
+        continue;
+      }
+
+      $pair_id = filter_var($row_key, FILTER_VALIDATE_INT);
+      if ($pair_id === false || $pair_id <= 0) {
+        $errors[] = 'Cell ' . (string) $row_key . ": malformed row id (expected location*100000+flavor).";
+        continue;
+      }
+
+      $flavor_id   = $pair_id % 100000;
+      $location_id = intdiv($pair_id - $flavor_id, 100000);
+
+      if ($location_id < 1 || $flavor_id < 1 || $flavor_id > 99999) {
+        $errors[] = "Cell {$row_key}: row id decodes to an invalid location/flavor pair.";
+        continue;
+      }
+
+      if (!array_key_exists('wanted', $fields)) {
+        $errors[] = "Cell {$row_key}: missing 'wanted'.";
+        continue;
+      }
+
+      $wanted = filter_var($fields['wanted'], FILTER_VALIDATE_INT);
+      if ($wanted === false) {
+        $errors[] = "Cell {$row_key}: 'wanted' must be a whole number.";
+        continue;
+      }
+
+      // 0 = "no override" — delete any existing row. Negative values are
+      // a client bug: refuse rather than clamp silently.
+      if ($wanted < 0 || $wanted > 99) {
+        $errors[] = "Cell {$row_key}: 'wanted' must be between 0 and 99.";
+        continue;
+      }
+
+      $ops[] = $wanted === 0
+        ? ['type' => 'delete', 'location' => $location_id, 'flavor' => $flavor_id]
+        : ['type' => 'upsert', 'location' => $location_id, 'flavor' => $flavor_id, 'wanted' => $wanted];
+    }
+
+    return [$ops, $errors];
+  }
+
+  function scoop_handle_debt_requests_post(\WP_REST_Request $req) {
+    $payload = $req->get_param('Debt');
+    if (!is_array($payload)) {
+      return new \WP_REST_Response(['ok' => false, 'error' => 'Missing or invalid Debt payload.'], 400);
+    }
+
+    [$ops, $errors] = scoop_parse_debt_requests($payload);
+    if ($errors) {
+      return new \WP_REST_Response(['ok' => false, 'error' => implode(' ', $errors)], 400);
+    }
+    if (!$ops) {
+      return new \WP_REST_Response(['ok' => false, 'error' => 'No cells to save.'], 400);
+    }
+
+    if (!function_exists('pods')) {
+      error_log('Scoop /debt-requests: Pods API not available');
+      return new \WP_REST_Response(['ok' => false, 'error' => 'Pods API not available.'], 500);
+    }
+    $api = pods_api();
+    if (!$api) {
+      return new \WP_REST_Response(['ok' => false, 'error' => 'Pods API not available.'], 500);
+    }
+
+    // One upsert per (location, flavor): find the existing row for the
+    // pair, then save (update) or create. pods() with a where clause is
+    // the established read here (same as the slot dedupe hook's lookup).
+    $updated = [];
+    foreach ($ops as $op) {
+      $pair_key = $op['location'] * 100000 + $op['flavor']; // inverse of the client's synthetic row id
+
+      $existing = pods('flavor_request', [
+        'where' => sprintf(
+          'location.ID = %d AND flavor.ID = %d',
+          $op['location'],
+          $op['flavor']
+        ),
+        'limit' => 1,
+      ]);
+      $existing_id = ($existing && $existing->total() > 0) ? (int) $existing->field('ID') : 0;
+
+      if ($op['type'] === 'delete') {
+        if (!$existing_id) continue; // nothing to delete — idempotent no-op
+        $res = wp_delete_post($existing_id, true);
+        if (!$res) {
+          error_log("Scoop /debt-requests: delete failed for flavor_request {$existing_id}");
+          $errors[] = "Delete failed for {$op['location']}:{$op['flavor']}.";
+          continue;
+        }
+        $updated[(string) $pair_key] = ['wanted' => 0];
+        continue;
+      }
+
+      $title = sprintf(
+        '%s | %s',
+        get_the_title($op['location']) ?: ("Location {$op['location']}"),
+        get_the_title($op['flavor'])   ?: ("Flavor {$op['flavor']}"),
+      );
+
+      $data = [
+        'post_title' => $title,
+        'post_status' => 'publish',
+        'location' => $op['location'],
+        'flavor'   => $op['flavor'],
+        'wanted'   => $op['wanted'],
+      ];
+
+      $res = $existing_id
+        ? $api->save_pod_item(['pod' => 'flavor_request', 'id' => $existing_id, 'data' => $data])
+        : $api->save_pod_item(['pod' => 'flavor_request', 'data' => $data]);
+
+      if (is_wp_error($res) || !$res) {
+        $msg = is_wp_error($res) ? $res->get_error_message() : 'Save failed';
+        error_log("Scoop /debt-requests: save failed for {$op['location']}:{$op['flavor']}: {$msg}");
+        $errors[] = "Save failed for {$op['location']}:{$op['flavor']}.";
+        continue;
+      }
+
+      $updated[(string) $pair_key] = ['wanted' => $op['wanted']];
+    }
+
+    $ok = empty($errors);
+    if ($ok) scoop_cache_bust();
+
+    return new \WP_REST_Response([
+      'ok'      => $ok,
+      'author'  => wp_get_current_user()->user_login,
+      'updated' => $updated,
+      'errors'  => $errors,
+    ], $ok ? 200 : 400);
+  }
+
   function scoop_handle_shift_report_create(\WP_REST_Request $req) {
     $payload = $req->get_param('ShiftReport');
     if (!is_array($payload)) {

@@ -254,8 +254,8 @@ export default class ScoopAPI {
 
 
   // --- WRITES  ---
-  async postJson(payload, type = "", { useNonce = true } = {}) {
-    const url = this.route(type);
+  async postJson(payload, type = "", { useNonce = true, route = null } = {}) {
+    const url = this.route(route ?? type);
     const bodyObj = { [type]: payload }; // <-- THE RULE
 
     const r = await this._fetch(url, {

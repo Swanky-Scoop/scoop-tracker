@@ -90,6 +90,19 @@ const OPEN_STATE = 'Opened';
 // being handled), covered last (informational).
 const STATUS_RANK = { fillable: 0, unfillable: 1, pending: 2, covered: 3 };
 
+// Synthetic numeric row id for a (location, flavor) pair — the Debt board's
+// rows are NOT posts, but List's write path requires numeric row ids
+// (_buildDirtyPayload Number()s the id out of the input name; a string key
+// like "1010:600" would become NaN and silently drop the edit). The
+// /debt-requests route decodes these back into the pair (floor(id/100000),
+// id%100000) — see scoop_parse_debt_requests(). Supports flavor ids up to
+// 99999; flavor ids are small sequential Pods posts, far under that.
+const PAIR_ID_MULTIPLIER = 100000;
+
+export function debtRowId(locationId, flavorId) {
+  return Number(locationId) * PAIR_ID_MULTIPLIER + Number(flavorId);
+}
+
 export function isFrontOfHouseUse(useId, useTitle) {
   const id = Number(useId ?? 0);
   if (id && id === FRONT_OF_HOUSE_USE_ID) return true;
@@ -109,7 +122,7 @@ export function isFrontOfHouseUse(useId, useTitle) {
 // its BaseGridModel/DOM dependencies. Input rows are raw bundle rows:
 // slots need location/current_flavor/immediate_flavor; tubs need
 // flavor/state/use/amount/location/moving_to.
-export function computeDebtRows({ slots = [], tubs = [], useTitleOf = () => '' } = {}) {
+export function computeDebtRows({ slots = [], tubs = [], requests = [], useTitleOf = () => '' } = {}) {
   // 1) Demand: every current/immediate designation names a (location, flavor)
   //    pair that wants a tub.
   const demand = new Map(); // "locId:flavorId" -> count
@@ -122,6 +135,22 @@ export function computeDebtRows({ slots = [], tubs = [], useTitleOf = () => '' }
       const key = `${loc}:${flavorId}`;
       demand.set(key, (demand.get(key) ?? 0) + 1);
     }
+  }
+
+  // 1b) Persisted demand overrides (flavor_request, written by this grid's
+  //     editable Wanted column through /debt-requests): a request STATES how
+  //     many are wanted outright — replaces, never adds to, the slot-implied
+  //     count for its pair, so planning can ask for more tubs than slots
+  //     currently imply without double-counting the slots it already
+  //     reflects. Slots remain the floor: effective = max(slot-implied,
+  //     requested).
+  for (const req of Array.isArray(requests) ? requests : []) {
+    const loc = Number(req?.location ?? 0);
+    const fid = Number(req?.flavor ?? 0);
+    const wanted = Number(req?.wanted ?? 0);
+    if (!loc || !fid) continue;
+    const key = `${loc}:${fid}`;
+    demand.set(key, Math.max(demand.get(key) ?? 0, wanted));
   }
 
   // 2) Supply: bucket every non-dead tub once — on-hand (at dest, any
@@ -190,7 +219,7 @@ export function computeDebtRows({ slots = [], tubs = [], useTitleOf = () => '' }
     else                   status = 'covered';
 
     rows.push({
-      id: key,
+      id: debtRowId(destId, flavorId),
       destination: destId,
       flavor: flavorId,
       demand: dem,
@@ -219,11 +248,24 @@ export default class DebtGridModel extends BaseGridModel {
     const hashOverride = HashState.get(`loc.${this.name}`);
     this.location = hashOverride != null ? Number(hashOverride) : 0;
 
-    // Read-only (no writeEnvelope at all): every cell is computed. Editing
-    // demand happens where demand lives — the Cabinet grid's slot flavor
-    // fields; making a claim happens on Moving (moving_to is editable
-    // there). This grid exists to be LOOKED at.
+    // Read-mostly, ONE writeable column: the Wanted cell upserts a
+    // flavor_request demand override through the dedicated /debt-requests
+    // route (this.name = 'Debt' is the envelope key the List posts under —
+    // see scoop_handle_debt_requests_post in includes/rest.php). Everything
+    // else is computed. Editing demand's OTHER source happens where it
+    // lives — the Cabinet grid's slot flavor fields.
+    // Full autosave, not partial: FlavorTub's history (mixed autosaved +
+    // manual fields on one grid read as data loss even when nothing was
+    // lost — see its constructor comment) rules out autosaveFields; with
+    // exactly one writeable column, full autosave IS the partial case.
     this.autosave = true;
+    this.writeEnvelope = 'Debt';
+    // URL vs envelope split: envelope key stays 'Debt' (the server handler
+    // reads $req->get_param('Debt')); the POST goes to the dedicated
+    // /debt-requests route (registered in includes/_routes.php, URL emitted
+    // in includes/enqueue.php's DebtRequests entry) — Debt is display-only
+    // in scoop_routes_config() so it has no config path of its own.
+    this.writeRoute = 'DebtRequests';
 
     // Non-location filter values (see setFilterValue/getFilterValue below —
     // location itself rides the base class's this.location + HashState
@@ -237,7 +279,13 @@ export default class DebtGridModel extends BaseGridModel {
   buildCols() {
     this.columns = [
       { key: 'flavor',    label: 'Flavor',        type: 'string', titleMap: 'flavor' },
-      { key: 'demand',    label: 'Wanted',        type: 'number' },
+      // Editable demand override — the ONE writeable cell on this board.
+      // Writes upsert a flavor_request row via /debt-requests (see the
+      // route comment in includes/_routes.php): a positive number replaces
+      // the pair's slot-implied demand (max wins), 0 deletes the override
+      // so slots rule again. TextIt control, same hand-authored convention
+      // as any model-authored number column.
+      { key: 'demand',    label: 'Wanted',        type: 'number', control: 'text', write: true },
       { key: 'on_hand',   label: 'On hand',       type: 'number' },
       { key: 'inbound',   label: 'Inbound',       type: 'number' },
       { key: 'gap',       label: 'Owed',          type: 'number' },
@@ -290,6 +338,7 @@ export default class DebtGridModel extends BaseGridModel {
     let items = computeDebtRows({
       slots: Array.isArray(this.domain.slot) ? this.domain.slot : [],
       tubs:  Array.isArray(this.domain.tub)  ? this.domain.tub  : [],
+      requests: Array.isArray(this.domain.flavor_request) ? this.domain.flavor_request : [],
       useTitleOf: (id) => useTitleById.get(Number(id)) ?? '',
     });
 
@@ -347,7 +396,26 @@ export default class DebtGridModel extends BaseGridModel {
           rowId:   item.id,
           display: this.titleById(this._flavorsById, item.flavor, `Flavor ${item.flavor}`),
         };
-        row.demand    = item.demand;
+        // Wanted is the one writeable cell: d.write !== false + col.write
+        // put a TextIt input here (see _renderFieldValue's write branch).
+        // TextIt reads data.value ?? data.display and posts the input name
+        // Debt[cells][<rowId>][demand] — rowId is the synthetic numeric
+        // pair id the /debt-requests route decodes. colKey is REQUIRED —
+        // TextIt builds the input name from data.colKey ?? data.key, and
+        // fillRowFromColumns always sets it; without it the autosave posts
+        // an empty field name and the server drops the edit.
+        row.demand    = {
+          id:      item.id,
+          rowId:   item.id,
+          colKey:  'demand',
+          display: String(item.demand),
+          value:   item.demand,
+          write:   this._demandWriteable(),
+          type:    'number',
+          min:     0,
+          max:     99,
+          step:    1,
+        };
         row.on_hand   = item.on_hand;
         row.inbound   = item.inbound;
         row.gap       = item.gap;
@@ -359,6 +427,18 @@ export default class DebtGridModel extends BaseGridModel {
       rowType:   'debt',
       rowLabel:  'debt',
     });
+  }
+
+  // Whether the CURRENT USER may write the Wanted column — read straight
+  // off the server-computed Debt metadata rather than duplicating the role
+  // matrix here. scoop_client_metadata() now emits canPost on every type
+  // (see includes/enqueue.php), resolved by the same scoop_user_can_route
+  // check the /debt-requests route's own permission callback runs — so
+  // what the cell shows matches exactly what the server will accept.
+  _demandWriteable() {
+    const md = window.SCOOP?.metaData?.Debt;
+    if (!md) return true; // no server metadata at all (dev/test harness) — let the column's own write flag speak
+    return !!md.canPost;
   }
 
   // Group badge — the destination's whole story in one line:
