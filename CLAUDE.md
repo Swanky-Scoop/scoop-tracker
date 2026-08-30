@@ -10,9 +10,11 @@ The repository root maps directly to `wp-content/plugins/scoop_rest/` on the ser
 
 ## Build / run / test
 
-There is **no build step, no package manager, no test suite**. JS files are loaded directly as ES modules by the browser (`script_loader_tag` filter rewrites the `scoop-grid` handle to `type="module"`).
+There is **no build step and no package manager**. JS files are loaded directly as ES modules by the browser (`script_loader_tag` filter rewrites the `scoop-grid` handle to `type="module"`). The test suites under `tests/` (visual, smoke, unit) are dev-only — the deploy rsync excludes them.
 
-Deployment is by GitHub Actions (`.github/workflows/deploy.yml`), via `rsync` over SSH — no SFTP-on-save, no VS Code SFTP extension. A push to `main` auto-deploys to `test.swankyscoop.net`. Deploying to `ops.swankyscoop.net` (production) requires a manual `workflow_dispatch` run with `target: ops`, gated behind the `ops` GitHub environment. The SSH deploy key lives only in the `SFTP_SSH_KEY` Actions secret; the workflow explicitly excludes any `scoop-deploy-key*`/`*.pem`/`*_rsa`/`*_ed25519`/`id_*` files from the rsync payload so a stray key file in the working tree can't get shipped.
+CI lints every tracked PHP file with `php -l` (`.github/workflows/lint.yml`), plus the `tests/unit` suites when present — the runner installs php-cli, so the PHP parser suite executes there for real. Every deploy job in `deploy.yml` `needs:` the lint job, so a red lint **blocks the deploy** instead of shipping a PHP syntax error (which would white-screen every request on the target site); the lint also runs standalone on every pull request.
+
+Deployment is by GitHub Actions (`.github/workflows/deploy.yml`), via `rsync` over SSH — no SFTP-on-save, no VS Code SFTP extension. A push to `main` runs `php -l` over the tree first (`.github/workflows/lint.yml`; red lint = no deploy) then auto-deploys to `test.swanky.ink`. Deploying to `ops.swankyscoop.net` (production) requires a manual `workflow_dispatch` run with `target: ops`, gated behind the `ops` GitHub environment. The SSH deploy key lives only in the `SFTP_SSH_KEY` Actions secret; the workflow explicitly excludes any `scoop-deploy-key*`/`*.pem`/`*_rsa`/`*_ed25519`/`id_*` files from the rsync payload so a stray key file in the working tree can't get shipped.
 
 To exercise changes, commit and push to `main` (deploys to TEST) and reload a page that contains a `[scoop_grid ...]` shortcode while logged in. When debugging server-side, set `define('SCOOP_DEBUG_LOG', true)` in `wp-config.php` to enable `scoop_debug_log()` output to the PHP error log.
 
