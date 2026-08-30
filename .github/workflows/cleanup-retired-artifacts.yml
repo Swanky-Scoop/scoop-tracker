@@ -1,0 +1,118 @@
+# Retired artifacts are NOT removed from the deploy hosts by normal rsync
+# (no --delete, by design — see deploy.yml), so a file deleted from the
+# repo keeps being served until it is purged from each host.
+#
+# schema.sql and dump.txt were removed from the repo in PR #37
+# (2026-08-30): schema.sql was a stale, schema-only mysqldump of the
+# predecessor track_-prefixed site (zero INSERTs — not a restorable
+# mirror), dump.txt a pasted taxonomy list. All three deploy targets
+# were still serving copies afterwards; this workflow removes them.
+#
+# Idempotent: `rm -f` does nothing when the file is already gone; keep
+# the RETIRED list current as artifacts are retired. Each job fails if
+# any listed path still exists after cleanup, so a silent failure is
+# loud.
+
+name: Cleanup retired artifacts
+
+on:
+  workflow_dispatch:
+
+env:
+  REMOTE_HOST: swankyscoop.net
+  REMOTE_PORT: "21098"
+  REMOTE_USER: swannvoe
+  REMOTE_HOST_INK: swanky.ink
+  REMOTE_PORT_INK: "21098"
+  REMOTE_USER_INK: swanqpgx
+  # One shell-quoted entry per retired repo-root file.
+  RETIRED: "schema.sql dump.txt"
+
+jobs:
+  cleanup-ops-swankyscoop-net:
+    name: Purge retired artifacts — ops.swankyscoop.net (production)
+    runs-on: ubuntu-latest
+    concurrency:
+      group: cleanup-ops
+      cancel-in-progress: false
+    steps:
+      - name: Load SSH key into agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SFTP_SSH_KEY }}
+
+      - name: Purge + verify
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 10 -p "$REMOTE_PORT" "$REMOTE_HOST" >> ~/.ssh/known_hosts
+
+          for f in $RETIRED; do
+            ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_HOST" \
+              "rm -f '/home/swannvoe/ops.swankyscoop.net/wp-content/plugins/scoop_rest/$f'"
+            if ssh -p "$REMOTE_PORT" "$REMOTE_USER@$REMOTE_HOST" \
+              "test -e '/home/swannvoe/ops.swankyscoop.net/wp-content/plugins/scoop_rest/$f'"; then
+              echo "::error::retired artifact still present on $REMOTE_HOST: $f"
+              exit 1
+            else
+              echo "removed: $f"
+            fi
+          done
+
+  cleanup-test-ink:
+    name: Purge retired artifacts — test.swanky.ink
+    runs-on: ubuntu-latest
+    concurrency:
+      group: cleanup-test-ink
+      cancel-in-progress: false
+    steps:
+      - name: Load SSH key into agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.OPS_INK }}
+
+      - name: Purge + verify
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 10 -p "$REMOTE_PORT_INK" "$REMOTE_HOST_INK" >> ~/.ssh/known_hosts
+
+          for f in $RETIRED; do
+            ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" \
+              "rm -f '/home/swanqpgx/test.swanky.ink/wp-content/plugins/scoop_rest/$f'"
+            if ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" \
+              "test -e '/home/swanqpgx/test.swanky.ink/wp-content/plugins/scoop_rest/$f'"; then
+              echo "::error::retired artifact still present on $REMOTE_HOST_INK: $f"
+              exit 1
+            else
+              echo "removed: $f"
+            fi
+          done
+
+  cleanup-ops-ink:
+    name: Purge retired artifacts — ops.swanky.ink (production)
+    runs-on: ubuntu-latest
+    environment: ops
+    concurrency:
+      group: cleanup-ops-ink
+      cancel-in-progress: false
+    steps:
+      - name: Load SSH key into agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.OPS_INK }}
+
+      - name: Purge + verify
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 10 -p "$REMOTE_PORT_INK" "$REMOTE_HOST_INK" >> ~/.ssh/known_hosts
+
+          for f in $RETIRED; do
+            ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" \
+              "rm -f '/home/swanqpgx/ops.swanky.ink/wp-content/plugins/scoop_rest/$f'"
+            if ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" \
+              "test -e '/home/swanqpgx/ops.swanky.ink/wp-content/plugins/scoop_rest/$f'"; then
+              echo "::error::retired artifact still present on $REMOTE_HOST_INK: $f"
+              exit 1
+            else
+              echo "removed: $f"
+            fi
+          done

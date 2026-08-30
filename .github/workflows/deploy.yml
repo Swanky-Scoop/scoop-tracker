@@ -23,7 +23,10 @@ env:
   REMOTE_PORT_INK: "21098"
   REMOTE_USER_INK: swanqpgx
   # rsync flags. No --delete: matches current VS Code SFTP behavior
-  # (local deletions don't remove remote files).
+  # (local deletions don't remove remote files). Files retired from the
+  # repo therefore keep being served on the hosts until purged — see
+  # cleanup-retired-artifacts.yml, which removes retired artifacts
+  # (RETIRED list) from every target.
   RSYNC_ARGS: "-rltvz"
 
 jobs:
