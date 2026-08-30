@@ -27,9 +27,20 @@ env:
   RSYNC_ARGS: "-rltvz"
 
 jobs:
+  # Syntax gate first: `php -l` over every tracked PHP file (plus the
+  # tests/unit suites when present). A syntax error in any plugin PHP file
+  # white-screens every WordPress request on the target, so deploys must not
+  # proceed past a red lint. See lint.yml.
+  lint-php:
+    name: PHP lint (blocks deploys)
+    uses: ./.github/workflows/lint.yml
+    permissions:
+      contents: read
+
   deploy-ops:
     name: Deploy to OPS (swankyscoop.net, production)
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'ops'
+    needs: [lint-php]
     runs-on: ubuntu-latest
     environment: ops
     concurrency:
@@ -83,6 +94,7 @@ jobs:
     if: >-
       github.event_name == 'push' ||
       (github.event_name == 'workflow_dispatch' && inputs.target == 'test-ink')
+    needs: [lint-php]
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-test-ink
@@ -133,6 +145,7 @@ jobs:
   deploy-ops-ink:
     name: Deploy to OPS (swanky.ink, production)
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'ops-ink'
+    needs: [lint-php]
     runs-on: ubuntu-latest
     environment: ops
     concurrency:
