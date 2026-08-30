@@ -76,6 +76,36 @@ section('valid upsert + delete');
     eq($ops[1], ['type' => 'delete', 'location' => 1020, 'flavor' => 700], 'wanted 0 -> delete op (no wanted key on deletes)');
 }
 
+// ---- field-name seam: 'demand' (browser) vs 'wanted' (route shape) ----------
+// The Debt board's autosave posts Debt[cells][<rowId>][demand] (List builds
+// the input name from the cell's colKey 'demand'); this parser reads
+// 'wanted'. Both must be accepted — this seam is what the smoke spec found.
+section('demand/wanted field-name seam');
+{
+    // The EXACT browser payload shape (TextIt colKey 'demand'):
+    [$ops, $errors] = parse(['cells' => [(string) (1010 * 100000 + 600) => ['demand' => 3]]]);
+    eq($errors, [], 'browser shape (demand) accepted — DebtGridModel colKey demand');
+    eq($ops, [['type' => 'upsert', 'location' => 1010, 'flavor' => 600, 'wanted' => 3]], "demand -> upsert op (wanted key)");
+
+    [$ops, $errors] = parse(['cells' => [(string) (1010 * 100000 + 600) => ['demand' => 0]]]);
+    eq($ops, [['type' => 'delete', 'location' => 1010, 'flavor' => 600]], 'demand 0 -> delete op');
+
+    // Both names present:
+    [$ops, $errors] = parse(['cells' => [(string) (1010 * 100000 + 600) => ['wanted' => 3, 'demand' => 3]]]);
+    eq($errors, [], 'wanted+demand agreeing is valid');
+    eq($ops[0]['wanted'], 3, 'wanted+demand agreeing -> one op');
+
+    [$ops, $errors] = parse(['cells' => [(string) (1010 * 100000 + 600) => ['wanted' => 3, 'demand' => 5]]]);
+    eq($ops, [], 'wanted+demand disagreeing refused (ambiguous)');
+    eq(preg_match("/disagree/", $errors[0] ?? '') === 1, true, 'disagreement error names the conflict');
+
+    // The seam is symmetric: every validation below runs against either
+    // name — prove it once with the same value via both shapes.
+    [$ops, $errors] = parse(['cells' => [(string) (1010 * 100000 + 600) => ['wanted' => 99]]]);
+    [$ops2, $errors2] = parse(['cells' => [(string) (1010 * 100000 + 600) => ['demand' => 99]]]);
+    eq([$ops, $errors], [$ops2, $errors2], 'boundary 99 behaves identically via wanted and demand');
+}
+
 // ---- envelope guards --------------------------------------------------------
 section('envelope guards');
 {

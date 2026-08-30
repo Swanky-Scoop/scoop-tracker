@@ -383,10 +383,18 @@
    *
    * Body shape (envelope key = route key, the same client contract as
    * every other write — see ScoopAPI.postJson's "THE RULE"):
-   *   { "Debt": { "cells": { "1010:600": { "wanted": 3 } } } }
-   * Each cell key is "<locationId>:<flavorId>". wanted=0 deletes the
-   * override row (a missing row means "no override, slots rule"); a
-   * positive wanted upserts/replaces the row's wanted.
+   *   { "Debt": { "cells": { "101000600": { "demand": 3 } } } }
+   * Each cell key is the grid's SYNTHETIC NUMERIC row id
+   * "<locationId>*100000+<flavorId>" (see below). The field inside each
+   * cell arrives under TWO names, and both are accepted: 'demand' is what
+   * the browser actually posts (List's autosave builds its input name from
+   * the cell's colKey, and DebtGridModel's writeable column is 'demand' —
+   * the name of the computed field the Wanted cell EDITS), while 'wanted'
+   * is this route's documented/API shape (the flavor_request field the
+   * value persists to). A cell carrying both with DIFFERENT values is
+   * ambiguous and refused. demand=0 / wanted=0 deletes the override row
+   * (a missing row means "no override, slots rule"); a positive value
+   * upserts/replaces the row's wanted.
    *
    * flavor_request is NOT in inventory_change scope: like slot flavor
    * designations (see scoop_should_log_inventory_change), this is
@@ -407,6 +415,16 @@
    * so the "1010:600" string form would die as NaN client-side). Decoded
    * here by divmod, never trusted blindly: flavor must be 1..99999 and
    * location >= 1.
+   *
+   * Field-name seam (found by the /debt-requests smoke spec, task
+   * 013e09b20000000b): TextIt names the input from the cell's colKey
+   * (`${formKey}[cells][${rowId}][${colKey}]`), so the browser posts
+   * `Debt[cells][<rowId>][demand]` — the column key — while this parser
+   * reads the persisted field 'wanted'. Accept both (falling back
+   * wanted->demand when wanted is absent), because renaming the column
+   * would touch List's dirty-tracking/commit/flash pipeline (all keyed on
+   * the input name) and can't be compile-checked — the server seam is the
+   * single, side-effect-free place to absorb the difference.
    */
   function scoop_parse_debt_requests(array $payload): array {
     $errors = [];
@@ -437,12 +455,29 @@
         continue;
       }
 
-      if (!array_key_exists('wanted', $fields)) {
+      // Field-name seam: accept the client's colKey 'demand' AND this
+      // route's documented 'wanted'. Same cell carrying BOTH with
+      // different values is ambiguous — refuse rather than guess.
+      $has_wanted = array_key_exists('wanted', $fields);
+      $has_demand = array_key_exists('demand', $fields);
+      if (!$has_wanted && !$has_demand) {
         $errors[] = "Cell {$row_key}: missing 'wanted'.";
         continue;
       }
-
-      $wanted = filter_var($fields['wanted'], FILTER_VALIDATE_INT);
+      if ($has_wanted && $has_demand) {
+        $w_raw = filter_var($fields['wanted'], FILTER_VALIDATE_INT);
+        $d_raw = filter_var($fields['demand'], FILTER_VALIDATE_INT);
+        if ($w_raw !== false && $d_raw !== false && $w_raw !== $d_raw) {
+          $errors[] = "Cell {$row_key}: 'wanted' and 'demand' disagree.";
+          continue;
+        }
+        $wanted = ($w_raw !== false) ? $w_raw : $d_raw;
+      } else {
+        $wanted = filter_var(
+          $has_wanted ? $fields['wanted'] : $fields['demand'],
+          FILTER_VALIDATE_INT
+        );
+      }
       if ($wanted === false) {
         $errors[] = "Cell {$row_key}: 'wanted' must be a whole number.";
         continue;

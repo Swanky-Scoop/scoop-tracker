@@ -28,7 +28,7 @@ cd tests/smoke && npm run test:unit
 |---|---|---|
 | `debt-model.test.mjs` | `computeDebtRows()` in `assets/models/debt-grid-model.js` | demand aggregation (current+immediate, **next_flavor excluded**), on_hand/inbound/gap/available, all four statuses, the 0.8 whole-tub threshold (same number as `scoop_find_whole_tubs()`), FOH id-first + label fallback, flavor_request **replace-not-add** semantics (max wins, slots are the floor), numeric pair row ids |
 | `debt-class.test.mjs` | `DebtGridModel` (same file) | column defs, the `{id,rowId,display}` flavor cells (the display-title bug), the full TextIt `demand` cell (colKey/min/max/step, `write` vs `window.SCOOP.metaData.Debt.canPost`), owed-desc group order + badges, status-rank row order, `hide_covered` + location filters (HashState `loc.Debt` persistence) |
-| `debt-requests.php` | `scoop_parse_debt_requests()` in `includes/rest.php` | upsert/delete decode of `location*100000+flavor` row ids, malformed-id/`wanted` refusals (0–99 bounds), string/float coercion, per-cell errors on a mixed batch |
+| `debt-requests.php` | `scoop_parse_debt_requests()` in `includes/rest.php` | upsert/delete decode of `location*100000+flavor` row ids, malformed-id/`wanted` refusals (0–99 bounds), string/float coercion, per-cell errors on a mixed batch, the `demand`/`wanted` field-name seam (the browser's TextIt autosave posts `…[demand]`, from the Debt column's colKey) |
 
 ## Conventions (why the files look like this)
 
@@ -53,6 +53,10 @@ cd tests/smoke && npm run test:unit
 
 - The **persistence half** of `/debt-requests` (the Pods upsert/delete calls
   in `scoop_handle_debt_requests_post`) is syntax-checked only — it needs a
-  live WP stack; the smoke suite against `ops.swanky.local` is its real
-  validation.
-- The Debt UI's browser behavior has no `tests/smoke` spec yet.
+  live WP stack; `tests/smoke/tests/debt-wanted-edit.spec.js` against
+  `ops.swanky.local` is its real validation (the browser suite also covers
+  the wire payload, the autosave flash, and the board's follow-through).
+- The Debt smoke spec needs the Local dev mirror running (see
+  tests/smoke/README.md) — it cannot run in CI or on a box without it. Its
+  Wanted values are computed from live supply at run time, so fixture-tub
+  drift between runs doesn't break its covered/pending branching.
