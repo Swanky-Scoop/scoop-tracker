@@ -135,6 +135,14 @@ function scoop_routes_config(string $batch_key = ''): array {
       'icon'         => 'if:m',
       'canvas_mode'  => 'full-nostack',
     ],
+    // Derived demand-side board ("what does each location owe its own
+    // plan") — see assets/models/debt-grid-model.js. Display-only entry,
+    // same shape as ItemPivot above: no route of its own, read purely
+    // through /bundle.
+    'Debt' => [
+      'display_title' => 'Debt',
+      'icon'         => 'if:d',
+    ],
     // "What got emptied, by day" log — see assets/models/emptied-log-grid-model.js.
     // No path/methods/mode/envelope_key here (same as ItemPivot above): it's
     // read purely through the /bundle endpoint, open to any authenticated

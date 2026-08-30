@@ -34,6 +34,14 @@ function scoop_bundle_specs(): array {
     // move where" list, grouped by destination location. See
     // assets/models/moving-grid-model.js.
     'Moving' => ['needs' => ['tub','flavor','location']],
+    // Tub-moving feature — derived demand-side board (see
+    // assets/models/debt-grid-model.js): (destination, flavor) rows computed
+    // from slot designations vs FOH stock. 'slot' is the demand source (the
+    // one thing Moving doesn't need), 'use' classifies front-of-house stock,
+    // 'flavor_request' is the persisted demand-override layer (Wanted
+    // column writes; rows absent on environments that haven't applied the
+    // pod yet — scoop_fetch_entities() returns [] for a missing pod).
+    'Debt' => ['needs' => ['slot','tub','flavor','use','location','flavor_request']],
     // End-of-shift report — see WHITEBOARD-INGESTION.md. Needs flavor,
     // location, and supply (the supplies_low picker), plus cabinet/slot so
     // the flavors_changed checklist can be filtered to slot.current_flavor
@@ -462,6 +470,24 @@ function scoop_entity_specs(string $key = ''): array {
 
       // Closeout — single-row create form (mode='create' in _config.php).
       // Mirrors the field list in scoop_closeouts_allowed_fields().
+      // Debt board's persisted demand overrides (worktree-tub-moving) —
+      // one row per (location, flavor); wanted replaces-not-adds slot-implied
+      // demand in computeDebtRows(). Written ONLY by the Debt grid's Wanted
+      // column through the dedicated /debt-requests route
+      // (scoop_handle_debt_requests_post in rest.php), never edited as rows
+      // in any grid — so no fields are client-writeable here.
+      'flavor_request' => [
+        'post_type' => 'flavor_request',
+        'pod'       => 'flavor_request',
+        'title'     => true,
+        'fields'    => [
+          'location' => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'location', 'hidden' => true],
+          'flavor'   => ['data_type' => 'int', 'control' => 'find', 'titleMap' => 'flavor', 'hidden' => true],
+          'wanted'   => ['data_type' => 'int'],
+        ],
+        'writeable' => [],
+      ],
+
       'closeout' => [
         'post_type' => 'closeout',
         'pod'       => 'closeout',

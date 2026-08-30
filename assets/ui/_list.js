@@ -1522,7 +1522,14 @@ export default class List extends Dockable{
     this._reportEditingState();
 
     try {
-      const r = await this.api.postJson(changes, this.writeType);
+      // writeRoute (optional, per model) — POST to a DIFFERENT registered
+      // route than writeEnvelope names. Debt needs this: its envelope key
+      // is 'Debt' (the server reads $req->get_param('Debt')) but the URL
+      // is the dedicated /debt-requests route (see ScoopAPI.postJson's
+      // route option and includes/enqueue.php's DebtRequests entry).
+      const r = await this.api.postJson(changes, this.writeType, {
+        route: this.state?.writeRoute ?? null,
+      });
 
       if (!r.ok || !r.data?.ok) {
         Toast.addMessage({

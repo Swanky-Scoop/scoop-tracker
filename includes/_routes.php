@@ -130,6 +130,23 @@ add_action('rest_api_init', function () {
     'permission_callback' => scoop_write_permission('ShiftReport'),
   ]);
 
+  // Debt board demand-override upserts (worktree-tub-moving) — see
+  // scoop_handle_debt_requests_post() in rest.php for why this is a
+  // dedicated route rather than a scoop_routes_config() entry (synthetic
+  // (location, flavor) row keys, not flavor_request post ids). 'Debt' IS a
+  // route key known to _policy.php (it already carries the Debt GET grant
+  // for the board itself), so scoop_write_permission() resolves it the
+  // same way it does for every _config.php-driven route — roles with
+  // Debt POST denied (kiosk, and everyone without an explicit Debt grant)
+  // are refused here without any per-route logic.
+  register_rest_route('scoop/v1', '/debt-requests', [
+    'methods'  => ['POST'],
+    'callback' => function(\WP_REST_Request $req) {
+      return scoop_handle_debt_requests_post($req);
+    },
+    'permission_callback' => scoop_write_permission('Debt'),
+  ]);
+
   // Live field schema (groups + fields, ordered per Pods admin) for the
   // shift-report form — see scoop_shift_report_field_schema() in rest.php.
   // Read-only, same permission tier as /bundle: any authenticated user, not

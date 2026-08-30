@@ -21,6 +21,7 @@ import CabinetWorkflowGridModel from "../models/cabinet-workflow-grid-model.js";
 import CabinetWorkflowTile      from "../ui/cabinet-workflow-tile.js";
 import ItemPivotGridModel       from "../models/item-pivot-grid-model.js";
 import MovingGridModel          from "../models/moving-grid-model.js";
+import DebtGridModel            from "../models/debt-grid-model.js";
 import ItemPivotGrid            from "../ui/item-pivot-grid.js";
 import ShiftReportGridModel     from "../models/shift-report-grid-model.js";
 import ShiftReportForm          from "../ui/shift-report-form.js";
@@ -163,6 +164,7 @@ export default class ScoopAPI {
       "CabinetWorkflow": CabinetWorkflowGridModel,
       "ItemPivot"      : ItemPivotGridModel,
       "Moving"         : MovingGridModel,
+      "Debt"           : DebtGridModel,
       "ShiftReport"    : ShiftReportGridModel,
       "Task"           : TaskGridModel,
       "Tasks"          : TasksGridModel,
@@ -252,8 +254,8 @@ export default class ScoopAPI {
 
 
   // --- WRITES  ---
-  async postJson(payload, type = "", { useNonce = true } = {}) {
-    const url = this.route(type);
+  async postJson(payload, type = "", { useNonce = true, route = null } = {}) {
+    const url = this.route(route ?? type);
     const bodyObj = { [type]: payload }; // <-- THE RULE
 
     const r = await this._fetch(url, {
