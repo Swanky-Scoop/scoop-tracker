@@ -862,6 +862,25 @@ matches the precedent already in `flavor-tub-grid-model.js`'s
 4. Grid type name: `CabinetWorkflow` — bare PascalCase like every other
    type, no `WF_`/underscore prefix, so it needs no special-casing in file
    names, routes, or CSS.
+5. Same-flavor-in-two-positions (current/immediate/next), 2026-08-29:
+   the server-side rule that a flavor can only hold one of a slot's three
+   designations at a time already existed (`scoop_slot_pre_save_dedupe_own_fields`/
+   `scoop_slot_post_save_dedupe_other_slots`, `includes/hooks/cabinet-slot.php`)
+   and needed no changes — it correctly clears whichever OTHER field held a
+   duplicate, for any write path. Two gaps on top of it got fixed:
+   (a) `ConfirmSwapModal._confirm()` progressing current -> immediate
+   (`_defaultFlavorId`'s common case) only ever wrote `current_flavor`, so
+   the dedupe hook just zeroed immediate_flavor out — it has no way to know
+   this was a genuine progression rather than an arbitrary edit, so it can
+   clear a duplicate but can't shift the chain. Fixed client-side, the one
+   place that actually knows: immediate_flavor now explicitly inherits
+   next_flavor (or 0) in the same write. (b) `FlavorPickerModal`, reused by
+   the "none planned" links to schedule immediate_flavor/next_flavor
+   directly, offered every pickable flavor including ones already sitting
+   in this same slot's OTHER two fields — technically harmless (the hook
+   would just clear the collision on save) but a bad UX surprise. Now takes
+   an `excludeIds` list (open()'s 3rd arg) so `_openPickerForField` can
+   leave those out up front.
 
 ## Build phases (incremental test/deploy)
 

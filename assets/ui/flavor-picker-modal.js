@@ -34,6 +34,12 @@ export default class FlavorPickerModal extends El {
 
     this._row = null;
     this._activeOnPick = onPick;
+    // Flavor ids to leave off the list for this one open() — see open()'s
+    // own comment. Empty for the default "Add Flavor"/"add next" free pick,
+    // which has no other-position conflict to avoid (current_flavor is 0
+    // for an empty slot; a linked openTub's own flavor is what's already
+    // proposed, not something you'd pick again here).
+    this._excludeIds = [];
 
     this._buildDom();
 
@@ -66,9 +72,19 @@ export default class FlavorPickerModal extends El {
     document.body.append(this.ROOT);
   }
 
-  open(row, onPick = this.onPick) {
+  // excludeIds: flavor ids this open() shouldn't offer — used by
+  // ConfirmSwapModal's "none planned" links (see _openPickerForField) when
+  // repurposing this same picker to schedule immediate_flavor/next_flavor
+  // directly, so a flavor already sitting in another position of the SAME
+  // slot (current, or whichever of immediate/next isn't the one being set)
+  // can't be re-picked into a second one — the slot-uniqueness rule
+  // enforced server-side (scoop_slot_pre_save_dedupe_own_fields, includes/
+  // hooks/cabinet-slot.php) shouldn't be something the user discovers only
+  // after picking it and watching a DIFFERENT field go blank.
+  open(row, onPick = this.onPick, { excludeIds = [] } = {}) {
     this._row = row;
     this._activeOnPick = onPick;
+    this._excludeIds = excludeIds;
     this.FILTER.value = '';
     this._render();
     this.ROOT.classList.add('show');
@@ -98,7 +114,9 @@ export default class FlavorPickerModal extends El {
     const el = this.el;
     this.GRID.replaceChildren();
 
+    const excluded = new Set(this._excludeIds.map(Number));
     for (const flavor of this.model.pickableFlavors(this._row)) {
+      if (excluded.has(Number(flavor.id))) continue;
       const TILE = el('button', {
         classes: ['flavor-tile'],
         attrs: { type: 'button', title: flavor.title },

@@ -393,9 +393,24 @@ export default class ConfirmSwapModal extends El {
     const row = this._row;
     if (!row || !this.openPickerFor) return;
 
+    // Every OTHER designation this slot already carries can't be picked
+    // for `field` either — same slot-uniqueness rule the server enforces
+    // (scoop_slot_pre_save_dedupe_own_fields, includes/hooks/cabinet-
+    // slot.php) would silently clear it right back out, which is a worse
+    // experience than not offering it in the first place. row.flavorId is
+    // this slot's current_flavor id (see _fillSlotRow) — always excluded;
+    // the other of immediate/next is excluded too, whichever `field` itself
+    // isn't.
+    const excludeIds = [row.flavorId, field === 'immediate_flavor' ? row.nextFlavorId : row.immediateFlavorId]
+      .filter(Boolean);
+
     const resumeFlavorId = this._selectedFlavorId;
     this.close();
-    this.openPickerFor(row, (_row, flavorId) => this._pickScheduled(row, field, flavorId, resumeFlavorId));
+    this.openPickerFor(
+      row,
+      (_row, flavorId) => this._pickScheduled(row, field, flavorId, resumeFlavorId),
+      { excludeIds },
+    );
   }
 
   // No tub involved — just writes `field` on the slot directly, then
@@ -555,8 +570,28 @@ export default class ConfirmSwapModal extends El {
       return;
     }
 
+    // Progressing current -> immediate (the common case: current_flavor's
+    // stock ran out, this slot moves on to whatever was already planned as
+    // immediate_flavor — see _defaultFlavorId) means immediate_flavor must
+    // not just get dedupe-cleared to 0 by the server-side uniqueness hook
+    // (scoop_slot_pre_save_dedupe_own_fields, includes/hooks/cabinet-slot.php)
+    // — the rotation should move up one, same idea as _confirmEmpty()'s own
+    // reschedule-into-immediate/next below. That hook only knows how to
+    // clear a duplicate, not shift the chain, since it can't tell a genuine
+    // progression apart from an arbitrary edit that happens to collide — so
+    // the shift has to be explicit here, in the one place that actually
+    // knows this is a progression. Only fires when the newly-selected
+    // flavor really is what was immediate_flavor: an explicit Change-Plan
+    // pick of some other flavor, or restocking the same current flavor,
+    // leaves immediate/next untouched.
+    const slotCells = { current_flavor: this._selectedFlavorId };
+    if (row.immediateFlavorId && this._selectedFlavorId === row.immediateFlavorId) {
+      slotCells.immediate_flavor = row.nextFlavorId || 0;
+      slotCells.next_flavor = 0;
+    }
+
     const rSlot = await this.api.postJson(
-      { cells: { [row.slotId]: { current_flavor: this._selectedFlavorId } }, source: 'workflow' },
+      { cells: { [row.slotId]: slotCells }, source: 'workflow' },
       'Cabinet',
     );
     if (!rSlot.ok || !rSlot.data?.ok) {
