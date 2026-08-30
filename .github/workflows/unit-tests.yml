@@ -1,0 +1,59 @@
+name: Unit tests
+
+# Runs tests/unit (the two Node suites + the PHP parser suite) on every push
+# to main, every pull request, and pushes to worktree-tub-moving (the
+# long-lived arc branch where most work lands before its PR to main).
+#
+# DELIBERATELY not path-filtered: visual-tests.yml's path filter is why its
+# baselines silently went stale (main pushes skipped it for weeks; #31 merged
+# through a suite nobody had seen run). A suite that only runs "when
+# relevant" is documentation, not a gate. The whole unit layer takes seconds.
+#
+# Pure test job: this workflow deploys nothing, ever. It deliberately does
+# NOT gate the deploy jobs — see deploy.yml (lint.yml's workflow_call pattern
+# there is how a check gets wired into the deploy jobs if that is ever
+# wanted).
+#
+# The node-version: 22 pin is load-bearing, not cosmetic: the suites import
+# ESM from assets/*.js and rely on node's module-syntax detection (node
+# >= 21.3); on node 20 they fail with a CJS named-export error before any
+# flag matters (see tests/unit/README.md). Do not trust the runner's default
+# node.
+
+on:
+  push:
+    branches:
+      - main
+      - worktree-tub-moving
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # run-all.mjs SKIPS the PHP suite (visible note, exit 0) when php is
+      # absent — right for a dev box, wrong for CI: this gate exists to
+      # execute the /debt-requests parser, the seam that just had a real
+      # bug (aaaa3b). Install php-cli explicitly, then assert it is on PATH
+      # in the run step below, so a botched install can never degrade CI
+      # into a green run that never ran the parser.
+      - name: Install php-cli
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends php-cli
+
+      - name: Run tests/unit
+        run: |
+          php --version
+          node tests/unit/run-all.mjs
