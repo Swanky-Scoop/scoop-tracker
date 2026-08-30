@@ -2,6 +2,14 @@
 
 Curated, reverse-chronological log of notable changes — what changed and why. For commit-level detail see `git log`.
 
+## 2026-08-30
+
+### Chore: remove stale `schema.sql` / `dump.txt` from the repo root
+
+**What:** Deleted `schema.sql` — a `mysqldump --no-data` of the predecessor `track_`-prefixed site, schema-only with zero `INSERT` statements — and `dump.txt`, a pasted wp-admin taxonomy list with a garbage header line, from the repo root. Updated the references: [README.md](README.md)'s Database schema section (which claimed the dump was "complete … for reference") and [CLAUDE.md](CLAUDE.md)'s scratch-artifacts convention list.
+
+**Why:** Both files read like a restorable mirror dump of this install and are not — `schema.sql` has no data rows (it cannot stand up a dev mirror) and was three months stale: no `tub.moving_to` column (added 2026-08-29) and none of the `shift_report` / `supply` / `cake_order` pods (added 2026-08-11). A session burned a loop attempting to reproduce the mirror DB from them before discovering the truth. The authoritative schema knowledge lives in the README's schema section (inline, curated) and `includes/pods-schema/_schema.php` (code-managed Pods definitions); the live schema lives on the mirror DB itself. Both deleted files remain recoverable from git history (`c3b322b` / `a9af915`). The `.gitignore` entry and deploy rsync excludes for `dump.txt` are kept so a future scratch dump can't be committed or deployed by accident.
+
 ## 2026-05-27
 
 ### Fix: add `closeout` entity to `scoop_entity_specs()` to silence per-page-load warning
