@@ -335,7 +335,18 @@ export default class DebtGridModel extends BaseGridModel {
       getGroupBadges: (destItems) => this._destinationBadges(destItems),
       makeRowId:     (item) => item.id,
       fillRow:       (row, item) => {
-        row.flavor    = item.flavor;
+        // flavor must be the {id, display} cell object the render path
+        // expects (List reads row[col.key] verbatim — _list.js
+        // _renderFieldValue): d.display is the text shown, d.id + the
+        // column's titleMap ('flavor') is what makes it a detail link to
+        // the flavor's modal. A bare number here renders as the raw id with
+        // no link — exactly the bug. Same lookup other models use
+        // (titleById + _flavorsById, built by setDomain).
+        row.flavor    = {
+          id:      item.flavor,
+          rowId:   item.id,
+          display: this.titleById(this._flavorsById, item.flavor, `Flavor ${item.flavor}`),
+        };
         row.demand    = item.demand;
         row.on_hand   = item.on_hand;
         row.inbound   = item.inbound;
