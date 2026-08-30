@@ -511,7 +511,7 @@ export default class List extends Dockable{
         fields.forEach(col => {
           const data = row?.[col.key] ?? "";
           const CELL = EXISTING.querySelector(`.${CSS.escape(String(col.key))}`);
-          if (CELL) this._patchFieldDecorations(CELL, col, data);
+          if (CELL) this._patchFieldDecorations(CELL, col, data, rowId);
         });
         return;
       }
@@ -830,7 +830,12 @@ export default class List extends Dockable{
         new TextIt(EL, data, this.name);
       else if (col.control === "toggle")
         new ToggleIt(EL, data, this.name);
-      else new FindIt(EL, data, this.name);
+      // Tagged on EL (not just held in a local var) so a later additive
+      // patch (_patchFieldDecorations, for a domain refresh THIS grid didn't
+      // cause) can find it again and refresh its displayed value — see that
+      // method's own comment for why FindIt specifically gets this and
+      // TextIt/ToggleIt don't yet.
+      else EL._findIt = new FindIt(EL, data, this.name);
     } else {
       // Read-only relationship fields (col.titleMap — flavor/use/location/
       // cabinet, see _base-grid-model.js's _inferTitleMap) link to a Details
@@ -862,15 +867,31 @@ export default class List extends Dockable{
   }
 
   // Additive-refresh counterpart to _renderFieldValue, used by _patchItems
-  // (see _onDomainUpdated) — updates ONLY the data-driven decorations
-  // (alertCase class, badges) on an already-rendered field wrapper.
-  // Deliberately does NOT touch the writeable FindIt/TextIt control or
-  // read-only text/link _renderFieldValue would otherwise rebuild, so a
-  // domain refresh caused by something else on the page can never clobber
-  // an in-progress edit or yank focus out from under whoever's typing here.
+  // (see _onDomainUpdated) — updates the data-driven decorations (alertCase
+  // class, badges) on an already-rendered field wrapper, plus (FindIt cells
+  // only, see below) the control's own displayed value.
+  //
+  // A read-only text/link cell is left alone (nothing to refresh — a stale
+  // read-only value would mean this row itself is stale, not just this
+  // field, and that's this grid's own concern next time it rebuilds).
+  //
+  // A writeable FindIt's value WAS always left untouched too, deliberately —
+  // so a domain refresh caused by something else on the page could never
+  // clobber an in-progress edit or yank focus out from under whoever's
+  // typing here. But that made this cell permanently stale for every OTHER
+  // grid sharing the same underlying row: e.g. CabinetWorkflow changing a
+  // slot's flavor never showed up in the Cabinet ("Flavor Plan") grid's own
+  // FindIt for that same slot, even though the Cabinet grid's domain.slot
+  // data itself refreshed correctly — only the rendered control didn't. Now
+  // refreshed too, but ONLY when it's actually safe: not this cell's own
+  // pending edit (dirtySet — see _handleCellChange) and not literally being
+  // typed into or open right now. TextIt/ToggleIt don't get this yet — no
+  // reported case needs it, and EL._findIt (set in _renderFieldValue) is
+  // only ever tagged on a FindIt wrapper.
+  //
   // No-ops safely if EL doesn't carry a matching wrapper (e.g. a field type
   // that isn't built through _renderFieldValue in the first place).
-  _patchFieldDecorations(EL, col, data) {
+  _patchFieldDecorations(EL, col, data, rowId) {
     if (!EL) return;
     const d = (data && typeof data === "object") ? data : { display: String(data ?? "") };
     const alertCase = (typeof d.alertCase === 'string' && d.alertCase.trim()) ? d.alertCase : 'ok_alertCase';
@@ -884,6 +905,15 @@ export default class List extends Dockable{
     const oldBadges = EL.querySelector(':scope > .badges');
     if (oldBadges) oldBadges.remove();
     if (d.badges && d.badges[0]) EL.append(this._getBadgeDom(d.badges));
+
+    const findIt = EL._findIt;
+    if (findIt) {
+      const key = `${rowId}|${col.key}`;
+      const beingEdited = findIt.isOpen
+        || document.activeElement === findIt.INP
+        || this.dirtySet.has(key);
+      if (!beingEdited) findIt.refresh(d);
+    }
   }
 
   // Group container class from group.groupType ('cabinet', 'flavor', ...) —
