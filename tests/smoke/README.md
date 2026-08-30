@@ -63,6 +63,44 @@ flavor first, or the next run's own "record pre-test state" step will
 capture the WRONG baseline and its final "back to pre-test state"
 assertion will be comparing against already-polluted data.
 
+## What `debt-wanted-edit.spec.js` covers
+
+The Debt board's one writeable column (Wanted) end-to-end against the live
+mirror — the persistence half of `/debt-requests` that `tests/unit` cannot
+reach, plus the wire payload and UI feedback only a browser can see:
+
+1. Logs in and reads a fresh, cache-bypassing `/bundle?types=Debt` (the
+   config type expands to `slot,tub,flavor,use,location,flavor_request`).
+2. Fails loudly on drifted fixtures: the fixture flavor
+   (`zz__flavor debt test___`, `SMOKE_DEBT_FLAVOR`) must have NO slot
+   designations at the destination (`Mountlake Terrace`,
+   `SMOKE_DEBT_LOCATION`) — a slot's `current_flavor`/`immediate_flavor`
+   also creates demand, which would break the covered-step arithmetic.
+   A stale override from a prior crashed run is deleted (idempotent
+   `wanted=0` no-op if absent) before starting.
+3. Mints the demand override through the real `/debt-requests` route
+   (setup rides server truth; only the EDIT under test goes through the
+   UI), then reloads and opens the Debt board.
+4. Edits the Wanted cell in the real UI and catches the autosave POST on
+   the wire: envelope `Debt`, synthetic numeric row id
+   (`location*100000+flavor`), field `demand` (the client's colKey — the
+   server seam that maps it to flavor_request's `wanted` is pinned by
+   `tests/unit/debt-requests.php`). Asserts `ok:true`, the `updated`
+   echo, and the 800ms `cell-saved` flash.
+5. Asserts server truth (the flavor_request row reflects the edit) and
+   the board consequence once the autosave's background refresh lands:
+   the row leaves the board when covered (`wanted=0` deletes the
+   override; positive wanted + hide_covered default filters it), or
+   flips to `pending` when inbound earmarks absorb the gap.
+6. Cleans up in a `finally` (delete the override, poll until gone).
+
+Wanted values are computed from live supply at run time (in-spec mirrors
+of `computeDebtRows()`'s buckets), so fixture drift flips the
+covered/pending branch instead of breaking the test. The canPost:false
+negative branch is deliberately NOT duplicated here — it's pinned
+model-side in `tests/unit/debt-class.test.mjs` and would need a second,
+low-privilege login this suite doesn't have.
+
 ## What `cabinet-workflow-lifecycle.spec.js` covers
 
 One full lifecycle, encoded as `test.step()`s so a failure points at
