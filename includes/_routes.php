@@ -137,8 +137,8 @@ add_action('rest_api_init', function () {
   // route key known to _policy.php (it already carries the Debt GET grant
   // for the board itself), so scoop_write_permission() resolves it the
   // same way it does for every _config.php-driven route — roles with
-  // Debt POST denied (kiosk/lead) are refused here without any per-route
-  // logic.
+  // Debt POST denied (kiosk, and everyone without an explicit Debt grant)
+  // are refused here without any per-route logic.
   register_rest_route('scoop/v1', '/debt-requests', [
     'methods'  => ['POST'],
     'callback' => function(\WP_REST_Request $req) {

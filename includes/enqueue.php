@@ -191,7 +191,9 @@ function scoop_client_metadata(): array {
       // editable cell on real server truth instead of duplicating the role
       // matrix — Debt's Wanted column reads SCOOP.metaData.Debt.canPost
       // (see debt-grid-model.js's _demandWriteable). False for display-only
-      // types with no POST grant (kiosk/lead on Debt, everyone on Popular).
+      // types with no POST grant (kiosk, and everyone without an explicit
+      // Debt grant, on Debt — ice_cream_maker is view-only since the
+      // 2026-08-30 policy change; everyone on Popular).
       'canPost'      => scoop_user_can_route($user, $route_key, 'POST'),
       'displayTitle' => $cfg['display_title'] ?? $route_key,
       'icon'         => $cfg['icon'] ?? mb_substr($route_key, 0, 1),

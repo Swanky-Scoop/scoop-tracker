@@ -33,6 +33,25 @@ npx playwright install chromium   # first time only, but see below
 credentials only; see the project's own memory/reference notes for where
 they're documented for reuse across sessions.
 
+**Second, low-privilege login (optional — only
+`debt-wanted-readonly.spec.js` needs it; it SKIPS without).** The account's
+ROLE is what matters, not its name: it must resolve a policy granting Debt
+GET with no Debt POST key. Create it once on the mirror, from the Local
+site shell:
+
+```sh
+wp user create scoop-smoke-readonly scoop-smoke-readonly@example.com \
+  --role=ice_cream_maker --user_pass='...'
+```
+
+then fill `SCOOP_TEST_USER_2` / `SCOOP_TEST_PASS_2` in `.env`. Never reuse
+the admin credential for this — the whole point is an account whose
+`canPost` is genuinely false. (The `ice_cream_maker` Debt-view grant is a
+2026-08-30 policy change made for exactly this test, documented in
+`includes/_policy.php`; if that product decision is ever reverted, this
+login hits the view-gate instead and the spec's canPost assertion fails
+loudly at the cause.)
+
 **The bundled Chromium binary crashes on the very first navigation against
 this site, in at least one real environment** (`page crashed`, confirmed
 via a standalone repro outside Playwright's own retry/reporting layer
@@ -97,9 +116,46 @@ reach, plus the wire payload and UI feedback only a browser can see:
 Wanted values are computed from live supply at run time (in-spec mirrors
 of `computeDebtRows()`'s buckets), so fixture drift flips the
 covered/pending branch instead of breaking the test. The canPost:false
-negative branch is deliberately NOT duplicated here — it's pinned
-model-side in `tests/unit/debt-class.test.mjs` and would need a second,
-low-privilege login this suite doesn't have.
+negative branch is deliberately NOT duplicated here — it has its own
+spec, `debt-wanted-readonly.spec.js` (below), which needs the second,
+low-privilege login; before that login existed, only
+`tests/unit/debt-class.test.mjs` pinned it model-side.
+
+## What `debt-wanted-readonly.spec.js` covers
+
+The canPost:false negative branch — the other half of the Wanted column's
+permission story, which debt-wanted-edit deliberately left to the unit
+suite because the suite then had only one (admin) login:
+
+1. Logs in as ADMIN (session #1) and mints the demand override through the
+   real `/debt-requests` route for the SAME fixture pair debt-wanted-edit
+   uses (self-heals a stale override first; `workers: 1` keeps the two
+   specs from ever racing on it; each spec's `finally` cleanup leaves no
+   override behind for the other).
+2. Logs in as the SECOND, LOW-PRIVILEGE account (session #2,
+   `SCOOP_TEST_USER_2` — see Setup above) and asserts
+   `SCOOP.metaData.Debt.canPost === false` FIRST, failing at the cause if
+   the account's role regressed (e.g. the policy change was reverted).
+3. Asserts the read-only render: the row IS on the board, the Wanted
+   number still displays, but the cell is `read-only` — no number input,
+   and crucially no hidden input carrying
+   `Debt[cells][<rowId>][demand]` (the writeable path renders that hidden
+   input via TextIt; the model pins the same cell semantics in
+   `tests/unit/debt-class.test.mjs` "Wanted writeability vs server
+   metadata").
+4. Probes `/debt-requests` from the low-privilege session and asserts the
+   refusal: HTTP 403 `rest_forbidden` (the route's
+   `scoop_write_permission('Debt')` permission callback runs the same
+   `scoop_user_can_route` check that produced `canPost:false`, so REST
+   refuses before the handler runs) and server truth unchanged afterward.
+   The probe value (minted+1) is chosen so a regressively-successful
+   write is distinguishable from the minted override.
+5. Cleans up in a `finally` (admin deletes the override, polls until
+   gone).
+
+Note what this deliberately does NOT cover: an admin editing through the
+UI (that's debt-wanted-edit's subject) and a low-privilege user clicking
+around other views (no other role-specific view behavior is wired yet).
 
 ## What `cabinet-workflow-lifecycle.spec.js` covers
 

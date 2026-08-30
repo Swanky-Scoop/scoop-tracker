@@ -401,8 +401,10 @@ test('debt: editing a Wanted cell autosaves through /debt-requests and the board
 // The negative branch (a canPost:false user gets a non-writeable Wanted
 // cell — no TextIt input, number still displayed) is deliberately NOT
 // duplicated here: it's pinned model-side in tests/unit/debt-class.test.mjs
-// ("Wanted writeability vs server metadata"), and exercising it in a
-// browser would need a second, low-privilege login in .env this suite
-// doesn't have. This spec covers what only a browser can see: the wire
-// payload, the response handling, the flash, and the filtered-board
-// consequence.
+// ("Wanted writeability vs server metadata"), and its browser half has its
+// own spec — tests/smoke/tests/debt-wanted-readonly.spec.js — which uses
+// the suite's second, low-privilege login (SCOOP_TEST_USER_2; the
+// ice_cream_maker Debt-view grant that makes it possible is documented in
+// includes/_policy.php). This spec covers what only a browser can see of
+// the POSITIVE branch: the wire payload, the response handling, the
+// flash, and the filtered-board consequence.

@@ -434,7 +434,10 @@ export default class DebtGridModel extends BaseGridModel {
   // matrix here. scoop_client_metadata() now emits canPost on every type
   // (see includes/enqueue.php), resolved by the same scoop_user_can_route
   // check the /debt-requests route's own permission callback runs — so
-  // what the cell shows matches exactly what the server will accept.
+  // what the cell shows matches exactly what the server will accept
+  // (ice_cream_maker is the view-only Debt role as of 2026-08-30; see
+  // tests/smoke/tests/debt-wanted-readonly.spec.js, which exercises this
+  // branch in a browser).
   _demandWriteable() {
     const md = window.SCOOP?.metaData?.Debt;
     if (!md) return true; // no server metadata at all (dev/test harness) — let the column's own write flag speak

@@ -391,7 +391,15 @@ function scoop_access_policy(): array {
         'EmptiedLog'      => ['GET' => false],
         'CabinetWorkflow' => ['GET' => false],
         'Moving'          => ['GET' => false],
-        'Debt'            => ['GET' => false],
+        // Debt board VIEW (GET) without write — no 'POST' key, so
+        // /debt-requests stays refused (canPost:false mirrors this server
+        // truth client-side). Added 2026-08-30 for the smoke suite's
+        // low-privilege login (tests/smoke/tests/debt-wanted-readonly.spec.js),
+        // which needs a role that renders the Debt board read-only. Not a
+        // new data surface: the rows are derived from tub/slot data this
+        // role's peers already read via FlavorTub. Remove if the product
+        // ever wants this role fully off Debt.
+        'Debt'            => ['GET' => true],
         'ShiftReport'     => ['GET' => false],
         'Task'            => ['GET' => false],
         'Prep'            => ['GET' => false],
