@@ -1,0 +1,60 @@
+name: PHP lint
+
+# The PHP syntax gate. `php -l` compiles a file without executing it, which
+# catches the whole class of "one bad token in one PHP file" fatals: a syntax
+# error in any plugin PHP file white-screens EVERY WordPress request on the
+# deployed site the moment deploy.yml rsyncs it up. The cross-fixtures JS
+# side has `node --check`; this is the same gate for PHP.
+#
+# deploy.yml calls this workflow (workflow_call) as the first job of every
+# deploy and all three deploy jobs `needs:` it — a red lint BLOCKS the rsync
+# instead of shipping it. It also runs standalone on every pull_request for
+# pre-merge feedback.
+
+on:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  php-lint:
+    name: php -l (all PHP files)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ubuntu-latest ships no PHP CLI — install the distro one. The runners'
+      # PHP 8.x is a syntax superset of anything this codebase uses (no
+      # enums/readonly/typed props; verified 8.2 in-box over all tracked
+      # files), and the servers run an OLDER 8.x than this, so a parse pass
+      # here implies a parse pass there. The version is printed for the log.
+      - name: Install PHP CLI
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q php-cli
+          php -v | head -1
+
+      # -z/-0 so a path with spaces can never split the file list; xargs
+      # exits non-zero (123) if any php -l fails, which fails the step.
+      - name: php -l every tracked PHP file
+        run: |
+          count=$(git ls-files '*.php' | wc -l)
+          echo "Linting $count tracked PHP files"
+          git ls-files -z '*.php' | xargs -0 -n1 php -l
+
+      # Companion gate: the zero-dependency unit layer (JS suites + the
+      # PHP parser suite). No-op on trees without tests/unit/ (it is not on
+      # main yet — it rides branch worktree-tub-moving); the runner HAS
+      # php-cli, so once tests/unit/ lands its PHP suite executes for real
+      # here instead of skipping (run-all.mjs auto-skips only when php is
+      # absent, printing a visible note when it does).
+      - name: Unit suites (tests/unit) when present
+        run: |
+          if [ -d tests/unit ]; then
+            node tests/unit/run-all.mjs
+          else
+            echo "No tests/unit/ in this tree — skipping unit suites (lint gate still applies)."
+          fi
