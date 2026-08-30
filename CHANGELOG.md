@@ -10,6 +10,8 @@ Curated, reverse-chronological log of notable changes — what changed and why. 
 
 **Why:** Both files read like a restorable mirror dump of this install and are not — `schema.sql` has no data rows (it cannot stand up a dev mirror) and was three months stale: no `tub.moving_to` column (added 2026-08-29) and none of the `shift_report` / `supply` / `cake_order` pods (added 2026-08-11). A session burned a loop attempting to reproduce the mirror DB from them before discovering the truth. The authoritative schema knowledge lives in the README's schema section (inline, curated) and `includes/pods-schema/_schema.php` (code-managed Pods definitions); the live schema lives on the mirror DB itself. Both deleted files remain recoverable from git history (`c3b322b` / `a9af915`). The `.gitignore` entry and deploy rsync excludes for `dump.txt` are kept so a future scratch dump can't be committed or deployed by accident.
 
+**Follow-up (same day):** deploys use `rsync` **without `--delete`** (by design — matches the previous VS Code SFTP workflow), so deleting the files from the repo did NOT remove them from the hosts: all three targets kept serving the stale `schema.sql` (never excluded) and ops.swankyscoop.net kept serving `dump.txt`. Added [cleanup-retired-artifacts.yml](.github/workflows/cleanup-retired-artifacts.yml) — a manual workflow that purges the retired artifacts from every target and fails if any path still exists afterwards. Run it once after merging; its `RETIRED` list is the going-forward home for "deleted from repo, must also die on the hosts" files.
+
 ## 2026-05-27
 
 ### Fix: add `closeout` entity to `scoop_entity_specs()` to silence per-page-load warning
