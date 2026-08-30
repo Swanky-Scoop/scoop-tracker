@@ -106,7 +106,7 @@ Pods is configured in **tables mode**, not the default postmeta mode. This is th
 
 Implication: for a Pod item to be visible to any Pods query (wp-admin, the bundle endpoint, the analytics endpoint, every grid model), **two rows must exist in lockstep** — one in `wp_posts` and one in the per-Pod table `wp_pods_<podname>`. If only one exists, the item is functionally invisible even though raw SQL can see it. Skipping the per-Pod table row is exactly what broke the 2026-05-27 direct-write attempt (see [performance.md](performance.md) finding #6).
 
-The DB prefix on this install is `track_` (not `wp_`). A complete `mysqldump --no-data` lives at [schema.sql](schema.sql) for reference. Key Pods-specific tables and their purpose:
+The DB prefix on this install is `track_` (not `wp_`). (The root-level `schema.sql` / `dump.txt` files that referenced this section were removed in 2026-08-30 — they were a stale `mysqldump --no-data` of the predecessor `track_`-prefixed site, schema-only with zero `INSERT`s, so they were **not** a restorable mirror of this install and were three months out of date. The live schema lives on the mirror DB itself; `includes/pods-schema/_schema.php` carries the code-managed Pod definitions.) Key Pods-specific tables and their purpose:
 
 ### `track_pods_<podname>` — per-Pod scalar storage
 

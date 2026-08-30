@@ -84,7 +84,7 @@ The `Analytics` grid bypasses the bundle pattern entirely. `mountAllGrids()` sep
 - **Cache-busting on GET**: `ScoopAPI._fetch` appends `_ts=<now>` and sets `Cache-Control: no-cache` on every GET. Don't try to "fix" what looks like over-fetching here — the WP transient layer is what actually saves the round trip.
 - **Underscored PHP files** (`_config.php`, `_specs.php`, `_policy.php`, etc.) are the configuration/contract layer; non-prefixed files are runtime. Underscored JS files (`_base-grid-model.js`, `_flavor.js`, `_column-provider.js`) are abstract bases / helpers, not concrete grid types.
 - **Prettier**: `.prettierrc` (root of repo) is `tabWidth: 2`, `useTabs: false`, `singleQuote: true`.
-- `assets/Main.js`, `dump.txt`, `_domain.json`, `response.json`, `1_response.json`, `fast_response.json`, `post_response.json` at the root are scratch/debug artifacts, not part of the runtime.
+- `assets/Main.js`, `_domain.json`, `response.json`, `1_response.json`, `fast_response.json`, `post_response.json` at the root are scratch/debug artifacts, not part of the runtime. (`dump.txt` and `schema.sql` — also former scratch artifacts — were removed 2026-08-30; see README's Database schema section.)
 
 ## Business domain knowledge
 
