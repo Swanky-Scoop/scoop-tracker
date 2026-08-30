@@ -17,10 +17,22 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const jsSuites = ['debt-model.test.mjs', 'debt-class.test.mjs'];
 const phpSuites = ['debt-requests.php'];
 
+// The .mjs suites import ESM-syntax files under assets/ (debt-grid-model.js and
+// its transitive imports), and root package.json deliberately has NO "type"
+// field — tests/smoke's Playwright specs are CommonJS and Playwright resolves
+// spec files with its own loader, so type:module would make node reparse them
+// as ESM and break the smoke runner. Instead, silence only the resulting
+// MODULE_TYPELESS_PACKAGE_JSON warning (node ≥ 21.3) for the child suites, and
+// degrade to the noisy-but-working behavior on nodes without the flag — an
+// unknown node option would otherwise kill every suite with "bad option".
+const disableTypeless = '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON';
+const flagProbe = spawnSync(process.execPath, [disableTypeless, '-e', ''], { encoding: 'utf8' });
+const jsNodeArgs = !flagProbe.error && flagProbe.status === 0 ? [disableTypeless] : [];
+
 let failed = 0;
 
 for (const suite of jsSuites) {
-  const r = spawnSync(process.execPath, [path.join(here, suite)], { stdio: 'inherit' });
+  const r = spawnSync(process.execPath, [...jsNodeArgs, path.join(here, suite)], { stdio: 'inherit' });
   if (r.status !== 0) failed++;
 }
 
