@@ -22,9 +22,12 @@ const phpSuites = ['debt-requests.php'];
 // field — tests/smoke's Playwright specs are CommonJS and Playwright resolves
 // spec files with its own loader, so type:module would make node reparse them
 // as ESM and break the smoke runner. Instead, silence only the resulting
-// MODULE_TYPELESS_PACKAGE_JSON warning (node ≥ 21.3) for the child suites, and
+// MODULE_TYPELESS_PACKAGE_JSON warning (the flag exists on node ≥ 20.12) for the child suites, and
 // degrade to the noisy-but-working behavior on nodes without the flag — an
 // unknown node option would otherwise kill every suite with "bad option".
+// (The suites themselves need node ≥ 21.3 regardless — module-syntax detection
+// of assets/*.js; on node 20 they fail with a CJS named-export error before any
+// flag matters — verified on 20.18.1, pre-existing at e1b5699.)
 const disableTypeless = '--disable-warning=MODULE_TYPELESS_PACKAGE_JSON';
 const flagProbe = spawnSync(process.execPath, [disableTypeless, '-e', ''], { encoding: 'utf8' });
 const jsNodeArgs = !flagProbe.error && flagProbe.status === 0 ? [disableTypeless] : [];

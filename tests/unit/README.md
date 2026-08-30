@@ -13,9 +13,10 @@ request parser stay protected by tests that run outside any one agent's box.
 # everything (PHP suite auto-skips with a note if php-cli is absent)
 node tests/unit/run-all.mjs
 
-# individually — on node < 21.3 (no --disable-warning) you may see a harmless
-# MODULE_TYPELESS_PACKAGE_JSON warning on these single-file runs; the run-all
-# entry point suppresses it itself.
+# individually — on node < 21.3 the suites fail outright (no module-syntax
+# detection: CJS named-export error from assets/*.js, pre-dating the warning
+# fix); the warning itself is suppressed on node ≥ 20.12 via --disable-warning,
+# which run-all applies itself.
 node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/debt-model.test.mjs     # pure computeDebtRows() arithmetic
 node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tests/unit/debt-class.test.mjs     # DebtGridModel class behavior
 php  tests/unit/debt-requests.php       # scoop_parse_debt_requests() parser

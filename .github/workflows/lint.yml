@@ -37,6 +37,14 @@ jobs:
           sudo apt-get install -y -q php-cli
           php -v | head -1
 
+      # The unit suites import ESM from assets/*.js and rely on node's
+      # module-syntax detection (node >= 21.3); the runner's default node is
+      # whatever GitHub ships this month. Pin 22 explicitly — same pin the
+      # unit-tests.yml gate uses. "Do not trust the runner's default node."
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       # -z/-0 so a path with spaces can never split the file list; xargs
       # exits non-zero (123) if any php -l fails, which fails the step.
       - name: php -l every tracked PHP file
