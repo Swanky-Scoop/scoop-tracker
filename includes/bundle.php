@@ -66,17 +66,36 @@ function scoop_bundle_get( \WP_REST_Request $req ) {
     ], 400 );
   }
 
-  $unknown = [];
-  $needs   = [];
+  $unknown     = [];
+  $known_types = [];
+  $needs       = [];
 
   foreach ( $types as $t ) {
     if ( ! isset( $specs[ $t ] ) ) { $unknown[] = $t; continue; }
+    $known_types[] = $t;
     foreach ( ( $specs[ $t ]['needs'] ?? [] ) as $needType ) {
       $needs[ $needType ] = true;
     }
   }
 
+  // A dock page unions every host's grid type into one request (see the
+  // comment atop this function), so one unrecognized type here previously
+  // 400'd the whole bundle — every other, perfectly valid grid on that
+  // page failed to load too. A grid type can be legitimately unknown to
+  // THIS checkout while it's mid-development on another branch/worktree
+  // (its shortcode already lives in the page content), so drop it and
+  // serve everything this checkout does recognize instead of failing
+  // closed. Only fail if NOTHING on the page is recognized — that's still
+  // very likely a real mistake (typo, wrong param) worth surfacing as an
+  // error rather than a silent empty bundle.
   if ( $unknown ) {
+    scoop_debug_log( sprintf(
+      'scoop_bundle_get: ignoring unknown grid type(s): %s (known=%s)',
+      implode( ',', $unknown ), implode( ',', array_keys( $specs ) )
+    ) );
+  }
+
+  if ( ! $known_types ) {
     return new \WP_REST_Response( [
       'ok'      => false,
       'error'   => 'Unknown grid type(s)',
@@ -88,21 +107,22 @@ function scoop_bundle_get( \WP_REST_Request $req ) {
 
   $needTypes = array_keys( $needs );
   $data      = [];
-  $date_filters = scoop_bundle_date_filter_context( $req, $types );
+  $date_filters = scoop_bundle_date_filter_context( $req, $known_types );
 
   foreach ( $needTypes as $needType ) {
     $data[ $needType ] = scoop_bundle_fetch_type( $needType, $req, [
-      'requesting_types'    => $types,
+      'requesting_types'    => $known_types,
       'date_filter_context' => $date_filters,
     ] );
   }
 
   $body = [
-    'ok'           => true,
-    'types'        => $types,
-    'needs'        => $needTypes,
-    'date_filters' => $date_filters,
-    'data'         => $data,
+    'ok'            => true,
+    'types'         => $known_types,
+    'unknown_types' => $unknown,
+    'needs'         => $needTypes,
+    'date_filters'  => $date_filters,
+    'data'          => $data,
   ];
 
   // ── Cache write ───────────────────────────────────────────────────────────
