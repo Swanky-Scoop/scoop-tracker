@@ -16,9 +16,13 @@ explicitly said was out of scope for that suite.
   suggest: connecting directly to remote servers").
 - It requires the Local by Flywheel site actually running, plus a real
   login — nothing here is stubbed or mocked.
-- **Do not wire this into CI.** Standing up a real WordPress+Pods instance
-  in CI is explicitly flagged as future work in `tests/visual/README.md`,
-  not something this suite attempts.
+- ~~**Do not wire this into CI.**~~ **CI evaluation complete (2026-08-30):**
+  a fresh, disposable WP+Pods stack CAN be stood up in CI and two of the
+  three specs run green on it. See `CI-EVALUATION.md` for the full
+  go/no-go, `.github/workflows/smoke-tests.yml` (manual dispatch) and
+  `ci/README.md` for the provisioning recipes. The "never point this suite
+  at TEST/OPS" rule is unchanged — CI is a third, disposable environment,
+  not a license to target shared data.
 
 ## Setup
 
