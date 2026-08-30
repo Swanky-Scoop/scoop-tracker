@@ -482,11 +482,12 @@ export default class List extends Dockable{
   // in place on existing rows (never touching the writeable control — see
   // _patchFieldDecorations), genuinely new rows built and appended.
   // removeStale additionally drops any rendered row no longer in the fresh
-  // slice — that's only safe at a moment nobody could be mid-edit in this
-  // group (it just reopened after being collapsed, or focus just left it —
-  // see _flushGroup), so it defaults off: the normal per-refresh pass
-  // (_patchItems) must never remove a row someone might currently be
-  // looking at.
+  // slice — only safe at a moment nobody could be mid-edit in this group:
+  // focus has left it (a _flushGroup after a deferred patch, or an
+  // unfocused group's regular pass in _patchItems — the deferral rule means
+  // a focused group is never patched at all), or it just reopened after
+  // being collapsed (_showHide). The normal per-refresh pass therefore
+  // never removes a row someone might currently be looking at.
   _patchGroupRows(CONTAINER, { removeStale = false } = {}) {
     if (!CONTAINER) return;
     const fields = this.fields ?? [];
@@ -559,7 +560,18 @@ export default class List extends Dockable{
   // deferred entirely rather than patched now (see _groupHasFocus): the
   // fresh data is already sitting in this.items regardless, only the DOM
   // catch-up for THAT group waits until it's safe (_flushGroup, once focus
-  // moves on). Every other group patches immediately, same as before.
+  // moves on). Every other group is fully synced NOW: with no focus inside,
+  // nobody can be mid-edit in it (the same precondition _flushGroup's
+  // removeStale already requires), so dropping its stale rows on every pass
+  // is safe — and necessary. Deferring removal to the one-shot focusout
+  // flush alone leaves a hole: a flush that fires before the refresh
+  // carrying the removal (e.g. the Debt board's post-autosave background
+  // domain update ~800ms later) consumes the pending flag against stale
+  // this.items, removes nothing, and is never retried — the edited-away row
+  // then lingers in the DOM forever, because the additive pass never
+  // removes rows (removeStale defaults off). Found by debt-wanted-edit.spec.js's
+  // first real run (task 013e11ca00000021); model state was always correct,
+  // only the DOM lagged.
   _patchItems() {
     try {
       this.itemGroupDom.forEach(CONTAINER => {
@@ -568,7 +580,12 @@ export default class List extends Dockable{
           return;
         }
 
-        this._patchGroupRows(CONTAINER);
+        // Unfocused → safe to fully sync every pass. Also discharges any
+        // pending deferral: the catch-up this flag was waiting for IS this
+        // pass (the flag must not linger, or a later focusout would pointlessly
+        // re-run what this pass just completed).
+        this._pendingGroupIds.delete(CONTAINER.dataset.groupId ?? '__ungrouped__');
+        this._patchGroupRows(CONTAINER, { removeStale: true });
       });
     } catch (e) {
       console.error("List _patchItems exception", this.name, e, {
