@@ -46,6 +46,30 @@ function scoop_entity_cache_bust( string $entity_key ): void {
   update_option( "scoop_ecv_{$entity_key}", scoop_entity_cache_version( $entity_key ) + 1, false );
 }
 
+// Every post type any grid's bundle actually reads (the union of every
+// scoop_bundle_specs() 'needs' list), plus 'closeout' — a write-only CPT
+// (shift-end tub closeout, see includes/hooks/closeout.php) that never
+// appears in a 'needs' list because no grid reads it back through the
+// bundle, but is still scoop's own data. Used by scoop_cache_bust() below
+// to stop unrelated saves (a blog post, a page, any other plugin's CPT)
+// from busting every scoop grid's cache — performance.md #4. Derived
+// rather than hand-listed so it can't silently drift out of sync the way
+// performance.md's own manually-written suggestion already had (it
+// predates the Task/Tasks/ShiftReport specs and is missing their types).
+function scoop_relevant_post_types(): array {
+  static $types = null;
+  if ( $types !== null ) return $types;
+
+  $types = [ 'closeout' ];
+  foreach ( scoop_bundle_specs() as $spec ) {
+    foreach ( $spec['needs'] as $need ) {
+      $types[] = $need;
+    }
+  }
+  $types = array_values( array_unique( $types ) );
+  return $types;
+}
+
 function scoop_cache_bust(?int $post_id = null, array $ctx = []): void {
   // Suppression flag — lets bulk writers (e.g. batch tub creation) skip the
   // per-row bump and call scoop_cache_bust() exactly once at the end.
@@ -56,6 +80,12 @@ function scoop_cache_bust(?int $post_id = null, array $ctx = []): void {
 
     $post_type = get_post_type( $post_id );
     if ( $post_type === 'inventory_change' ) return;
+
+    // Whitelist: only scoop-relevant post types get to bust the bundle
+    // cache at all (performance.md #4) — editing a blog post, page, or
+    // unrelated plugin's CPT no longer forces every scoop grid's next
+    // load to be a cold cache miss.
+    if ( $post_type && ! in_array( $post_type, scoop_relevant_post_types(), true ) ) return;
 
     if ( $post_type && in_array( $post_type, scoop_slow_changing_entity_types(), true ) ) {
       scoop_entity_cache_bust( $post_type );
