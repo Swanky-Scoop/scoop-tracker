@@ -10,9 +10,24 @@ if (!defined('ABSPATH')) exit;
  * text for manual copy/paste into includes/pods-schema/_schema.php.
  */
 
-/** Keys that are internal/per-environment and never worth asserting. */
+/**
+ * Keys that are internal/per-environment and never worth asserting.
+ * 'parent' belongs here too — it's the raw WP post ID of whatever the field
+ * was parented to on the environment it was exported FROM (a pod or group
+ * post), and that ID is specific to that environment's own auto-increment
+ * sequence. It was missing from this list originally: 20 fields across
+ * shift_report/supply/cake_order carried a literal 'parent' baked in from
+ * whichever environment first got exported, which (a) permanently diffed as
+ * "changed" everywhere else, since no other environment's pod/group posts
+ * happen to share those exact IDs, and (b) scoop_schema_apply_additive()
+ * would try to write that stale, wrong ID onto save_field() calls on every
+ * apply — a real corruption risk, not just diff noise. The field's 'group'
+ * key (resolved separately, see scoop_schema_resolve_group_id()) is what
+ * actually asserts where a field belongs; 'parent' is redundant with it and
+ * shouldn't be compared or applied at all.
+ */
 function scoop_schema_volatile_keys(): array {
-  return ['id', 'sister_id', 'weight', 'created', 'modified'];
+  return ['id', 'sister_id', 'weight', 'created', 'modified', 'parent'];
 }
 
 function scoop_schema_strip_volatile(array $arr): array {

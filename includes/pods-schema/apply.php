@@ -31,10 +31,50 @@ if (!defined('ABSPATH')) exit;
  * concat-free. On resolution failure (group genuinely absent) the value is
  * left untouched so save_field fails loudly and visibly — an explicit
  * recorded error, never a silent misassignment.
+ *
+ * $known_group_ids (name => id) lets a caller that just created a group via
+ * scoop_schema_apply_ensure_groups() skip re-querying for it here. That's
+ * not just an optimization: load_group() right after a same-request
+ * save_group() was confirmed unreliable on a real run (10 fields across 3
+ * brand-new pods all fell through to the raw-array path below and hit the
+ * "Array to string conversion" warning at PodsAPI::save_field() ~line 3167,
+ * even though every group had just been created successfully) — some
+ * Pods object-cache layer doesn't see the new group in time. Passing the id
+ * straight through sidesteps that lookup entirely instead of chasing it.
+ *
+ * $is_update matters for which key actually moves the field: PodsAPI::save_field()
+ * only honors 'group_id'/'group' when creating a brand-new field (~line 3454:
+ * `if ($group) { $field['group'] = $group->get_id(); }`, in the "field doesn't
+ * exist yet" branch). For an EXISTING field it's silently ignored — only
+ * 'new_group_id'/'new_group' moves an existing field to a different group
+ * (~line 3378: `if ($new_group) { $field['group'] = $new_group->get_id(); }`,
+ * in the "field exists" branch). Confirmed on a real run: save_field() on an
+ * existing field with 'group_id' set returned success with no error, but the
+ * field's live group never changed — a silent no-op, not a failure the apply
+ * loop could ever have caught on its own.
  */
-function scoop_schema_apply_resolve_group(array $field_def, string $pod_name): array {
+function scoop_schema_apply_resolve_group(array $field_def, string $pod_name, array $known_group_ids = [], bool $is_update = false): array {
+  // Volatile keys (see scoop_schema_volatile_keys()) are environment-specific
+  // snapshot data from whichever site the schema was exported from — 'parent'
+  // in particular is a raw post ID that's meaningless (or actively wrong) on
+  // any other environment. diff.php already ignores them for comparison, but
+  // every save_field() call in this file funnels through here, so this is
+  // the one place that guarantees they never reach Pods as a write.
+  $field_def = scoop_schema_strip_volatile($field_def);
+
   $group = $field_def['group'] ?? null;
-  if (!is_array($group) || empty($group['name']) || !function_exists('pods_api')) return $field_def;
+  if (!is_array($group) || empty($group['name'])) return $field_def;
+
+  $group_key = $is_update ? 'new_group_id' : 'group_id';
+
+  if (isset($known_group_ids[$group['name']])) {
+    $out = $field_def;
+    $out[$group_key] = (int) $known_group_ids[$group['name']];
+    unset($out['group']);
+    return $out;
+  }
+
+  if (!function_exists('pods_api')) return $field_def;
 
   try {
     $g = pods_api()->load_group(['name' => $group['name'], 'pod' => $pod_name], false);
@@ -44,9 +84,66 @@ function scoop_schema_apply_resolve_group(array $field_def, string $pod_name): a
   if (!is_object($g)) return $field_def; // group absent — keep the loud failure path
 
   $out = $field_def;
-  $out['group_id'] = (int) $g->get_id();
+  $out[$group_key] = (int) $g->get_id();
   unset($out['group']);
   return $out;
+}
+
+/**
+ * scoop_schema_apply_resolve_group() only ever resolves an EXISTING group —
+ * by design it leaves an unresolvable ['name'=>..,'pod'=>..] shape untouched
+ * so save_field() fails loudly rather than silently misassigning (see that
+ * function's docblock). But Pods never creates a missing group as a side
+ * effect of save_field(), so for a genuinely new pod — or a new group added
+ * to an existing pod — that group doesn't exist yet on this environment and
+ * every field referencing it would fail. Create whatever groups this pod's
+ * fields need, once each, before any save_field() call is attempted; a
+ * group that already resolves is left alone.
+ *
+ * Returns name => id for every group this pod's fields need (existing or
+ * freshly created) — feed it straight into scoop_schema_apply_resolve_group()
+ * as $known_group_ids so the field-creation loop never has to re-look-up a
+ * group this same request just created (see that function's docblock for why
+ * that re-lookup can't be trusted).
+ */
+function scoop_schema_apply_ensure_groups(array $fields, string $pod_name, array &$result): array {
+  $known = [];
+  if (!function_exists('pods_api')) return $known;
+  $api = pods_api();
+
+  $needed = [];
+  foreach ($fields as $field_def) {
+    $group = $field_def['group'] ?? null;
+    if (is_array($group) && !empty($group['name'])) {
+      $needed[$group['name']] = true;
+    }
+  }
+
+  foreach (array_keys($needed) as $group_name) {
+    try {
+      $existing = $api->load_group(['name' => $group_name, 'pod' => $pod_name], false);
+    } catch (\Throwable $e) {
+      $existing = null;
+    }
+    if (is_object($existing)) {
+      $known[$group_name] = (int) $existing->get_id();
+      continue;
+    }
+
+    try {
+      $group_id = $api->save_group(['name' => $group_name, 'label' => $group_name, 'pod' => $pod_name]);
+    } catch (\Throwable $e) {
+      $result['errors'][] = "Create group '{$pod_name}.{$group_name}': " . $e->getMessage();
+      continue;
+    }
+    if (is_wp_error($group_id)) {
+      $result['errors'][] = "Create group '{$pod_name}.{$group_name}': " . $group_id->get_error_message();
+      continue;
+    }
+    $known[$group_name] = (int) $group_id;
+  }
+
+  return $known;
 }
 
 function scoop_schema_apply_additive(array $schema, array $diff): array {
@@ -70,7 +167,7 @@ function scoop_schema_apply_additive(array $schema, array $diff): array {
     if ($pod_schema === null) continue;
 
     $fields = $pod_schema['fields'] ?? [];
-    $pod_params = $pod_schema;
+    $pod_params = scoop_schema_strip_volatile($pod_schema);
     unset($pod_params['fields']);
     $pod_params['name'] = $pod_name;
 
@@ -108,13 +205,17 @@ function scoop_schema_apply_additive(array $schema, array $diff): array {
     $live_pod = $api->load_pod(['name' => $pod_name]);
     $live_field_names = is_array($live_pod['fields'] ?? null) ? array_keys($live_pod['fields']) : [];
 
+    // A brand-new pod means every group its fields reference is brand-new
+    // too — nothing for the flat-fields loop below to resolve against yet.
+    $known_group_ids = scoop_schema_apply_ensure_groups($fields, $pod_name, $result);
+
     foreach ($fields as $field_name => $field_def) {
       if (in_array($field_name, $live_field_names, true)) {
         $result['created_fields'][] = "{$pod_name}.{$field_name}";
         continue;
       }
 
-      $field_params = scoop_schema_apply_resolve_group($field_def, $pod_name);
+      $field_params = scoop_schema_apply_resolve_group($field_def, $pod_name, $known_group_ids);
       $field_params['pod'] = $pod_name;
       $field_params['name'] = $field_name;
       try {
@@ -139,7 +240,7 @@ function scoop_schema_apply_additive(array $schema, array $diff): array {
       $live = scoop_schema_load_live_pod($pod_name);
       $pod_id = (int) ($live['id'] ?? 0);
       if ($pod_id > 0) {
-        $pod_params = $pod_schema;
+        $pod_params = scoop_schema_strip_volatile($pod_schema);
         unset($pod_params['fields']);
         $pod_params['id'] = $pod_id;
         $pod_params['name'] = $pod_name;
@@ -161,10 +262,20 @@ function scoop_schema_apply_additive(array $schema, array $diff): array {
 
     $schema_fields = $pod_schema['fields'] ?? [];
 
+    $known_group_ids = [];
+    if (!empty($entry['missing_fields']) || !empty($entry['changed_fields'])) {
+      // Covers the repair case too: a prior run that created the pod (and
+      // maybe even its fields, ungrouped) but never got as far as creating
+      // its group leaves those fields showing as 'changed' — not 'missing' —
+      // on re-sync, still needing the group created before either loop's
+      // save_field() call can set the right group_id.
+      $known_group_ids = scoop_schema_apply_ensure_groups($schema_fields, $pod_name, $result);
+    }
+
     foreach ($entry['missing_fields'] as $field_name) {
       $field_def = $schema_fields[$field_name] ?? null;
       if ($field_def === null) continue;
-      $field_params = scoop_schema_apply_resolve_group($field_def, $pod_name);
+      $field_params = scoop_schema_apply_resolve_group($field_def, $pod_name, $known_group_ids);
       $field_params['pod'] = $pod_name;
       $field_params['name'] = $field_name;
       try {
@@ -196,7 +307,7 @@ function scoop_schema_apply_additive(array $schema, array $diff): array {
         continue;
       }
 
-      $field_params = scoop_schema_apply_resolve_group($field_def, $pod_name);
+      $field_params = scoop_schema_apply_resolve_group($field_def, $pod_name, $known_group_ids, true);
       $field_params['id'] = $field_id;
       $field_params['pod'] = $pod_name;
       $field_params['name'] = $field_name;
