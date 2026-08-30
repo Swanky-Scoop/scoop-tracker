@@ -109,7 +109,8 @@ scoop_require('includes/cli.php');
 
 //error_log("========== SCOOP REST PLUGIN LOADED ==========");
 
-register_activation_hook(__FILE__, 'scoop_readonly');
+// register_activation_hook removed: scoop_readonly() was deleted from the codebase
+// by 20ed07a; the dangling hook fatals plugin activation under PHP 8 (CI stack).
 
 add_filter('pods_api_pre_save_pod_item', 'scoop_enforce_tub_rules', 10, 3);
 

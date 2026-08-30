@@ -1,0 +1,125 @@
+name: smoke-tests
+
+# Real WordPress + Pods smoke suite (tests/smoke) against a live stack.
+#
+# Provisions WordPress, MariaDB, Pods and this plugin from scratch on every
+# run, seeds the fixture data the specs' own preconditions demand (derived
+# from the specs themselves — no mirrored database), then runs Playwright
+# headless against the live site.
+#
+# Deliberately workflow_dispatch (manual) rather than push-triggered: the
+# suite writes real data and each run costs ~3-5 minutes of runner time.
+# See tests/smoke/README.md ("CI evaluation") for the go/no-go rationale
+# and the two known failures the 2026-08-30 in-sandbox evaluation found.
+
+on:
+  workflow_dispatch:
+
+env:
+  WP_DIR: ${{ github.workspace }}/../wp
+  WP_URL: http://127.0.0.1:8099
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: scoop_test
+          MYSQL_USER: scoop
+          MYSQL_PASSWORD: scoop
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mysqli, curl, mbstring, xml, gd, zip, intl
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install wp-cli
+        run: |
+          curl -sL https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -o /usr/local/bin/wp
+          chmod +x /usr/local/bin/wp
+          wp --version --allow-root
+
+      # Pods must be the 2.8 line: the plugin's direct tub-write path
+      # (scoop_create_batch_tubs_direct, includes/hooks/batch-tub.php) writes
+      # wp_pods_tub rows with explicit post IDs. Pods 3.x additionally
+      # auto-creates an empty table row on save_post, so those inserts
+      # collide (Duplicate entry) and tubs end up invisible to every Pods
+      # consumer. 2.8.23 matches the live mirror's behavior.
+      - name: Download WordPress core + Pods 2.8
+        run: |
+          mkdir -p "$WP_DIR"
+          curl -sL https://wordpress.org/latest.tar.gz | tar -xz --strip-components=1 -C "$WP_DIR"
+          curl -sL https://downloads.wordpress.org/plugin/pods.2.8.23.zip -o /tmp/pods.zip
+          unzip -q /tmp/pods.zip -d "$WP_DIR/wp-content/plugins/"
+          cp -r "$GITHUB_WORKSPACE" "$WP_DIR/wp-content/plugins/scoop-rest"
+          rm -rf "$WP_DIR/wp-content/plugins/scoop-rest/.git"
+
+      - name: Install WordPress, generate Pods surface, seed fixtures
+        working-directory: ${{ env.WP_DIR }}
+        run: |
+          wp config create --dbname=scoop_test --dbuser=scoop --dbpass=scoop \
+            --dbhost=127.0.0.1:3306 --skip-check --allow-root
+          wp core install --url=$WP_URL --title="Scoop CI" \
+            --admin_user=admin --admin_password=adminpass \
+            --admin_email=ci@swankyscoop.com --skip-email --allow-root
+          wp option update siteurl $WP_URL --allow-root
+          wp option update home $WP_URL --allow-root
+          wp rewrite structure '/%postname%/' --allow-root
+          wp rewrite flush --allow-root
+          wp plugin activate pods --allow-root
+          wp plugin activate scoop-rest --allow-root
+          # Pods surface generated from the plugin's own scoop_entity_specs()
+          # (tests/smoke/ci/gen-pods.php), not a mirrored schema.
+          wp eval-file "$GITHUB_WORKSPACE/tests/smoke/ci/gen-pods.php" --allow-root
+          wp eval-file "$GITHUB_WORKSPACE/tests/smoke/ci/fix-relations.php" --allow-root
+          wp eval-file "$GITHUB_WORKSPACE/tests/smoke/ci/seed-fixtures.php" --allow-root
+          wp eval-file "$GITHUB_WORKSPACE/tests/smoke/ci/seed-pages-users.php" --allow-root
+
+      - name: Start php-fpm-less web server (php -S + shim)
+        working-directory: ${{ env.WP_DIR }}
+        run: |
+          cp "$GITHUB_WORKSPACE/tests/smoke/ci/htshim.php" ./htshim.php
+          nohup php -S 127.0.0.1:8099 htshim.php > /tmp/php.log 2>&1 &
+          sleep 2
+          curl -s -o /dev/null -w 'wp-login: %{http_code}\n' $WP_URL/wp-login.php
+
+      - name: Run the smoke suite
+        working-directory: ${{ github.workspace }}/tests/smoke
+        env:
+          SCOOP_BASE_URL: ${{ env.WP_URL }}
+          SCOOP_TEST_USER: smoke
+          SCOOP_TEST_PASS: smokepass
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test --config=playwright.ci-stack.config.js
+
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: tests/smoke/test-results/
+          retention-days: 7
