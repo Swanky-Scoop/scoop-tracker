@@ -54,6 +54,14 @@ if (!defined('ABSPATH')) exit;
  * loop could ever have caught on its own.
  */
 function scoop_schema_apply_resolve_group(array $field_def, string $pod_name, array $known_group_ids = [], bool $is_update = false): array {
+  // Volatile keys (see scoop_schema_volatile_keys()) are environment-specific
+  // snapshot data from whichever site the schema was exported from — 'parent'
+  // in particular is a raw post ID that's meaningless (or actively wrong) on
+  // any other environment. diff.php already ignores them for comparison, but
+  // every save_field() call in this file funnels through here, so this is
+  // the one place that guarantees they never reach Pods as a write.
+  $field_def = scoop_schema_strip_volatile($field_def);
+
   $group = $field_def['group'] ?? null;
   if (!is_array($group) || empty($group['name'])) return $field_def;
 
@@ -159,7 +167,7 @@ function scoop_schema_apply_additive(array $schema, array $diff): array {
     if ($pod_schema === null) continue;
 
     $fields = $pod_schema['fields'] ?? [];
-    $pod_params = $pod_schema;
+    $pod_params = scoop_schema_strip_volatile($pod_schema);
     unset($pod_params['fields']);
     $pod_params['name'] = $pod_name;
 
@@ -232,7 +240,7 @@ function scoop_schema_apply_additive(array $schema, array $diff): array {
       $live = scoop_schema_load_live_pod($pod_name);
       $pod_id = (int) ($live['id'] ?? 0);
       if ($pod_id > 0) {
-        $pod_params = $pod_schema;
+        $pod_params = scoop_schema_strip_volatile($pod_schema);
         unset($pod_params['fields']);
         $pod_params['id'] = $pod_id;
         $pod_params['name'] = $pod_name;

@@ -197,8 +197,10 @@ function scoop_schema_diff(array $schema): array {
       'changed_fields' => [],
     ];
 
+    $volatile = array_flip(scoop_schema_volatile_keys());
+
     foreach ($pod_schema as $key => $expected) {
-      if ($key === 'fields') continue;
+      if ($key === 'fields' || isset($volatile[$key])) continue;
       $actual = $live[$key] ?? null;
       if (scoop_schema_comparable_val($actual) !== scoop_schema_comparable_val($expected)) {
         $entry['changed_pod_attrs'][$key] = ['expected' => $expected, 'actual' => $actual];
@@ -222,6 +224,7 @@ function scoop_schema_diff(array $schema): array {
       $actual_field = $live_fields[$fname];
       $changed = [];
       foreach ($expected_field as $key => $expected_val) {
+        if (isset($volatile[$key])) continue;
         $actual_val = $actual_field[$key] ?? null;
         // See scoop_schema_resolve_group_id()'s own comment — only affects
         // comparison, the reported 'expected' below still shows the
