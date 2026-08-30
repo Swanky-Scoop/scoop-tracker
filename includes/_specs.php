@@ -34,6 +34,11 @@ function scoop_bundle_specs(): array {
     // move where" list, grouped by destination location. See
     // assets/models/moving-grid-model.js.
     'Moving' => ['needs' => ['tub','flavor','location']],
+    // Tub-moving feature — derived demand-side board (see
+    // assets/models/debt-grid-model.js): (destination, flavor) rows computed
+    // from slot designations vs FOH stock. 'slot' is the demand source (the
+    // one thing Moving doesn't need), 'use' classifies front-of-house stock.
+    'Debt' => ['needs' => ['slot','tub','flavor','use','location']],
     // End-of-shift report — see WHITEBOARD-INGESTION.md. Needs flavor,
     // location, and supply (the supplies_low picker), plus cabinet/slot so
     // the flavors_changed checklist can be filtered to slot.current_flavor

@@ -155,6 +155,7 @@ function scoop_access_policy(): array {
         // (see MovingGridModel's writeEnvelope), so no POST entry needed
         // here, same reasoning as CabinetWorkflow having none of its own.
         'Moving'          => ['GET' => true],
+        'Debt'            => ['GET' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot','location','moving_to'],
@@ -201,6 +202,7 @@ function scoop_access_policy(): array {
         // (see MovingGridModel's writeEnvelope), so no POST entry needed
         // here, same reasoning as CabinetWorkflow having none of its own.
         'Moving'          => ['GET' => true],
+        'Debt'            => ['GET' => true],
         'ShiftReport'     => ['GET' => true],
       ],
       'entities' => [
@@ -233,6 +235,7 @@ function scoop_access_policy(): array {
         // (see MovingGridModel's writeEnvelope), so no POST entry needed
         // here, same reasoning as CabinetWorkflow having none of its own.
         'Moving'          => ['GET' => true],
+        'Debt'            => ['GET' => true],
         'ShiftReport'     => ['GET' => true],
       ],
       'entities' => [
@@ -292,6 +295,7 @@ function scoop_access_policy(): array {
         // (see MovingGridModel's writeEnvelope), so no POST entry needed
         // here, same reasoning as CabinetWorkflow having none of its own.
         'Moving'          => ['GET' => true],
+        'Debt'            => ['GET' => true],
       ],
       'entities' => [
         'tub'  => ['state','use','amount','slot','location','moving_to'],
@@ -343,6 +347,7 @@ function scoop_access_policy(): array {
         // (see MovingGridModel's writeEnvelope), so no POST entry needed
         // here, same reasoning as CabinetWorkflow having none of its own.
         'Moving'          => ['GET' => true],
+        'Debt'            => ['GET' => true],
         // New grant (didn't have 'KitchenReport' before this rename) — no
         // mode/url override, same as administrator: inherits _config.php's
         // external-link default (that Google Form can't be embedded for
@@ -386,6 +391,7 @@ function scoop_access_policy(): array {
         'EmptiedLog'      => ['GET' => false],
         'CabinetWorkflow' => ['GET' => false],
         'Moving'          => ['GET' => false],
+        'Debt'            => ['GET' => false],
         'ShiftReport'     => ['GET' => false],
         'Task'            => ['GET' => false],
         'Prep'            => ['GET' => false],
@@ -422,6 +428,7 @@ function scoop_access_policy(): array {
         'EmptiedLog'      => ['GET' => false],
         'CabinetWorkflow' => ['GET' => false],
         'Moving'          => ['GET' => false],
+        'Debt'            => ['GET' => false],
         'ShiftReport'     => ['GET' => false],
         'Task'            => ['GET' => false],
         'Prep'            => ['GET' => false],
@@ -457,6 +464,7 @@ function scoop_access_policy(): array {
         // (see MovingGridModel's writeEnvelope), so no POST entry needed
         // here, same reasoning as CabinetWorkflow having none of its own.
         'Moving'          => ['GET' => true],
+        'Debt'            => ['GET' => true],
         'ItemPivot'       => ['GET' => true],
         // Same as shift_lead — full read/write.
         'FlavorTub'       => ['GET' => true, 'POST' => true],

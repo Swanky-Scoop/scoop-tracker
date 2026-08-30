@@ -12,7 +12,7 @@ The repository root maps directly to `wp-content/plugins/scoop_rest/` on the ser
 
 There is **no build step, no package manager, no test suite**. JS files are loaded directly as ES modules by the browser (`script_loader_tag` filter rewrites the `scoop-grid` handle to `type="module"`).
 
-Deployment is by GitHub Actions (`.github/workflows/deploy.yml`), via `rsync` over SSH — no SFTP-on-save, no VS Code SFTP extension. A push to `main` auto-deploys to `test.swankyscoop.net`. Deploying to `ops.swankyscoop.net` (production) requires a manual `workflow_dispatch` run with `target: ops`, gated behind the `ops` GitHub environment. The SSH deploy key lives only in the `SFTP_SSH_KEY` Actions secret; the workflow explicitly excludes any `scoop-deploy-key*`/`*.pem`/`*_rsa`/`*_ed25519`/`id_*` files from the rsync payload so a stray key file in the working tree can't get shipped.
+Deployment is by GitHub Actions (`.github/workflows/deploy.yml`), via `rsync` over SSH — no SFTP-on-save, no VS Code SFTP extension. A push to `main` auto-deploys to `test.swanky.ink` (the `deploy-test-ink` job; it is the ONLY auto target). Deploying to `ops.swankyscoop.net` or `ops.swanky.ink` (production) requires a manual `workflow_dispatch` run with `target: ops` / `target: ops-ink`, gated behind the `ops` GitHub environment. The SSH deploy key lives only in the `SFTP_SSH_KEY` Actions secret; the workflow explicitly excludes any `scoop-deploy-key*`/`*.pem`/`*_rsa`/`*_ed25519`/`id_*` files from the rsync payload so a stray key file in the working tree can't get shipped.
 
 To exercise changes, commit and push to `main` (deploys to TEST) and reload a page that contains a `[scoop_grid ...]` shortcode while logged in. When debugging server-side, set `define('SCOOP_DEBUG_LOG', true)` in `wp-config.php` to enable `scoop_debug_log()` output to the PHP error log.
 
@@ -26,7 +26,7 @@ There is a [Local](https://localwp.com/) site, `swank-tracker`, served at `https
 
 Because it's a symlink, **edits to the repo are live on the local site immediately** — no SFTP, no copy. Reload for PHP; hard-refresh for JS (ES module cache). This is the fastest way to validate a change. Reach it with `curl -k` (self-signed cert). The local site has its own database and users, and its Pods config/content can differ from TEST and OPS — don't assume parity (see "Do not suggest" notes on environment drift).
 
-The GitHub Actions deploy workflow still governs the **real** servers (`test.swankyscoop.net`, `ops.swankyscoop.net`); commit and push to ship once a change is validated locally. The local mirror is for iteration only.
+The GitHub Actions deploy workflow still governs the **real** servers (`test.swanky.ink`, `ops.swankyscoop.net`, `ops.swanky.ink`); commit and push to ship once a change is validated locally. The local mirror is for iteration only.
 
 ## Architecture
 
@@ -119,15 +119,15 @@ When working on pricing features, lead with detection and reporting of bad data 
 
 **Any task that writes, updates, or connects live Pods/WordPress records must be validated on TEST before OPS.**
 
-- Use `test.swankyscoop.net` (the auto-deploy target on push to `main`) for all exploratory and repair work.
-- Produce a report or dry-run output first; get explicit approval before writing to OPS (`ops.swankyscoop.net`).
+- Use `test.swanky.ink` (the auto-deploy target on push to `main`) for all exploratory and repair work.
+- Produce a report or dry-run output first; get explicit approval before writing to OPS (`ops.swankyscoop.net` / `ops.swanky.ink`).
 - For multi-step writes (e.g. connecting ingredients → recipes → flavors), remember that all `track_pods_*` tables except `nightly_sales` are `ENGINE=MyISAM` — no transactions, no rollback. Order inserts defensively and plan explicit cleanup on failure.
 
 ## Do not suggest
 
 These approaches have been evaluated and decided against — do not re-propose them:
 
-- Connecting directly to remote servers (test.swankyscoop.net or ops.swankyscoop.net)
+- Connecting directly to remote servers (test.swanky.ink, ops.swankyscoop.net, or ops.swanky.ink)
   via SSH, WP-CLI, or any other remote access method. Deployment is by the GitHub
   Actions workflow (`.github/workflows/deploy.yml`) and cross-environment coordination
   is handled by the developer.
