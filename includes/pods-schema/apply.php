@@ -11,6 +11,44 @@ if (!defined('ABSPATH')) exit;
  * pod/field *definitions*. Verify on the local dev site before trusting
  * this against TEST, and TEST before OPS (CLAUDE.md data repair policy).
  */
+/**
+ * Resolve a schema field's 'group' for save_field() — Pods' save_field()
+ * accepts group_id or a bare slug string, NOT the ['name'=>..,'pod'=>..]
+ * array shape the schema uses (that's save_group()'s shape): the array hits
+ * $group_identifier = 'Slug: ' . $params->group in PodsAPI::save_field()
+ * (~line 3167 in Pods 2.9.x), firing "Array to string conversion" and
+ * passing an array as load_group()'s name, which never matches →
+ * pods_error() throws (PodsAPI::$display_errors is false → exception mode),
+ * the apply loop catches it and records "Create field ...: Group (...)
+ * not found.", and the field is NOT created/updated by that call. Pods does
+ * not create missing fields on its own — the field only appears after a
+ * human-run repair/manual GUI action, as happened for tub.moving_to on
+ * local (see PR 34's commit message about the repair tool).
+ *
+ * Resolving to the pod's own group id here (same lookup
+ * scoop_schema_resolve_group_id() uses for the diff comparison) removes the
+ * warning AND the failure: save_field's group_id branch is first-choice and
+ * concat-free. On resolution failure (group genuinely absent) the value is
+ * left untouched so save_field fails loudly and visibly — an explicit
+ * recorded error, never a silent misassignment.
+ */
+function scoop_schema_apply_resolve_group(array $field_def, string $pod_name): array {
+  $group = $field_def['group'] ?? null;
+  if (!is_array($group) || empty($group['name']) || !function_exists('pods_api')) return $field_def;
+
+  try {
+    $g = pods_api()->load_group(['name' => $group['name'], 'pod' => $pod_name], false);
+  } catch (\Throwable $e) {
+    return $field_def;
+  }
+  if (!is_object($g)) return $field_def; // group absent — keep the loud failure path
+
+  $out = $field_def;
+  $out['group_id'] = (int) $g->get_id();
+  unset($out['group']);
+  return $out;
+}
+
 function scoop_schema_apply_additive(array $schema, array $diff): array {
   $result = [
     'created_pods' => [],
@@ -76,7 +114,7 @@ function scoop_schema_apply_additive(array $schema, array $diff): array {
         continue;
       }
 
-      $field_params = $field_def;
+      $field_params = scoop_schema_apply_resolve_group($field_def, $pod_name);
       $field_params['pod'] = $pod_name;
       $field_params['name'] = $field_name;
       try {
@@ -126,7 +164,7 @@ function scoop_schema_apply_additive(array $schema, array $diff): array {
     foreach ($entry['missing_fields'] as $field_name) {
       $field_def = $schema_fields[$field_name] ?? null;
       if ($field_def === null) continue;
-      $field_params = $field_def;
+      $field_params = scoop_schema_apply_resolve_group($field_def, $pod_name);
       $field_params['pod'] = $pod_name;
       $field_params['name'] = $field_name;
       try {
@@ -158,7 +196,7 @@ function scoop_schema_apply_additive(array $schema, array $diff): array {
         continue;
       }
 
-      $field_params = $field_def;
+      $field_params = scoop_schema_apply_resolve_group($field_def, $pod_name);
       $field_params['id'] = $field_id;
       $field_params['pod'] = $pod_name;
       $field_params['name'] = $field_name;
