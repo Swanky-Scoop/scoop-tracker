@@ -4,7 +4,58 @@
 
 Read this file first on this branch.
 
-## ⚡ STATUS AS OF 2026-08-15 evening — READ THIS FIRST
+## ⚡ STATUS AS OF 2026-08-30 — READ THIS FIRST (supersedes the 08-15 section below)
+
+**Main has independently rebuilt most of this branch's infrastructure —
+this branch is now mostly obsolete.** Since this branch diverged (at
+`aa9a37b`), main added its own Task/RecipeCount/Prep implementation
+(`72bfed7` "task stuff" and later commits), via a **different, further-along
+UI approach**: a detail-view/edit pattern (`assets/ui/task-detail-view.js`,
+`assets/ui/_detail-edit.js`) instead of this branch's grid-create-form +
+bespoke `task-create-form.js`, plus a real `TaskComponentHistoryGridModel`
+main built on its own (this branch's history-grid generalization was never
+finished). Main also independently has: the `done`-guard on batch-tub
+cascading creation, the `post_status` defaulting-to-draft fix (main's
+version is more thorough — includes a `republish-tubs-ui.php` cleanup tool
+for tubs stuck as drafts before the fix landed), the route-registration
+warning fix, and "my tasks" filtering (client-side group-by-assignee in
+`tasks-grid-model.js`, not a dedicated endpoint like this branch's
+`/my-tasks`).
+
+**Do not resume this branch's own code** (`_single-relation-count-grid-model.js`,
+`task-create-form.js`, this branch's `/my-tasks` + `/kitchen-staff`
+endpoints, its `Task`/`RecipeCount`/`Prep` route configs) — it's all
+superseded by main's parallel implementation. If picking ingredient-tracking
+work back up, branch fresh off current main rather than rebasing this one.
+
+**What's still genuinely unbuilt anywhere** (main included) — this is the
+real remaining scope:
+- The **`kitchen_report`** pod itself and its form — the branch's original
+  goal, entirely unstarted. Planned fields: `target`, `recipe_counts`,
+  `base_counts`, `supplies_low`, `tasks`, `kitchen_visitors`, `notes`.
+- **`base_pack`** pod (`base`, `count`, `cooling`, `report`) — no code, no
+  spec entry, anywhere.
+- **Feature 2, the standing shopping list** — no design work at all, on
+  this branch or main.
+- The `ingredients_low`-vs-consumption-tracking decision (see "How the plan
+  actually diverged" below) — still the right call, still unimplemented
+  (`recipe_count.done` × the recipe's ingredient list doesn't exist yet as
+  actual consumption tracking).
+
+**Priority framing (2026-08-30):** getting tasks to actual *completion* is
+the gating priority for `kitchen_report` — the confirmation/completion flow
+on assigned tasks (marking batch/recipe_count/prep sub-items done) needs to
+work first, since `kitchen_report` mostly **is** that confirmation surface.
+`kitchen_report` needs its own info fields (`supplies_low`, `base_counts`,
+`kitchen_visitors`, `notes` — the ones with no task/sub-item precedent to
+lean on), but the bulk of the form should be reviewing/confirming progress
+or completion on assigned tasks, not a parallel data-entry surface next to
+the task system. Design the completion flow against main's current
+Task/RecipeCount/Prep/TaskComponentHistory shape, not this branch's.
+
+---
+
+## STATUS AS OF 2026-08-15 evening (historical — this branch's own now-superseded work)
 
 Everything below this section (down to "Feature 1: sub-ingredient production
 log") is the **original planning doc**, written before any code existed.
@@ -223,30 +274,25 @@ ingredient list) rather than staff manually flagging "running low" — this
 directly avoids CLAUDE.md's documented ingredient-data-quality problem
 instead of adding another unreliable manually-entered signal on top of it.
 
-### Immediate next steps (not yet started)
+### Immediate next steps (not yet started) — SUPERSEDED, see the 2026-08-30
+### section at the top of this file for the current list. Kept below only
+### as historical context for what this branch itself had planned.
 
-1. Decide Task's own UI treatment (see open question above) — probably
-   worth just asking the user directly rather than guessing again.
-2. If continuing the grid-pattern generalization: **Prep** is next
-   (`ingredient`+`count`+`units`+`other` — one more field than
-   Batch/RecipeCount's 2; user suggested dropping `other` for consistency).
-   This does NOT fit `_single-relation-count-grid-model.js` as-is (extra
-   fields) — will need either a variant base class or to stay hand-built.
-3. Generalize the *history*-grid pattern once Prep's history grid exists
-   as a third data point (see the "not yet done" note above).
-4. **The actual Kitchen Report form** — the branch's original goal,
-   entirely unstarted: a staffer-facing form reading `/my-tasks`, letting
-   them review/confirm assigned+unassigned tasks and mark
-   batch/recipe_count/prep sub-items done (which is what should trigger
-   real tub creation for a task-tracked batch, per the `done` guard
-   already built), plus `supplies_low`/`base_counts`/`kitchen_visitors`/
-   `notes` fields on `kitchen_report` itself (none of which have any code
-   yet). Needs its own design pass on how "mark this task's items done"
-   actually works in the UI.
-5. Feature 2 (shopping list) — completely unstarted, not even revisited
-   since the original planning doc below.
-6. Minor: fix the stale `task="15233"` on the tasks page test shortcode
-   (or remove it) so it isn't confusing to whoever looks at it next.
+~~1. Decide Task's own UI treatment~~ — resolved by main independently
+   (detail-view/edit pattern, `task-detail-view.js`/`_detail-edit.js`).
+~~2. Prep grid-pattern generalization~~ — moot; main already has Prep, built
+   its own way.
+~~3. Generalize the history-grid pattern~~ — done by main independently
+   (`TaskComponentHistoryGridModel`).
+4. **The actual Kitchen Report form** — still the real next step. See the
+   2026-08-30 section at top for the current priority framing: task
+   completion/confirmation is gating, `kitchen_report`'s own info fields
+   (`supplies_low`/`base_counts`/`kitchen_visitors`/`notes`) come second,
+   and it should be designed against main's current Task/RecipeCount/Prep
+   shape, not this branch's.
+5. Feature 2 (shopping list) — still completely unstarted.
+6. ~~Minor: fix the stale `task="15233"`~~ — moot, this branch's own test
+   pages/shortcodes aren't the live implementation path anymore.
 
 ---
 
