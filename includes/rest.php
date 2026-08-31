@@ -585,6 +585,15 @@
         continue;
       }
 
+      // Raising Wanted should claim more tubs to match, same as a fresh
+      // slot-driven request does (see scoop_sync_flavor_request(),
+      // includes/hooks/cabinet-slot.php) — a manual override is just
+      // another way 'wanted' can change.
+      $saved_id = $existing_id ?: (int) $res;
+      if ($saved_id && function_exists('scoop_topup_flavor_request_claims')) {
+        scoop_topup_flavor_request_claims($saved_id, $op['flavor'], $op['location'], $op['wanted']);
+      }
+
       $updated[(string) $pair_key] = ['wanted' => $op['wanted']];
     }
 

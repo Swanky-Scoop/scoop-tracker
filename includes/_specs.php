@@ -34,14 +34,17 @@ function scoop_bundle_specs(): array {
     // move where" list, grouped by destination location. See
     // assets/models/moving-grid-model.js.
     'Moving' => ['needs' => ['tub','flavor','location']],
-    // Tub-moving feature — derived demand-side board (see
-    // assets/models/debt-grid-model.js): (destination, flavor) rows computed
-    // from slot designations vs FOH stock. 'slot' is the demand source (the
-    // one thing Moving doesn't need), 'use' classifies front-of-house stock,
-    // 'flavor_request' is the persisted demand-override layer (Wanted
-    // column writes; rows absent on environments that haven't applied the
-    // pod yet — scoop_fetch_entities() returns [] for a missing pod).
-    'Debt' => ['needs' => ['slot','tub','flavor','use','location','flavor_request']],
+    // Tub-moving feature — demand-side board (see
+    // assets/models/debt-grid-model.js). Rows are 1-to-1 with a real
+    // flavor_request post now (2026-08-31 redesign) — 'slot' dropped from
+    // this list since the JS no longer scans slots itself; the server
+    // (scoop_sync_flavor_request(), includes/hooks/cabinet-slot.php) reads
+    // slots to create/maintain flavor_request rows, but that's a separate
+    // PHP-side fetch, not this bundle. 'use' classifies front-of-house
+    // stock; rows are absent on environments that haven't applied the
+    // flavor_request pod yet — scoop_fetch_entities() returns [] for a
+    // missing pod.
+    'Debt' => ['needs' => ['tub','flavor','use','location','flavor_request']],
     // End-of-shift report — see WHITEBOARD-INGESTION.md. Needs flavor,
     // location, and supply (the supplies_low picker), plus cabinet/slot so
     // the flavors_changed checklist can be filtered to slot.current_flavor

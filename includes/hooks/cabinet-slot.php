@@ -348,6 +348,7 @@ function scoop_slot_post_save_mark_tub_moving($pieces, $is_new_item, $id) {
 
   foreach (array_unique($incoming) as $flavor_id) {
     scoop_mark_tub_moving_if_needed($flavor_id, $destination_id);
+    scoop_sync_flavor_request($destination_id, $flavor_id);
   }
 
   return $pieces;
@@ -409,31 +410,81 @@ function scoop_mark_tub_moving_if_needed(int $flavor_id, int $destination_id): v
   usort($candidates, fn($a, $b) => strcmp($a['created_on'], $b['created_on']));
   $chosen = $candidates[0];
 
-  $data = ['moving_to' => $destination_id];
+  pods_api()->save_pod_item(['pod' => 'tub', 'id' => $chosen['id'], 'data' => ['moving_to' => $destination_id]]);
+}
 
-  // Additive alongside moving_to (2026-08-31 design conversation) — claim
-  // the same chosen tub against the (destination, flavor) demand's
-  // flavor_request row, auto-creating it if this demand has never been
-  // requested/claimed before. tub.flavor_request is the forward field this
-  // writes; flavor_request.tubs (its reverse list) is populated by Pods'
-  // own sister sync once that pairing is configured — see both fields'
-  // schema descriptions for why this never reads that list back.
-  $request_id = scoop_find_or_create_flavor_request($destination_id, $flavor_id);
-  if ($request_id) $data['flavor_request'] = $request_id;
+/* ------------------------------------------------------------
+ * Flavor Requests: one persisted, 1-to-1 Debt row per (destination,
+ * flavor) demand pair (2026-08-31 redesign — see the design conversation
+ * and assets/models/debt-grid-model.js's header comment). Separate
+ * mechanism from moving_to/scoop_mark_tub_moving_if_needed() above: this
+ * one only ever claims from Woodinville, Freezing stock specifically (per
+ * your spec — Woodinville is where every flavor is made), not "anywhere
+ * eligible" the way the older earmark hook does. A tub claimed here that
+ * needs to physically relocate also gets moving_to set (so Moving/Debt's
+ * own inbound bucket still sees it) — the older hook's own search already
+ * skips any tub with moving_to set, so the two mechanisms can't
+ * double-claim the same tub regardless of which runs first.
+ * ------------------------------------------------------------ */
 
-  pods_api()->save_pod_item(['pod' => 'tub', 'id' => $chosen['id'], 'data' => $data]);
+/**
+ * Count of slot designations (current_flavor OR immediate_flavor, each
+ * counted separately — same as debt-grid-model.js's old client-side demand
+ * scan, now moved server-side) at $location_id naming $flavor_id.
+ */
+function scoop_slot_demand_count(int $location_id, int $flavor_id): int {
+  if (!$location_id || !$flavor_id || !function_exists('pods')) return 0;
+
+  $count = 0;
+  $slots = pods('slot', ['limit' => -1]);
+  if (!$slots) return 0;
+
+  while ($slots->fetch()) {
+    $cabinet_id = (int) $slots->field('cabinet.ID');
+    if (!$cabinet_id) continue;
+    $dest = (int) pods('cabinet', $cabinet_id)->field('location.ID');
+    if ($dest !== $location_id) continue;
+
+    foreach (['current_flavor', 'immediate_flavor'] as $f) {
+      if ((int) scoop_rel_id($slots->field($f)) === $flavor_id) $count++;
+    }
+  }
+
+  return $count;
 }
 
 /**
- * Find-or-create the flavor_request row for (location, flavor) — same
- * upsert-by-pair shape as scoop_handle_debt_requests_post() (rest.php),
- * duplicated rather than shared because that function is REST-request
- * shaped (parses a payload, returns a WP_REST_Response) and this call site
- * has neither. Returns 0 (never writes) if pods()/pods_api() aren't
- * available.
+ * "Does not already have a tub of that flavor present at the slot's
+ * cabinet's location" — your wording, verbatim. Front-of-house, non-dead
+ * state, physically at $location_id; state otherwise unrestricted (an
+ * Opened tub in service still counts as present — nothing needs to move).
  */
-function scoop_find_or_create_flavor_request(int $location_id, int $flavor_id): int {
-  if (!$location_id || !$flavor_id || !function_exists('pods') || !function_exists('pods_api')) return 0;
+function scoop_flavor_present_at_location(int $flavor_id, int $location_id): bool {
+  if (!$flavor_id || !$location_id || !function_exists('pods')) return false;
+
+  $tubs = pods('tub', [
+    'where' => "flavor.ID = {$flavor_id} AND location.ID = {$location_id}",
+    'limit' => -1,
+  ]);
+  if (!$tubs) return false;
+
+  while ($tubs->fetch()) {
+    $state = (string) $tubs->field('state');
+    if (in_array($state, ['Emptied', '!Lost'], true)) continue;
+
+    $use_id   = (int) scoop_rel_id($tubs->field('use'));
+    $is_front = !$use_id || $use_id === SCOOP_FRONT_OF_HOUSE_USE_ID;
+    if (!$is_front) continue;
+
+    return true;
+  }
+
+  return false;
+}
+
+/** Read-only lookup — does a flavor_request already exist for this pair? */
+function scoop_find_flavor_request(int $location_id, int $flavor_id): int {
+  if (!$location_id || !$flavor_id || !function_exists('pods')) return 0;
 
   $existing = pods('flavor_request', [
     'where' => "location.ID = {$location_id} AND flavor.ID = {$flavor_id}",
@@ -443,6 +494,14 @@ function scoop_find_or_create_flavor_request(int $location_id, int $flavor_id): 
     $existing->fetch();
     return (int) $existing->id();
   }
+  return 0;
+}
+
+/** Same upsert-by-pair shape as scoop_handle_debt_requests_post() (rest.php) — duplicated rather than shared since that function is REST-request shaped and this call site has neither a payload nor a response to build. */
+function scoop_find_or_create_flavor_request(int $location_id, int $flavor_id): int {
+  $existing_id = scoop_find_flavor_request($location_id, $flavor_id);
+  if ($existing_id) return $existing_id;
+  if (!function_exists('pods_api')) return 0;
 
   $title = sprintf(
     '%s | %s',
@@ -453,14 +512,116 @@ function scoop_find_or_create_flavor_request(int $location_id, int $flavor_id): 
   $new_id = pods_api()->save_pod_item([
     'pod'  => 'flavor_request',
     'data' => [
-      'post_title' => $title,
+      'post_title'  => $title,
       'post_status' => 'publish',
-      'location'   => $location_id,
-      'flavor'     => $flavor_id,
+      'location'    => $location_id,
+      'flavor'      => $flavor_id,
     ],
   ]);
 
   return is_wp_error($new_id) ? 0 : (int) $new_id;
+}
+
+/**
+ * Tops up $request_id's claimed tubs to $wanted, sourcing ONLY from
+ * Woodinville, state Freezing, front-of-house tubs not already claimed by
+ * any request — per your spec, narrower than
+ * scoop_mark_tub_moving_if_needed()'s "anywhere, widened states" pool on
+ * purpose (Woodinville is where every flavor is made; Freezing specifically
+ * because a tub already Hardening/Tempering/Opened is further along a
+ * different plan already). Claims oldest-first. If fewer than needed exist,
+ * claims what it can — the remainder shows as Owed (gap = wanted - claimed
+ * in computeDebtRows, assets/models/debt-grid-model.js), never invents
+ * stock.
+ */
+function scoop_topup_flavor_request_claims(int $request_id, int $flavor_id, int $destination_id, int $wanted): void {
+  if (!$request_id || !$flavor_id || !$destination_id || !function_exists('pods') || !function_exists('pods_api')) return;
+
+  $claimed = pods('tub', ['where' => "flavor_request.ID = {$request_id}", 'limit' => -1]);
+  $claimed_count = $claimed ? (int) $claimed->total() : 0;
+
+  $need = $wanted - $claimed_count;
+  if ($need <= 0) return;
+
+  $woodinville_id = (int) scoop_get_default_location_id();
+
+  $pool = pods('tub', [
+    'where' => sprintf(
+      "flavor.ID = %d AND location.ID = %d AND state = 'Freezing'",
+      $flavor_id,
+      $woodinville_id
+    ),
+    'limit' => -1,
+  ]);
+  if (!$pool) return;
+
+  $candidates = [];
+  while ($pool->fetch()) {
+    $use_id   = (int) scoop_rel_id($pool->field('use'));
+    $is_front = !$use_id || $use_id === SCOOP_FRONT_OF_HOUSE_USE_ID;
+    if (!$is_front) continue;
+
+    if ((int) scoop_rel_id($pool->field('flavor_request'))) continue; // already claimed by some request
+
+    $candidates[] = [
+      'id'         => (int) $pool->id(),
+      'created_on' => (string) $pool->field('created_on'),
+    ];
+  }
+  if (!$candidates) return;
+
+  usort($candidates, fn($a, $b) => strcmp($a['created_on'], $b['created_on']));
+
+  foreach (array_slice($candidates, 0, $need) as $c) {
+    $data = ['flavor_request' => $request_id];
+    if ($destination_id !== $woodinville_id) $data['moving_to'] = $destination_id;
+    pods_api()->save_pod_item(['pod' => 'tub', 'id' => $c['id'], 'data' => $data]);
+  }
+}
+
+/**
+ * Ensures a flavor_request exists (per your spec: only when a slot
+ * actually wants this flavor here AND nothing's already present locally)
+ * and keeps it topped up. Safe/idempotent to call any time slot demand,
+ * supply, or a manual Wanted value could have changed for this pair.
+ *
+ * Once a row exists, it's always maintained regardless of the creation
+ * gate — a human's Wanted override or a slot's own later save shouldn't
+ * stop being tracked just because local stock happens to exist at that
+ * instant.
+ */
+function scoop_sync_flavor_request(int $location_id, int $flavor_id): void {
+  if (!$location_id || !$flavor_id || !function_exists('pods') || !function_exists('pods_api')) return;
+
+  $guard_key = "sync_flavor_request:{$location_id}:{$flavor_id}";
+  if (!scoop_guard_enter($guard_key)) return;
+
+  try {
+    $existing_id = scoop_find_flavor_request($location_id, $flavor_id);
+    $slot_demand = scoop_slot_demand_count($location_id, $flavor_id);
+
+    if (!$existing_id) {
+      if ($slot_demand <= 0) return;
+      if (scoop_flavor_present_at_location($flavor_id, $location_id)) return;
+
+      $existing_id = scoop_find_or_create_flavor_request($location_id, $flavor_id);
+      if (!$existing_id) return;
+    }
+
+    $request = pods('flavor_request', $existing_id);
+    if (!$request || !$request->exists()) return;
+
+    $current_wanted = (int) $request->field('wanted');
+    $new_wanted = max($current_wanted, $slot_demand);
+
+    if ($new_wanted !== $current_wanted) {
+      pods_api()->save_pod_item(['pod' => 'flavor_request', 'id' => $existing_id, 'data' => ['wanted' => $new_wanted]]);
+    }
+
+    scoop_topup_flavor_request_claims($existing_id, $flavor_id, $location_id, $new_wanted);
+  } finally {
+    scoop_guard_leave($guard_key);
+  }
 }
 
 /**
@@ -478,6 +639,12 @@ function scoop_find_or_create_flavor_request(int $location_id, int $flavor_id): 
  * pods_api()->save_pod_item() call re-enters this same reconciliation via
  * the post-save tub hook below — the already_satisfied check makes that
  * self-terminating on its own, but the guard avoids the wasted rescan.
+ *
+ * Also re-syncs flavor_request per destination (scoop_sync_flavor_request())
+ * — the same "supply arrived after demand was already scheduled" gap
+ * applies there too: a flavor_request's claim can only fill from whatever
+ * Woodinville stock exists AT THE TIME a slot is saved, so newly-created
+ * supply needs this same retroactive pass to get topped up.
  */
 function scoop_reconcile_moving_for_flavor(int $flavor_id): void {
   if (!$flavor_id || !function_exists('pods') || !function_exists('pods_api')) return;
@@ -505,6 +672,7 @@ function scoop_reconcile_moving_for_flavor(int $flavor_id): void {
 
     foreach (array_keys($destinations) as $destination_id) {
       scoop_mark_tub_moving_if_needed($flavor_id, $destination_id);
+      scoop_sync_flavor_request($destination_id, $flavor_id);
     }
   } finally {
     scoop_guard_leave($guard_key);
