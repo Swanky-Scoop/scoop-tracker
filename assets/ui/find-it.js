@@ -99,6 +99,8 @@ export default class FindIt extends El {
     const root = this.BASE.closest("form") ?? document;
     root.addEventListener("ts:grid:close-findits", () => this.close());
 
+    Find.selectOnFocus(this.INP);
+
     this.INP.addEventListener("input", () => {
       if (this.suppressInput) return;
       this._syncHasValue();

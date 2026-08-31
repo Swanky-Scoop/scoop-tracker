@@ -72,7 +72,7 @@ Each grid type has one `*GridModel` class. Its job: take the domain (or analytic
 |---|---|
 | `grid.js` | The table renderer. Builds `<thead>` / `<tbody>` from the model's columns + rows, mounts edit widgets (`TextIt`, `FindIt`), handles sort, group collapse, save form, and the "find in grid" widget. The largest single file in the client. |
 | `_el.js` | `El` base class — a small `el(tag, { text, classes, attrs, data, on, ... })` factory for DOM construction. Inherited by widgets that need element creation. |
-| `_find.js` | Static utility (`Find`) for fuzzy text matching against options. Consumed by both `FindIt` (in-cell typeahead) and `FindInList` (list-wide filter). |
+| `_find.js` | Static utility (`Find`) for fuzzy text matching against options, plus `Find.selectOnFocus()` — the shared select-all-on-focus helper (click, drag, Tab, and programmatic-focus safe; see its docblock). Consumed by both `FindIt` (in-cell typeahead) and `FindInList` (list-wide filter). |
 | `find-it.js` | `FindIt` — type-to-complete input rendered inside a grid cell. Used wherever a cell value is one option from a list (a flavor, a use, etc.). |
 | `text-it.js` | `TextIt` — basic text/number input rendered inside a grid cell. The default editor for non-relationship fields. |
 | `find-in-list.js` | The List's built-in text filter widget (`FindInList`) — shared by Grid and Tile via their common `.group`/`.row`/`.collapsible` class hooks, not tag-specific. Hides rows / row groups whose label or content doesn't match. Enabled per-model by setting `this.filter = true`. |

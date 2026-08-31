@@ -15,6 +15,8 @@
 // doesn't need the fallback but isn't hurt by it either.
 //////////////////////////////////
 
+import Find from "./_find.js";
+
 export default class FindInList {
   constructor(host, {
     root = host,
@@ -194,6 +196,7 @@ export default class FindInList {
   }
 
   bind() {
+    Find.selectOnFocus(this.inp);
     this.inp.addEventListener("input", () => this.apply(this.inp.value));
   }
 }
