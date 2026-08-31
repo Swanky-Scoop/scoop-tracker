@@ -82,6 +82,21 @@ export default class ScoopAPI {
     return HashState.has('bust');
   }
 
+  // Dock chrome's "Refresh all" button (includes/shortcode.php) — decoupled
+  // wiring, same pattern as Dockable.bindEscapeToClose(): the static button
+  // dispatches a document-level event, ScoopAPI (the one instance that owns
+  // refreshPageDomain) listens. Full page union, no types scoping — the
+  // page-wide counterpart to the per-control buttons (CONTROL-REFRESH.md §5).
+  // PageStatus attribution rides info.name like every other trigger.
+  bindDockRefreshButton() {
+    document.addEventListener("ts:page:refresh-requested", () => {
+      this.refreshPageDomain({
+        force: true,
+        info: { name: "dock refresh button" },
+      }).catch(() => {});
+    });
+  }
+
   // Stable per-host identity for the location hash's per-control tier
   // (#loc.<id>=...) — data-grid-type alone collides when the same type
   // appears twice on one page (see DOCKING.md's "State model"); an author
@@ -685,6 +700,157 @@ export default class ScoopAPI {
   // force-reload out from under a mid-edit field.
   hasUnsavedEdits() {
     return this._bundleGrids.some(g => g.dirtySet?.size || g._autosaving);
+  }
+
+  // ── Background data-freshness poll (CONTROL-REFRESH.md §3) ────────────────
+  //
+  // The client historically fetched only on mount and after its own writes —
+  // a tab showed edits from another staff member/another tab only after a
+  // manual reload. This watcher closes that gap with a version-gated poll:
+  // every tick hits the cheap /version endpoint and compares the server's
+  // global bundle-cache version (scoop_cache_version, includes/_cache.php)
+  // against the last value seen; only when it actually MOVED — and has since
+  // SETTLED, so a burst of related saves costs one refetch, not one per save —
+  // does it force a page-wide refreshPageDomain() through the existing
+  // ts:domain:updated → _onDomainUpdated repaint path (per-grid dirty/
+  // focused-cell guards already protect in-progress edits; see §3 step 5 of
+  // the plan for why the gate is per-grid, not a global hasUnsavedEdits()
+  // hold, which would let one idle dirty cell stall page-wide freshness).
+  //
+  // Cost model: a visible tab costs one few-hundred-byte GET per tick;
+  // hidden tabs (document.hidden) cost nothing at all — they skip polling
+  // and catch up on the next visibilitychange (or on a control re-open /
+  // refresh-button press, which fetch regardless). Failing polls back off
+  // exponentially so this watcher is never the load that tips a struggling
+  // host over; a success (or the tab becoming visible) resets immediately.
+  //
+  // Also folds in watchForStaleVersion's job (see that method): same
+  // endpoint, so its app.js-mtime comparison rides the same per-tick
+  // response instead of keeping a second 20-minute timer alive.
+  watchForDataChanges({
+    pollMs = 1000,
+    settleMs = 2500,
+    backoffCapMs = 30000,
+    staleVersionBaseline = null,
+  } = {}) {
+    this._dataVersion = null;        // last cache_version seen; null = never
+    this._dataVersionPending = null;      // version currently settling
+    this._dataVersionPendingSince = null; // when that version was first seen
+    this._pollBackoffN = 0;
+    this._staleVersionBaseline = staleVersionBaseline;
+
+    const tick = async () => {
+      // Hidden tab: no traffic at all. Catch-up happens via the
+      // visibilitychange listener below when she comes back.
+      if (document.hidden) return;
+
+      let r;
+      try {
+        r = await this.getJson(this.route("Version"));
+      } catch (err) {
+        // Exponential backoff: 1s→2s→4s… capped. Silent by design (console
+        // only) — the freshness system must never be the thing that makes
+        // a struggling host worse, and everything here works manually
+        // regardless.
+        this._pollBackoffN = Math.min(this._pollBackoffN + 1, backoffCapMs / pollMs);
+        console.error("watchForDataChanges: poll failed", err);
+        return;
+      }
+
+      this._pollBackoffN = 0; // success resets backoff immediately
+
+      // Ride-along: the stale-JS check's app.js-mtime comparison (semantics
+      // unchanged from the standalone watcher this consolidates — reload is
+      // still gated on no unsaved edits and still cache-busts the URL).
+      const currentAppVersion = r?.version;
+      if (
+        this._staleVersionBaseline
+        && currentAppVersion
+        && currentAppVersion !== this._staleVersionBaseline
+        && !this.hasUnsavedEdits()
+      ) {
+        const url = new URL(location.href);
+        url.searchParams.set('_ts', String(Date.now()));
+        location.href = url.toString();
+        return;
+      }
+
+      const current = r?.cache_version;
+      if (!current || typeof current !== "number") return;
+
+      // First successful observation: establish the baseline, fetch nothing.
+      // (The initial bundle has already loaded by now; a save landing inside
+      // this first second just produces one extra catch-up refetch below —
+      // correct, not harmful.)
+      if (this._dataVersion === null) {
+        this._dataVersion = current;
+        return;
+      }
+
+      if (current === this._dataVersion) {
+        // Settled back / nothing changed.
+        this._dataVersionPending = null;
+        this._dataVersionPendingSince = null;
+        return;
+      }
+
+      // Version moved. Wait for it to SETTLE — staff save in bursts (moving
+      // three tubs in a row = three cache busts), so the pending window
+      // RE-ARMS on every new value: the refetch fires settleMs after the
+      // LAST save of a burst, not the first. One burst → one cold bundle
+      // fetch per tab of the final state, at settleMs of added latency.
+      const now = Date.now();
+      if (current !== this._dataVersionPending) {
+        this._dataVersionPending = current;
+        this._dataVersionPendingSince = now;
+      }
+      if (now - this._dataVersionPendingSince < settleMs) return; // still settling
+
+      // Settled: refresh page-wide. NOT gated on a global hasUnsavedEdits()
+      // — one long-idle dirty cell shouldn't stall freshness everywhere; the
+      // per-grid guards inside _onDomainUpdated (dirtySet cells keep their
+      // values, focused groups defer their patch, FindIt skips dirty/open/
+      // focused cells) protect exactly the edit itself. refreshPageDomain's
+      // in-flight chaining (PARTIAL-REFRESH.md §6) guarantees this never
+      // overlaps a fetch already running.
+      this._dataVersion = current;
+      this._dataVersionPending = null;
+      this._dataVersionPendingSince = null;
+      this.refreshPageDomain({
+        force: true,
+        info: { name: "background poll" },
+      }).catch(() => {}); // its own catch already toasts; never let it reject this timer
+    };
+
+    // Self-scheduling setTimeout loop, not setInterval, so failing polls
+    // back off for real: delay = pollMs * 2^n capped at backoffCapMs; every
+    // success resets n to 0 (see tick's catch). The loop always re-arms,
+    // even if a tick throws something unexpected — a dead poll loop must
+    // never be a silent failure mode.
+    const schedule = () => {
+      const delay = Math.min(pollMs * (2 ** this._pollBackoffN), backoffCapMs);
+      setTimeout(async () => {
+        try {
+          await tick();
+        } catch (err) {
+          console.error("watchForDataChanges: tick error", err);
+        }
+        schedule();
+      }, delay);
+    };
+    schedule();
+
+    // When the tab comes back into view, check immediately rather than
+    // waiting out the current backoff delay — that's the catch-up path for
+    // the hidden-tab savings above (and the browser's own intensive
+    // throttling of hidden timers makes the immediate check the only
+    // reliable one). Also resets backoff: waking usually coincides with the
+    // network being back.
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) return;
+      this._pollBackoffN = 0;
+      tick();
+    });
   }
 
   // A tab left open across a deploy keeps running the old app.js forever —

@@ -1,10 +1,10 @@
 # Localized control refresh — version-gated polling + on-demand refresh
 
-**Status:** PLANNING — no code written. This doc is the agreed plan, published on
-branch `control-refresh-plan` for comparison against the parallel plan
-(`DOCK-CONTROL-REFRESH.md` on `origin/dock-refresh`); implementation starts only
-after Gus signs off. See the Appendix for the comparison and the two points
-conceded to the parallel plan.
+**Status:** IMPLEMENTED on branch `dock-refresh` (poll + buttons + reopen
+refresh, validated in-box; awaiting Gus's merge decision). Original planning
+conversation 2026-09-01; implementation rides the merge of this plan with the
+parallel `DOCK-CONTROL-REFRESH.md` — see the Appendix for the comparison and
+the two points conceded to it.
 
 **Companion docs:** [PARTIAL-REFRESH.md](PARTIAL-REFRESH.md) (the repaint machinery
 this rides on), [websockets-migration.md](websockets-migration.md) (why not

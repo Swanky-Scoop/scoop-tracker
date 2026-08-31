@@ -611,6 +611,14 @@ html body {
   &.Batch > .gridToggle {
     display: block;
   }
+
+  /* Undocked, the per-control refresh button is invisible — the on-demand
+     affordance exists for dock chrome (CONTROL-REFRESH.md §5); an undocked
+     page keeps plain browser-refresh. Docked, dockToggle() has moved it
+     into .toolbar where the shared toolbar block styles it. */
+  & > .gridRefresh {
+    display: none;
+  }
 }
 
 html > body.TS_GRID-UPDATING .scoop-grid {
@@ -917,7 +925,14 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   transform: translateY(0) scale(1);
 }
 
-.in-dock > .toolbar > .gridToggle {
+/* see css.md#in-dock-toolbar-gridtoggle */
+/* .gridRefresh shares this block — the per-control refresh button is built
+   as TOGGLE's sibling and dockToggle() moves both into .toolbar together
+   (CONTROL-REFRESH.md §5), so everything here (layout, dockTitle/dockIcon,
+   the fetching progress ring) applies to both buttons alike. Only the
+   open/close .active state stays toggle-only (a refresh button never gets
+   it, see _dockable.js). */
+.in-dock > .toolbar > :is(.gridToggle, .gridRefresh) {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -984,7 +999,7 @@ html > body.TS_GRID-UPDATING .scoop-grid {
     content: "";
     position: absolute;
     left: 50%;
-    top: -1px];
+    top: -1px;
     width: 2rem;
     height: 2rem;
     transform: translateX(-50%);
@@ -1275,7 +1290,7 @@ body.dock-resizing {
       }
 
     }
-    & .gridToggle{
+    & :is(.gridToggle, .gridRefresh){
       display: inline-grid;
       place-items: center;
       color: rgba(255, 255, 255, 0.5);
@@ -1302,6 +1317,14 @@ body.dock-resizing {
           line-height: 1rem;
 
         }
+      }
+
+      /* Per-control refresh button, inserted right after its TOGGLE
+         (dockToggle()) — same round style, never .active, spins the same
+         fetching ring via the shared :is(.gridToggle, .gridRefresh) block
+         above. */
+      &.gridRefresh {
+        order: 98;
       }
 
       /* Rightmost even of .wp (order: 99 above) — same reasoning as the
