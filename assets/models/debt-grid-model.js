@@ -288,6 +288,7 @@ export default class DebtGridModel extends BaseGridModel {
       { key: 'demand',    label: 'Wanted',        type: 'number', control: 'text', write: true },
       { key: 'on_hand',   label: 'On hand',       type: 'number' },
       { key: 'inbound',   label: 'Inbound',       type: 'number' },
+      { key: 'gap',       label: 'Owed',          type: 'number' },
       { key: 'available', label: 'Ready to send', type: 'number' },
       { key: 'status',    label: 'Status',        type: 'string' },
     ];
