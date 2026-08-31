@@ -53,6 +53,13 @@ add_action('rest_api_init', function () {
     'callback' => function(\WP_REST_Request $req) {
       return new \WP_REST_Response([
         'version' => filemtime(SCOOP_REST_DIR . 'assets/app.js'),
+        // Global bundle-cache version (includes/_cache.php) — the "has any
+        // scoop data changed since you last looked?" signal the client's
+        // background poll (ScoopAPI.watchForDataChanges) compares between
+        // ticks so it only refetches the bundle after a real save, not on
+        // every poll. Bumped by scoop_cache_bust() on every relevant
+        // save_post/trash/delete. See CONTROL-REFRESH.md §1-§2.
+        'cache_version' => scoop_cache_version(),
       ], 200);
     },
     'permission_callback' => 'scoop_require_authenticated_user_read_only',

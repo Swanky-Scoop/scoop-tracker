@@ -24,13 +24,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   if( await api.userHelper(SCOOP) === false ) return;
   Details.attach(api);
+  api.bindDockRefreshButton();
   // Each control docks its own toggle button (see List.dockToggle(), called
   // from within mountAllGrids itself) the moment it's constructed, in
   // shortcode/document order and before any of its data has loaded — see
   // that method's header comment in assets/data/scoop-api.js.
   const grids = await api.mountAllGrids(SCOOP.metaData);
   Details.refresh();
-  api.watchForStaleVersion(SCOOP.version);
+  // One watcher, one timer: 1s version-gated background refresh
+  // (CONTROL-REFRESH.md §3) with watchForStaleVersion's app.js-mtime
+  // reload folded in as a ride-along comparison on the same poll.
+  api.watchForDataChanges({ staleVersionBaseline: SCOOP.version });
   api.watchForIdleTimeout();
   api.watchForInventoryChangeFlush();
 

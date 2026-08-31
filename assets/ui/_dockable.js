@@ -129,10 +129,93 @@ export default class Dockable extends El {
     this.TOGGLE.addEventListener("click", (e) => {
       const isOpen = !this.target.classList.contains("toggled");
       this._setToggled(isOpen);
+      if (isOpen) this._refreshOnReopen("control re-open");
       this._syncDockHash();
 
       e.stopPropagation();
     }, true);
+
+    // Per-control refresh button (CONTROL-REFRESH.md §5) — built as TOGGLE's
+    // direct sibling so it lands wherever TOGGLE lives: docked, dockToggle()
+    // moves both into the shared .toolbar; undocked, it stays on the host
+    // (styled off .gridRefresh, which — like .gridToggle — is hidden except
+    // for the Batch fab, so undocked non-Batch pages see no new chrome).
+    this.REFRESH = this._buildRefreshButton();
+    if (this.TOGGLE.parentElement) {
+      this.TOGGLE.parentElement.insertBefore(this.REFRESH, this.TOGGLE);
+    } else {
+      this.target.append(this.REFRESH);
+    }
+
+    this.REFRESH.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this._refreshOnReopen("refresh button");
+    }, true);
+  }
+
+  // A click-open (or refresh-button press) on a docked control pulls fresh
+  // data for THAT control and repaints it — the on-demand half of
+  // CONTROL-REFRESH.md (§4 reopen, §5 buttons). Scoped to this control's own
+  // entry in scoop_bundle_specs() (`types: [this.name]`), NOT
+  // scopedRefreshTypes(): that helper is write-oriented (SCOOP.refreshScope's
+  // writesPods) and falls back to the full page union for any read-only
+  // trigger, which is backwards for "refresh THIS view" — a control's own
+  // bundle spec is both minimal and authoritative for what it displays.
+  //
+  // The 1s version poll (ScoopAPI.watchForDataChanges) usually means this
+  // confirms already-fresh data cheaply (warm cache between saves); its real
+  // job is guaranteeing freshness when the tab was hidden (poll skipped) or
+  // the poll is in backoff. Failures already toast via refreshPageDomain's
+  // own catch, so the rethrow is swallowed here.
+  //
+  // `cause` feeds PageStatus.setTrigger() via info.name, so the status pill
+  // says whether a fetch came from a re-open or the button.
+  _refreshOnReopen(cause = "control re-open") {
+    // Dock controls only — the requirement (and the buttons) are about dock
+    // chrome; an undocked page keeps plain browser-refresh. (The buttons
+    // only render usefully docked anyway — see _buildRefreshButton.)
+    if (!this.target.closest(".in-dock")) return;
+    if (!this.api) return;
+
+    // Mount-time guard: dockToggle()'s hash-restore path calls _setToggled
+    // during mountAllGrids() BEFORE any data has loaded — a fetch there
+    // would race and duplicate the initial load (and forced calls arriving
+    // mid-flight chain serially: N restored controls → N+1 cold fetches on
+    // every page open). The restore path reaches _setToggled directly and
+    // never calls this method, so this line is belt-and-suspenders only —
+    // but a fetch before the initial domain exists is meaningless anyway.
+    if (this.api._domain === null) return;
+
+    this.api.refreshPageDomain({
+      force: true,
+      types: [this.name],
+      info: { name: cause },
+    }).catch(() => {});
+  }
+
+  // Companion to _buildToggleButton() — same shell conventions (icon-font
+  // glyph via the ICON_FONT_MARKER shape, class-prefixed by
+  // ICON_FONT_CSS_PREFIX; see the icon-font pipeline in DOCKING.md for how
+  // the 'refresh' glyph is generated/committed). Kept as its own method
+  // rather than a _buildToggleButton parameter because the two buttons
+  // differ in class, title, icon, and (in CSS) their undocked visibility
+  // rules — mirroring .gridToggle's dual display:none/default+Batch:block
+  // treatment at each site would couple the two buttons' styling.
+  _buildRefreshButton() {
+    const { ICON_FONT_CSS_PREFIX, ICON_FONT_MARKER } = Dockable;
+    const title = `Refresh ${this.modelInstance?.displayTitle ?? this.name ?? "control"} — fetch current data`;
+
+    const BTN = this.el("button", {
+      classes: ["gridRefresh"],
+      attrs: { type: "button", title },
+    });
+
+    const ICON = this.el("i", {
+      classes: ["dockIcon", `${ICON_FONT_CSS_PREFIX}refresh`],
+    });
+
+    BTN.append(ICON);
+    return BTN;
   }
 
   // Shared TOGGLE button for Grid/Tile's buildCoreDom() and any bespoke
@@ -192,6 +275,12 @@ export default class Dockable extends El {
     if (!toolbar || toolbar.contains(this.TOGGLE)) return;
 
     toolbar.append(this.TOGGLE);
+    // Companion refresh button rides with its toggle (CONTROL-REFRESH.md §5)
+    // — inserted right after it so each control's pair stays adjacent in the
+    // toolbar regardless of mount order. Only reached on the same pass that
+    // moves TOGGLE (the guard above returns early once TOGGLE is in), so
+    // this can never double-insert.
+    this.TOGGLE.after(this.REFRESH);
     this.target.classList.add('docked');
 
     // 'target' => 'action' | 'aside' (see _config.php / DOCKING.md) — this
@@ -339,14 +428,22 @@ export default class Dockable extends El {
     const id = this.pageStatusId ?? this.target?.id;
     if (!id || !this.TOGGLE) return;
 
+    // Both toolbar buttons reflect THIS control's load state (see
+    // CONTROL-REFRESH.md §5) — TOGGLE has always shown the fetching ring;
+    // REFRESH joins the same treatment so whichever button the user's eye
+    // is on shows that a fetch is running and how far along it is.
+    const statusBtns = () => [this.TOGGLE, this.REFRESH].filter(Boolean);
+
     const apply = (state) => {
-      this.TOGGLE.classList.toggle('loading', state === 'unknown');
-      this.TOGGLE.classList.toggle('fetching', state === 'fetching');
-      // Leaving 'fetching' mid-countdown (fresh/stale landing) — clear the
-      // ring rather than leave it stuck at whatever % it last reached.
-      if (state !== 'fetching') {
-        this.TOGGLE.style.removeProperty('--eta-progress');
-        this.TOGGLE.classList.remove('overtime');
+      for (const btn of statusBtns()) {
+        btn.classList.toggle('loading', state === 'unknown');
+        btn.classList.toggle('fetching', state === 'fetching');
+        // Leaving 'fetching' mid-countdown (fresh/stale landing) — clear the
+        // ring rather than leave it stuck at whatever % it last reached.
+        if (state !== 'fetching') {
+          btn.style.removeProperty('--eta-progress');
+          btn.classList.remove('overtime');
+        }
       }
     };
     apply(PageStatus.getState(id));
@@ -367,8 +464,10 @@ export default class Dockable extends El {
     // with the wrong grid's progress.
     this._onPageStatusProgress = (e) => {
       if (!e.detail.ids.includes(id)) return;
-      this.TOGGLE.style.setProperty('--eta-progress', e.detail.progressPct.toFixed(2));
-      this.TOGGLE.classList.toggle('overtime', e.detail.overtime);
+      for (const btn of statusBtns()) {
+        btn.style.setProperty('--eta-progress', e.detail.progressPct.toFixed(2));
+        btn.classList.toggle('overtime', e.detail.overtime);
+      }
     };
     document.addEventListener('ts:page-status:progress', this._onPageStatusProgress);
   }
