@@ -539,11 +539,21 @@
       $existing_id = ($existing && $existing->total() > 0) ? (int) $existing->field('ID') : 0;
 
       if ($op['type'] === 'delete') {
-        if (!$existing_id) continue; // nothing to delete — idempotent no-op
-        $res = wp_delete_post($existing_id, true);
-        if (!$res) {
-          error_log("Scoop /debt-requests: delete failed for flavor_request {$existing_id}");
-          $errors[] = "Delete failed for {$op['location']}:{$op['flavor']}.";
+        // Used to hard-delete the row (wp_delete_post) — no longer safe now
+        // that a flavor_request can also carry a tub claim (see
+        // flavor_request.tubs / tub.flavor_request, added 2026-08-31):
+        // deleting the post would orphan every tub's forward
+        // flavor_request link pointing at it. wanted=0 already means "no
+        // override" to the JS demand calc (Math.max(existing, 0) is a
+        // no-op), so just clearing the field to the same effect the client
+        // already treats as "gone" is enough — the row (and any claim on
+        // it) survives.
+        if (!$existing_id) continue; // nothing to clear — idempotent no-op
+        $res = $api->save_pod_item(['pod' => 'flavor_request', 'id' => $existing_id, 'data' => ['wanted' => 0]]);
+        if (is_wp_error($res) || !$res) {
+          $msg = is_wp_error($res) ? $res->get_error_message() : 'Save failed';
+          error_log("Scoop /debt-requests: clear failed for flavor_request {$existing_id}: {$msg}");
+          $errors[] = "Clear failed for {$op['location']}:{$op['flavor']}.";
           continue;
         }
         $updated[(string) $pair_key] = ['wanted' => 0];

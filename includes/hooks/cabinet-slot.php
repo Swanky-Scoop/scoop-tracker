@@ -409,7 +409,58 @@ function scoop_mark_tub_moving_if_needed(int $flavor_id, int $destination_id): v
   usort($candidates, fn($a, $b) => strcmp($a['created_on'], $b['created_on']));
   $chosen = $candidates[0];
 
-  pods_api()->save_pod_item(['pod' => 'tub', 'id' => $chosen['id'], 'data' => ['moving_to' => $destination_id]]);
+  $data = ['moving_to' => $destination_id];
+
+  // Additive alongside moving_to (2026-08-31 design conversation) — claim
+  // the same chosen tub against the (destination, flavor) demand's
+  // flavor_request row, auto-creating it if this demand has never been
+  // requested/claimed before. tub.flavor_request is the forward field this
+  // writes; flavor_request.tubs (its reverse list) is populated by Pods'
+  // own sister sync once that pairing is configured — see both fields'
+  // schema descriptions for why this never reads that list back.
+  $request_id = scoop_find_or_create_flavor_request($destination_id, $flavor_id);
+  if ($request_id) $data['flavor_request'] = $request_id;
+
+  pods_api()->save_pod_item(['pod' => 'tub', 'id' => $chosen['id'], 'data' => $data]);
+}
+
+/**
+ * Find-or-create the flavor_request row for (location, flavor) — same
+ * upsert-by-pair shape as scoop_handle_debt_requests_post() (rest.php),
+ * duplicated rather than shared because that function is REST-request
+ * shaped (parses a payload, returns a WP_REST_Response) and this call site
+ * has neither. Returns 0 (never writes) if pods()/pods_api() aren't
+ * available.
+ */
+function scoop_find_or_create_flavor_request(int $location_id, int $flavor_id): int {
+  if (!$location_id || !$flavor_id || !function_exists('pods') || !function_exists('pods_api')) return 0;
+
+  $existing = pods('flavor_request', [
+    'where' => "location.ID = {$location_id} AND flavor.ID = {$flavor_id}",
+    'limit' => 1,
+  ]);
+  if ($existing && $existing->total() > 0) {
+    $existing->fetch();
+    return (int) $existing->id();
+  }
+
+  $title = sprintf(
+    '%s | %s',
+    get_the_title($location_id) ?: "Location {$location_id}",
+    get_the_title($flavor_id)   ?: "Flavor {$flavor_id}",
+  );
+
+  $new_id = pods_api()->save_pod_item([
+    'pod'  => 'flavor_request',
+    'data' => [
+      'post_title' => $title,
+      'post_status' => 'publish',
+      'location'   => $location_id,
+      'flavor'     => $flavor_id,
+    ],
+  ]);
+
+  return is_wp_error($new_id) ? 0 : (int) $new_id;
 }
 
 /**
