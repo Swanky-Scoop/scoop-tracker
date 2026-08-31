@@ -411,3 +411,71 @@ function scoop_mark_tub_moving_if_needed(int $flavor_id, int $destination_id): v
 
   pods_api()->save_pod_item(['pod' => 'tub', 'id' => $chosen['id'], 'data' => ['moving_to' => $destination_id]]);
 }
+
+/**
+ * Retroactive counterpart to scoop_slot_post_save_mark_tub_moving() above.
+ * That hook only ever earmarks at the moment a slot's flavor is scheduled —
+ * if demand already existed with no donor tub anywhere, it no-ops and
+ * nothing re-checks once a donor later appears (confirmed live on the
+ * local mirror 2026-08-30: 6 real slots stuck exactly this way). This scans
+ * every slot currently wanting $flavor_id and re-runs
+ * scoop_mark_tub_moving_if_needed() per destination — safe to call any
+ * time a tub of this flavor could have newly become eligible, since that
+ * function already no-ops per destination once it's satisfied.
+ *
+ * Guarded per-flavor: scoop_mark_tub_moving_if_needed()'s own
+ * pods_api()->save_pod_item() call re-enters this same reconciliation via
+ * the post-save tub hook below — the already_satisfied check makes that
+ * self-terminating on its own, but the guard avoids the wasted rescan.
+ */
+function scoop_reconcile_moving_for_flavor(int $flavor_id): void {
+  if (!$flavor_id || !function_exists('pods') || !function_exists('pods_api')) return;
+
+  $guard_key = "reconcile_moving:{$flavor_id}";
+  if (!scoop_guard_enter($guard_key)) return;
+
+  try {
+    $destinations = [];
+    $slots = pods('slot', ['limit' => -1]);
+    if (!$slots) return;
+
+    while ($slots->fetch()) {
+      $wants = false;
+      foreach (['current_flavor', 'immediate_flavor'] as $f) {
+        if ((int) scoop_rel_id($slots->field($f)) === $flavor_id) { $wants = true; break; }
+      }
+      if (!$wants) continue;
+
+      $cabinet_id = (int) $slots->field('cabinet.ID');
+      if (!$cabinet_id) continue;
+      $destination_id = (int) pods('cabinet', $cabinet_id)->field('location.ID');
+      if ($destination_id) $destinations[$destination_id] = true;
+    }
+
+    foreach (array_keys($destinations) as $destination_id) {
+      scoop_mark_tub_moving_if_needed($flavor_id, $destination_id);
+    }
+  } finally {
+    scoop_guard_leave($guard_key);
+  }
+}
+
+/**
+ * General safety net: any tub save that could make it newly eligible
+ * (created, un-emptied, use flipped to front-of-house, moving_to cleared,
+ * location changed, ...) re-checks demand for its flavor. Cheap — slot
+ * counts are small — and idempotent by construction.
+ */
+add_filter('pods_api_post_save_pod_item_tub', 'scoop_tub_post_save_check_demand', 20, 3);
+function scoop_tub_post_save_check_demand($pieces, $is_new_item, $id) {
+  $tub_id = (int) $id;
+  if (!$tub_id || !function_exists('pods')) return $pieces;
+
+  $tub = pods('tub', $tub_id);
+  if (!$tub || !$tub->exists()) return $pieces;
+
+  $flavor_id = (int) $tub->field('flavor.ID');
+  if ($flavor_id) scoop_reconcile_moving_for_flavor($flavor_id);
+
+  return $pieces;
+}
