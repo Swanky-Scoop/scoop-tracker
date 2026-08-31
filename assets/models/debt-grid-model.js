@@ -258,11 +258,6 @@ export default class DebtGridModel extends BaseGridModel {
     // in scoop_routes_config() so it has no config path of its own.
     this.writeRoute = 'DebtRequests';
 
-    // Non-location filter values (see setFilterValue/getFilterValue below —
-    // location itself rides the base class's this.location + HashState
-    // persistence, same as every location-scoped model).
-    this.filterValues = { hide_covered: 'true' };
-
     this._build();
     if (domain) this.setDomain(domain);
   }
@@ -291,35 +286,13 @@ export default class DebtGridModel extends BaseGridModel {
   }
 
   // Narrow the board to one destination (client-side — the bundle already
-  // carries every location's slots/tubs). 0 = all destinations.
+  // carries every location's slots/tubs). 0 = all destinations. No other
+  // filter right now — a "Hide covered" checkbox lived here before
+  // 2026-08-31 but was removed (usage pattern still unclear; may come back
+  // once it is) — getFilterValue/setFilterValue need no override for just
+  // this one filter, the base class already handles 'location' on its own.
   getFilterDefs() {
-    return [
-      this._locationFilterDef('Destination'),
-      {
-        key: 'hide_covered',
-        label: 'Hide covered',
-        type: 'checkbox',
-        mode: 'client',
-        default: 'true',
-        group: 'columns',
-        groupLabel: 'Rows',
-      },
-    ];
-  }
-
-  // Location rides the base class (this.location via getFilterValue —
-  // 0 = all destinations, HashState-persisted per grid name, same as every
-  // location-scoped model). Everything else rides this.filterValues, the
-  // ItemPivot pattern.
-  getFilterValue(key) {
-    if (key === 'location') return super.getFilterValue(key);
-    return this.filterValues?.[key] ?? 'true';
-  }
-
-  setFilterValue(key, value) {
-    if (key === 'location') return super.setFilterValue(key, value);
-    if (!key) return;
-    this.filterValues[key] = String(value ?? 'all');
+    return [this._locationFilterDef('Destination')];
   }
 
   buildRows() {
@@ -338,9 +311,6 @@ export default class DebtGridModel extends BaseGridModel {
     // slots/tubs, so nothing here changes what gets fetched.
     if (Number(this.location) > 0) {
       items = items.filter(item => Number(item.destination) === Number(this.location));
-    }
-    if (this.getFilterValue('hide_covered') === 'true') {
-      items = items.filter(item => item.status !== 'covered');
     }
 
     // Group by destination; sort groups by total owed desc, then label —
