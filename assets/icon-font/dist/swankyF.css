@@ -1,10 +1,10 @@
 @font-face {
     font-family: "swankyF";
-    src: url("./swankyF.eot?c429423f45cd0a577f8274a8b24771ce?#iefix") format("embedded-opentype"),
-url("./swankyF.woff2?c429423f45cd0a577f8274a8b24771ce") format("woff2"),
-url("./swankyF.woff?c429423f45cd0a577f8274a8b24771ce") format("woff"),
-url("./swankyF.ttf?c429423f45cd0a577f8274a8b24771ce") format("truetype"),
-url("./swankyF.svg?c429423f45cd0a577f8274a8b24771ce#swankyF") format("svg");
+    src: url("./swankyF.eot?70ba1f449e6c1320c8e55c6754f64910?#iefix") format("embedded-opentype"),
+url("./swankyF.woff2?70ba1f449e6c1320c8e55c6754f64910") format("woff2"),
+url("./swankyF.woff?70ba1f449e6c1320c8e55c6754f64910") format("woff"),
+url("./swankyF.ttf?70ba1f449e6c1320c8e55c6754f64910") format("truetype"),
+url("./swankyF.svg?70ba1f449e6c1320c8e55c6754f64910#swankyF") format("svg");
 }
 
 i[class^="si-"]:before, i[class*=" si-"]:before {
@@ -18,84 +18,87 @@ i[class^="si-"]:before, i[class*=" si-"]:before {
     -moz-osx-font-smoothing: grayscale;
 }
 
-.si-E:before {
+.si-b:before {
     content: "\f101";
 }
-.si-Eyedropper-Sample--Streamline-Phosphor:before {
+.si-c:before {
     content: "\f102";
 }
-.si-Shooting-Star--Streamline-Phosphor:before {
+.si-d:before {
     content: "\f103";
 }
-.si-Trash--Streamline-Phosphor:before {
+.si-E:before {
     content: "\f104";
 }
-.si-Trash-Bold--Streamline-Phosphor:before {
+.si-Eyedropper-Sample--Streamline-Phosphor:before {
     content: "\f105";
 }
-.si-User-List--Streamline-Phosphor:before {
+.si-f:before {
     content: "\f106";
 }
-.si-b:before {
+.si-h:before {
     content: "\f107";
 }
-.si-c:before {
+.si-i:before {
     content: "\f108";
 }
-.si-d:before {
+.si-kr:before {
     content: "\f109";
 }
-.si-f:before {
+.si-l:before {
     content: "\f10a";
 }
-.si-h:before {
+.si-lock:before {
     content: "\f10b";
 }
-.si-i:before {
+.si-m:before {
     content: "\f10c";
 }
-.si-kr:before {
+.si-n:before {
     content: "\f10d";
 }
-.si-l:before {
+.si-p:before {
     content: "\f10e";
 }
-.si-lock:before {
+.si-plus:before {
     content: "\f10f";
 }
-.si-m:before {
+.si-q:before {
     content: "\f110";
 }
-.si-n:before {
+.si-r:before {
     content: "\f111";
 }
-.si-p:before {
+.si-refresh:before {
     content: "\f112";
 }
-.si-plus:before {
+.si-s:before {
     content: "\f113";
 }
-.si-q:before {
+.si-Shooting-Star--Streamline-Phosphor:before {
     content: "\f114";
 }
-.si-r:before {
+.si-t:before {
     content: "\f115";
 }
-.si-refresh:before {
+.si-Trash--Streamline-Phosphor:before {
     content: "\f116";
 }
-.si-s:before {
+.si-Trash-Bold--Streamline-Phosphor:before {
     content: "\f117";
 }
-.si-t:before {
+.si-truck:before {
     content: "\f118";
 }
 .si-u:before {
     content: "\f119";
 }
-.si-x:before {
+.si-User-List--Streamline-Phosphor:before {
     content: "\f11a";
 }
-.si-z:before {
+.si-x:before {
     content: "\f11b";
+}
+.si-z:before {
+    content: "\f11c";
 }

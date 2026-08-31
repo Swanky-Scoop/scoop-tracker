@@ -21,6 +21,13 @@ export default class MovingGridModel extends BaseGridModel {
     this.autosave = true;
     this.writeEnvelope = 'FlavorTub';
 
+    // No _config.php route entry for 'Moving' (see this file's header
+    // comment — writes go through FlavorTub's route, this type has none of
+    // its own), so BaseGridModel's icon fallback never gets a server-driven
+    // value and would otherwise default to this.name's first letter ('M') —
+    // same reasoning as CabinetWorkflowGridModel's own icon override.
+    this.icon = 'if:truck';
+
     this._build();
     if (domain) this.setDomain(domain);
   }
