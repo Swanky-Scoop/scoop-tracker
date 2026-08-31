@@ -69,3 +69,6 @@ tests/smoke/blob-report/
 /*.jpg
 /*.jpeg
 /*.webp
+
+# Agent scratch (WIP snapshots + test harnesses) — never repo content
+.crew/
