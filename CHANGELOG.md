@@ -4,6 +4,14 @@ Curated, reverse-chronological log of notable changes — what changed and why. 
 
 ## 2026-08-31
 
+### Tests: promote the select-on-focus browser harness into a committed behavior suite
+
+**What:** The scratch headless harness that verified PR #50's select-all-on-focus behavior is now a committed spec — [tests/visual/tests/find-select-on-focus.spec.js](tests/visual/tests/find-select-on-focus.spec.js) (+ fixture `fixtures/find-select-on-focus.html`), the visual suite's first **behavior** spec: it drives the real `FindIt` / `FindInList` ES modules in headless Chromium and asserts selection/focus state (19 scenarios across 6 tests) instead of screenshot pixels. Selected by an `@behavior` tag and run in CI as a new `behavior-tests` job in [unit-tests.yml](.github/workflows/unit-tests.yml) on plain ubuntu-latest (no font-pinned image needed), with the same no-path-filter trigger as the unit job and a `--list` count guard so a tag typo fails loudly instead of green-running nothing.
+
+**Why:** The helper's entire job is fighting browser defaults that unit tests cannot see (mouseup caret placement collapsing a focus-time selection; `select()` mid-drag making Chromium abandon the gesture), so only a real browser can catch its regressions — and the repo had no committed layer for that: `tests/visual` is screenshot-only (path-filtered to `assets/css.css`, so an `assets/ui/` regression is invisible to it), `tests/smoke` needs a live WordPress stack, `tests/unit` can't run in a browser. Each carve-out is pinned against a no-helper control input in the fixture that demonstrates the browser default being fought, and every selection assertion is paired with a focus-landed assertion — a stale selection on an unfocused input faked a pass once during the scratch harness's own development. Proven the same way it will be used: each key helper behavior (mouseup re-select, no select-at-focus, dblclick cancellation) was mutated off in turn and the suite failed on exactly the corresponding tests.
+
+## 2026-08-30
+
 ### Fix: FindIt and FindInList select their entire text when focused
 
 **What:** Both Find-based text inputs — `FindIt` (the in-cell type-to-complete control) and `FindInList` (the list-wide filter box) — now select their entire contents whenever they gain focus, via a shared `Find.selectOnFocus()` helper in [assets/ui/_find.js](assets/ui/_find.js). Applies to focus by click, Tab, and programmatic `.focus()` (which covers the post-save `_list.js` refocus-to-filter path). A focus-gaining click that drags out a sub-range keeps the user's range instead, and a click on an already-focused input keeps its editing gestures (caret placement, double-click word selection) untouched.

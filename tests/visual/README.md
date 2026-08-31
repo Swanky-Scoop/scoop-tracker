@@ -77,3 +77,31 @@ burden (every real layout change means reviewing and re-approving its
 screenshots). Prefer adding another viewport size or state to an *existing*
 fixture (see the `VIEWPORTS` object in each `.spec.js`) over creating a new
 HTML file, unless you're covering a genuinely different DOM shape.
+
+## Behavior specs (component state, not screenshots)
+
+`tests/find-select-on-focus.spec.js` is the first **behavior** spec: rather
+than screenshotting a fixture, it drives the real `FindIt` / `FindInList` ES
+modules from `assets/ui/` in headless Chromium and asserts selection/focus
+state. Its fixture (`fixtures/find-select-on-focus.html`) is the deliberate
+exception to the no-JavaScript rule above — it must mount the real modules,
+which don't load from `file://`, so the spec serves the repo root over
+`127.0.0.1` with a spec-local `node:http` server (OS-assigned port, nothing
+hardcoded).
+
+- These specs run on **plain ubuntu-latest**: they assert state, not pixels,
+  so they don't need the digest-pinned font-deterministic image the
+  screenshot specs need. CI selects them by the `@behavior` tag in the
+  `test.describe` title and runs them as the `behavior-tests` job in
+  `.github/workflows/unit-tests.yml` — deliberately NOT path-filtered, same
+  reason as the unit job (an `assets/ui/` regression is invisible to
+  `visual-tests.yml`'s `assets/css.css` filter, and "runs only when
+  relevant" is how this suite's screenshot baselines once went stale). The
+  job's `--list` + count guard fails loudly if `@behavior` ever matches no
+  spec, so a renamed tag can't silently green an empty run.
+- To add one: put `@behavior` in the top-level `test.describe` title, keep
+  the fixture stylesheet-free (state assertions must not depend on
+  font/layout metrics), and pair every selection assertion with a
+  focus-landed assertion — a stale selection on an unfocused input can fake
+  a pass (this spec's scratch-harness predecessor lost a round to exactly
+  that).

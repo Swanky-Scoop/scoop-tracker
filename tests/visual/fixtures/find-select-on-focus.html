@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- Behavior-test fixture for Find.selectOnFocus() (assets/ui/_find.js) —
+     driven by tests/find-select-on-focus.spec.js.
+
+     Unlike the screenshot fixtures in this directory (hand-authored DOM, no
+     JavaScript), this one mounts the REAL FindIt / FindInList ES modules so
+     the suite drives the actual component code. ES modules don't load from
+     file://, so the spec serves the repo root over 127.0.0.1 and navigates
+     here.
+
+     No stylesheet is linked, deliberately: the spec asserts selection /
+     focus STATE, not rendering, so it must not depend on font or layout
+     metrics — which is also why CI can run it on plain ubuntu-latest
+     (behavior-tests job in unit-tests.yml) instead of the digest-pinned
+     Playwright image the screenshot specs need.
+
+     #raw is a plain input with NO helper attached: the control that proves
+     what Chromium does unassisted (a focus-gaining click collapses to a
+     caret; a drag selects a sub-range), so every helper assertion is pinned
+     against a demonstrated browser default rather than an assumed one.
+     #first is a deterministic Tab anchor — Chromium resumes sequential
+     navigation from the last CLICKED element after a blur(), so keyboard
+     tests Tab from here. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>find select-on-focus fixture</title>
+</head>
+<body>
+  <input id="first" type="text" value="" placeholder="tab launch pad">
+  <div id="a"></div>
+  <div id="b"></div>
+  <input id="raw" type="text" value="Chocolate" style="margin-top:60px">
+  <script type="module">
+    import FindIt from "/assets/ui/find-it.js";
+    import FindInList from "/assets/ui/find-in-list.js";
+
+    window.findit = new FindIt(document.getElementById("a"), {
+      id: 7, rowId: 1, colKey: "flavor", type: "flavor", display: "Vanilla",
+      options: [
+        { key: "7", label: "Vanilla" },
+        { key: "8", label: "Chocolate" },
+        { key: "9", label: "Strawberry" },
+      ],
+    }, "Test");
+
+    window.fil = new FindInList(document.getElementById("b"), {});
+    window.fil.inp.value = "choco";
+    window.ready = true;
+  </script>
+</body>
+</html>
