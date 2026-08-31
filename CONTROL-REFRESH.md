@@ -146,6 +146,35 @@ Behavior per tick:
    no unsaved edits → cache-busting reload). Its 20-min cadence becomes "check
    every tick, it's one integer comparison we're already doing."
 
+### The repaint gate — fetch ≠ repaint (added after the 2026-09-01 feel-test)
+
+The plan separated "check" from "fetch" but not "fetch" from "repaint":
+invalidation is global (one `scoop_cache_version` for the whole site), and
+`_startDomainFetch` dispatched `ts:domain:updated` unconditionally — so any
+write, anywhere, by anyone, repainted every control on every open tab even
+when nothing a grid displayed had changed. The contract now enforced:
+**a control repaints only if (a) the data it shows actually changed,
+(b) the user explicitly asked (per-control refresh, dock Refresh-all,
+click-open — these carry `demandRepaint: true`), or (c) it was minimized
+and re-opened (also demandRepaint).**
+
+Mechanics: `refreshPageDomain()` threads `demandRepaint` into the
+`ts:domain:updated` detail; `List._onDomainUpdated` compares the model's
+post-`setDomain` render input (`rows`/`rowGroups` — plain data, no DOM) to
+the last-painted signature and skips the repaint (settling its PageStatus
+pill to 'fresh' instead of flashing 'fetching') when they match and the
+refresh wasn't demanded. Zero-rows models (CabinetWorkflow's tiles, which
+derive straight from the domain) fall back to a whole-domain comparison.
+The signature updates on every post-init pass, so a demanded repaint can't
+poison the next comparison. This also neutralizes the global-invalidation
+cost *as seen by the user* — an unrelated save's fetch diff-equals to "no
+change" on every unaffected grid. (Scoped *server* fetches — not refetching
+unchanged entities at all — remain the documented follow-up; the client
+gate deliberately doesn't depend on it.) Known bounded churn: a
+`relativeTimeFields` column's rendered "N hours ago" coarsens with wall
+time, so such a grid (FlavorTub) may repaint up to once a minute boundary
+with unchanged data — data-visible, and far rarer than the old behavior.
+
 ## 4. Refetch-on-reopen (requirement 2)
 
 Dock open/close is `Dockable._setToggled()` (`assets/ui/_dockable.js`), reached

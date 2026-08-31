@@ -195,6 +195,7 @@ export default class Dockable extends El {
       force: true,
       types: [this.name],
       info: { name: cause },
+      demandRepaint: true, // explicit user request — bypasses the per-grid diff gate
     }).catch(() => {});
   }
 
