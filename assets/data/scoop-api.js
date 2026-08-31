@@ -93,6 +93,7 @@ export default class ScoopAPI {
       this.refreshPageDomain({
         force: true,
         info: { name: "dock refresh button" },
+        demandRepaint: true, // explicit user request
       }).catch(() => {});
     });
   }
@@ -562,7 +563,7 @@ export default class ScoopAPI {
   // full page union (see scopedRefreshTypes) — omit it (or pass null/[]) to
   // get today's full-page-union behavior, which is what the initial mount
   // and any not-yet-scoped caller still does.
-  async refreshPageDomain({ force = false, toast = null, info = null, types = null } = {}) {
+  async refreshPageDomain({ force = false, toast = null, info = null, types = null, demandRepaint = false } = {}) {
 
     if (!this.gridTypes) throw new Error("refreshPageDomain: page types not set");
     if (!force && this._domain) return this._domain;
@@ -583,17 +584,17 @@ export default class ScoopAPI {
       // (already reported via its own Toast) — one bad fetch shouldn't
       // block the next.
       if (!force) return this._domainInflight;
-      this._domainInflight = this._domainInflight.catch(() => {}).then(() => this._startDomainFetch(info, types));
+      this._domainInflight = this._domainInflight.catch(() => {}).then(() => this._startDomainFetch(info, types, demandRepaint));
       return this._domainInflight;
     }
 
-    return this._startDomainFetch(info, types);
+    return this._startDomainFetch(info, types, demandRepaint);
   }
 
   // The actual fetch — factored out of refreshPageDomain() so a forced call
   // arriving mid-flight (see above) can chain a real second run of this
   // instead of reusing the first one's promise.
-  _startDomainFetch(info, types = null) {
+  _startDomainFetch(info, types = null, demandRepaint = false) {
     // An empty/omitted types list means "full page union" — the initial
     // mount's call and any caller not yet scoped to a specific trigger.
     const fetchTypes = (Array.isArray(types) && types.length) ? types : this._pageTypes;
@@ -656,7 +657,19 @@ export default class ScoopAPI {
         this.completeLoadTiming(fetchTypes, this._lastBundleCacheStatus);
 
         document.dispatchEvent(new CustomEvent("ts:domain:updated", {
-          detail: { types: fetchTypes, ts: Date.now() }
+          detail: {
+            types: fetchTypes,
+            ts: Date.now(),
+            // CONTROL-REFRESH.md's repaint contract (Gus, 2026-09-01): a
+            // refresh whose data doesn't differ from what's already painted
+            // must not repaint anything. `demandRepaint` marks the explicit
+            // request paths (per-control button, dock Refresh-all,
+            // click-open) which bypass the per-grid diff gate; every other
+            // refresh — including the background poll's — arrives
+            // demandRepaint:false and each grid decides via its own
+            // content signature whether anything it SHOWS actually changed.
+            demandRepaint: demandRepaint === true,
+          }
         }));
         /*
         if(toast) toast.update(toast, {

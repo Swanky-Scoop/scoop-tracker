@@ -1963,6 +1963,45 @@ export default class List extends Dockable{
             this.modelInstance.setDomain(freshDomain);
           }
 
+          // Repaint gate (CONTROL-REFRESH.md's repaint contract, per Gus
+          // 2026-09-01): repaint only when the data this grid SHOWS actually
+          // changed, or the refresh was an explicit user request
+          // (detail.demandRepaint — per-control button, dock Refresh-all,
+          // click-open). Invalidations are global (one scoop_cache_version
+          // for the whole site), so before this gate ANY save by ANYONE
+          // repainted EVERY control on EVERY open tab even when nothing a
+          // grid displays had changed — routine under the 1s background
+          // poll, and pure churn at steady state. The signature is the
+          // model's own post-setDomain render input (rows + rowGroups —
+          // plain data, no DOM), so "changed" means "what's painted would
+          // differ", not merely "some pod somewhere moved". Zero-rows models
+          // (CabinetWorkflow — no columns, tiles derive straight from the
+          // domain) fall back to comparing the domain itself. The signature
+          // is tracked on EVERY post-init pass (not only repaints) so a
+          // demandRepaint pass can't poison the next comparison. Known
+          // bounded churn: a relativeTimeFields column's rendered
+          // "N hours ago" coarsens over time, so such a grid may repaint up
+          // to once per minute boundary even with unchanged data — a data-
+          // visible change, and orders of magnitude rarer than before.
+          if (this._isInit) {
+            const rows = this.modelInstance?.rows;
+            const groups = this.modelInstance?.rowGroups;
+            const hasRenderRows = (Array.isArray(rows) && rows.length)
+              || (Array.isArray(groups) && groups.length);
+            const sig = hasRenderRows
+              ? JSON.stringify({ rows: rows ?? null, groups: groups ?? null })
+              : JSON.stringify(freshDomain);
+            const changed = sig !== this._lastRepaintSig;
+            this._lastRepaintSig = sig;
+            if (!changed && e?.detail?.demandRepaint !== true) {
+              // Nothing this grid shows has changed — no repaint. Its data
+              // IS as fresh as this fetch, so the status pill settles to
+              // 'fresh' rather than flashing 'fetching' for nothing.
+              if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'fresh');
+              return;
+            }
+          }
+
           // Refresh with updated model
           if (this._isInit) {
             // Whatever's still pending here is about to be genuinely
