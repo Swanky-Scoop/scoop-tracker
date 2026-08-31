@@ -62,7 +62,7 @@ export default class CabinetWorkflowTile extends Tile {
       api: this.api,
       model: this.modelInstance,
       onChangePlan: (row) => this.PICKER_MODAL.open(row),
-      openPickerFor: (row, onPicked) => this.PICKER_MODAL.open(row, onPicked),
+      openPickerFor: (row, onPicked, opts) => this.PICKER_MODAL.open(row, onPicked, opts),
       getRow: (slotId) => (this.items ?? []).find(r => r.slotId === slotId),
       paintOptimistic: (slotId, patch) => this._paintOptimistic(slotId, patch),
       confirmOptimistic: (slotId, expected) => this._confirmOptimistic(slotId, expected),

@@ -85,6 +85,8 @@ slot:               needs_field=243.9ms TOTAL=315.9ms    needs_field=464.0ms TOT
 
 ### 13. Global cache-version bump busts flavor's near-static data on every unrelated save
 
+**Status (2026-08-29 note, superseding the 2026-07-30 line below):** *Implemented* — `flavor`, `use`, and `location` are in [scoop_slow_changing_entity_types()](includes/_cache.php#L37) (joined by `cabinet` via #14) and get their own entity-scoped cache version, bumped only by that post type's own save. Found already in place while working #4 on `worktree-repaint-sync`; this doc hadn't been updated to say so.
+
 **Status (2026-07-30):** *Diagnosed, not yet fixed. Extends #4's already-recommended fix.*
 
 **Location:** [scoop_cache_bust()](includes/_cache.php#L20)
@@ -143,13 +145,15 @@ slot:               needs_field=243.9ms TOTAL=315.9ms    needs_field=464.0ms TOT
 
 ### 4. Cache version bumps on every site-wide `save_post`
 
-**Location:** [includes/_cache.php:76-79](includes/_cache.php#L76)
+**Status (2026-08-29):** *Implemented* on `worktree-repaint-sync`. See [scoop_relevant_post_types()](includes/_cache.php#L59), called from `scoop_cache_bust()`.
+
+**Location:** [includes/_cache.php](includes/_cache.php)
 
 **What:** Global `save_post` / `trashed_post` / `untrashed_post` / `deleted_post` actions bump the cache version. Editing a blog post, menu item, or any unrelated CPT invalidates the scoop bundle cache.
 
 **Why it's slow:** Cache hit rate on a busy WP site is much lower than the code implies.
 
-**Fix:** Convert the `inventory_change` exclusion into a **whitelist**: only bump for `tub`, `batch`, `slot`, `cabinet`, `closeout`, `flavor`, `location`, `use`.
+**Fix:** Converted the `inventory_change` exclusion into a **whitelist**, derived from the union of every `scoop_bundle_specs()` `'needs'` list plus `closeout` (a write-only CPT no grid reads back through the bundle) — rather than the hand-written list this note originally suggested (`tub`, `batch`, `slot`, `cabinet`, `closeout`, `flavor`, `location`, `use`), which was already stale: it predates the `Task`/`Tasks`/`ShiftReport` specs and was missing `task`, `recipe`, `ingredient`, `unit`, `recipe_count`, `prep`, `allergen`, `supply`. Deriving it from `scoop_bundle_specs()` means it can't drift out of sync with the specs again.
 
 ### 5. Tub save cascades into flavor save + cache bust
 
