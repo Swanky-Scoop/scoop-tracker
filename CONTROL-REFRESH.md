@@ -193,11 +193,15 @@ Escape-close then re-click counts as re-open — it's the same click path.
 
 **Per-control refresh button.** Built alongside the dock toggle so every dockable
 view gets it in one place: `Dockable._bindDockToggle()` builds and appends a
-`this.REFRESH` button next to the existing `this.TOGGLE` (same `_buildToggleButton`
-conventions: `displayTitle`-independent icon via the `if:` icon-font marker, one
-new `si-` glyph generated through the documented icon-font pipeline). Docked
-controls only (`closest('.in-dock')` — the requirement is about dock controls;
-undocked inline pages keep browser-refresh). Action: the same
+`this.REFRESH` button next to the existing `this.TOGGLE`. **Revised per Gus's
+2026-09-01 feel-test:** the per-control button does NOT ride the shared
+`.toolbar` — it stays attached to its own `.scoop-grid` host, visible only when
+the control is docked AND open (top-right corner of the control, with the same
+fetching ring the toolbar buttons have), while the toolbar keeps exactly ONE
+refresh button: the dock chrome's Refresh-all below. Views with no server data
+at all (IframePanel — ProductionPlan/esr/`[scoop_iframe]`; an iframe is its own
+freshest source, there is nothing to fetch) declare
+`this.dockRefreshEligible = false` and get no button. Action: the same
 `_refreshOnReopen()`-shaped scoped forced refresh, `info: { name: 'refresh button' }`.
 
 **Dock-level refresh button.** One button in the dock chrome itself

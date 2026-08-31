@@ -136,21 +136,26 @@ export default class Dockable extends El {
     }, true);
 
     // Per-control refresh button (CONTROL-REFRESH.md §5) — built as TOGGLE's
-    // direct sibling so it lands wherever TOGGLE lives: docked, dockToggle()
-    // moves both into the shared .toolbar; undocked, it stays on the host
-    // (styled off .gridRefresh, which — like .gridToggle — is hidden except
-    // for the Batch fab, so undocked non-Batch pages see no new chrome).
-    this.REFRESH = this._buildRefreshButton();
-    if (this.TOGGLE.parentElement) {
-      this.TOGGLE.parentElement.insertBefore(this.REFRESH, this.TOGGLE);
-    } else {
-      this.target.append(this.REFRESH);
-    }
+    // direct sibling so it lands wherever TOGGLE lives... EXCEPT it never
+    // rides the shared .toolbar: per Gus's feel-test (2026-09-01), the
+    // toolbar holds exactly ONE refresh button (dock chrome's Refresh-all),
+    // and each control's own button stays attached to its .scoop-grid host
+    // (dockToggle() deliberately does NOT move this one — see there).
+    // Data-less views (IframePanel) opt out entirely via dockRefreshEligible=false.
+    this.REFRESH = null;
+    if (this.dockRefreshEligible !== false) {
+      this.REFRESH = this._buildRefreshButton();
+      if (this.TOGGLE.parentElement) {
+        this.TOGGLE.parentElement.insertBefore(this.REFRESH, this.TOGGLE);
+      } else {
+        this.target.append(this.REFRESH);
+      }
 
-    this.REFRESH.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this._refreshOnReopen("refresh button");
-    }, true);
+      this.REFRESH.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._refreshOnReopen("refresh button");
+      }, true);
+    }
   }
 
   // A click-open (or refresh-button press) on a docked control pulls fresh
@@ -196,14 +201,22 @@ export default class Dockable extends El {
   // Companion to _buildToggleButton() — same shell conventions (icon-font
   // glyph via the ICON_FONT_MARKER shape, class-prefixed by
   // ICON_FONT_CSS_PREFIX; see the icon-font pipeline in DOCKING.md for how
-  // the 'refresh' glyph is generated/committed). Kept as its own method
-  // rather than a _buildToggleButton parameter because the two buttons
-  // differ in class, title, icon, and (in CSS) their undocked visibility
-  // rules — mirroring .gridToggle's dual display:none/default+Batch:block
-  // treatment at each site would couple the two buttons' styling.
+  // the 'refresh' glyph is generated/committed).
+  //
+  // Per Gus (2026-09-01 feel-test): the per-control refresh button does NOT
+  // ride the shared .toolbar — it stays attached to this control's own host
+  // (.scoop-grid), and the toolbar keeps exactly ONE refresh button (the
+  // dock chrome's Refresh-all, includes/shortcode.php). Views with no
+  // server data at all (IframePanel — ProductionPlan/esr/[scoop_iframe];
+  // there is nothing to refresh) declare dockRefreshEligible = false and
+  // get no button.
   _buildRefreshButton() {
     const { ICON_FONT_CSS_PREFIX, ICON_FONT_MARKER } = Dockable;
-    const title = `Refresh ${this.modelInstance?.displayTitle ?? this.name ?? "control"} — fetch current data`;
+    const raw = this.modelInstance?.displayTitle ?? this.name ?? "";
+    // Guard the label: a control whose metadata carried a literal
+    // "undefined" string (or nothing) must never render that into the DOM —
+    // fall back to the view's logical name instead of trusting the chain.
+    const title = `Refresh ${raw && raw !== "undefined" ? raw : this.name || "control"} — fetch current data`;
 
     const BTN = this.el("button", {
       classes: ["gridRefresh"],
@@ -232,7 +245,11 @@ export default class Dockable extends El {
   //   anything else         -> literal text/unicode glyph.
   _buildToggleButton() {
     const icon  = this.modelInstance?.icon ?? (this.name ? String(this.name).charAt(0) : '?');
-    const title = this.modelInstance?.displayTitle ?? this.name ?? '';
+    // Guard against a literal "undefined" string riding in from metadata —
+    // it would render verbatim as the dock label (seen on a real dock page
+    // 2026-09-01); the view's logical name is the honest fallback.
+    const rawTitle = this.modelInstance?.displayTitle ?? this.name ?? '';
+    const title = rawTitle && rawTitle !== 'undefined' ? rawTitle : (this.name ?? '');
 
     const BTN = this.el('button', {
       classes: ['gridToggle'],
@@ -275,12 +292,6 @@ export default class Dockable extends El {
     if (!toolbar || toolbar.contains(this.TOGGLE)) return;
 
     toolbar.append(this.TOGGLE);
-    // Companion refresh button rides with its toggle (CONTROL-REFRESH.md §5)
-    // — inserted right after it so each control's pair stays adjacent in the
-    // toolbar regardless of mount order. Only reached on the same pass that
-    // moves TOGGLE (the guard above returns early once TOGGLE is in), so
-    // this can never double-insert.
-    this.TOGGLE.after(this.REFRESH);
     this.target.classList.add('docked');
 
     // 'target' => 'action' | 'aside' (see _config.php / DOCKING.md) — this
