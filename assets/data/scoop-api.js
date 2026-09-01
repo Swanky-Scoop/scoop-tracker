@@ -790,11 +790,23 @@ export default class ScoopAPI {
       // Ride-along: the stale-JS check's app.js-mtime comparison (semantics
       // unchanged from the standalone watcher this consolidates — reload is
       // still gated on no unsaved edits and still cache-busts the URL).
+      //
+      // String(...) on both sides: SCOOP.version (the baseline, set once at
+      // module load from app.js's inline SCOOP object) arrives as a STRING —
+      // wp_localize_script() (includes/enqueue.php) stringifies it — while
+      // this REST response's `version` field is a genuine JSON number. A
+      // bare !== compared a string to a number on every tick, which is
+      // ALWAYS true even when the file hasn't changed, so this eventually
+      // fired a reload every cycle once hasUnsavedEdits() stopped blocking
+      // it. Pre-existing bug (the original standalone watchForStaleVersion()
+      // below has the identical `current === baseline` mismatch) — invisible
+      // at that method's 20-minute check interval, but this poll's ~1s
+      // cadence turned it into a reload roughly every 20-24s in practice.
       const currentAppVersion = r?.version;
       if (
         this._staleVersionBaseline
         && currentAppVersion
-        && currentAppVersion !== this._staleVersionBaseline
+        && String(currentAppVersion) !== String(this._staleVersionBaseline)
         && !this.hasUnsavedEdits()
       ) {
         const url = new URL(location.href);
