@@ -1,10 +1,10 @@
 @font-face {
     font-family: "swankyF";
-    src: url("./swankyF.eot?70ba1f449e6c1320c8e55c6754f64910?#iefix") format("embedded-opentype"),
-url("./swankyF.woff2?70ba1f449e6c1320c8e55c6754f64910") format("woff2"),
-url("./swankyF.woff?70ba1f449e6c1320c8e55c6754f64910") format("woff"),
-url("./swankyF.ttf?70ba1f449e6c1320c8e55c6754f64910") format("truetype"),
-url("./swankyF.svg?70ba1f449e6c1320c8e55c6754f64910#swankyF") format("svg");
+    src: url("./swankyF.eot?9cf261cb6d235ea6554114cdbf17e3ee?#iefix") format("embedded-opentype"),
+url("./swankyF.woff2?9cf261cb6d235ea6554114cdbf17e3ee") format("woff2"),
+url("./swankyF.woff?9cf261cb6d235ea6554114cdbf17e3ee") format("woff"),
+url("./swankyF.ttf?9cf261cb6d235ea6554114cdbf17e3ee") format("truetype"),
+url("./swankyF.svg?9cf261cb6d235ea6554114cdbf17e3ee#swankyF") format("svg");
 }
 
 i[class^="si-"]:before, i[class*=" si-"]:before {
@@ -69,36 +69,33 @@ i[class^="si-"]:before, i[class*=" si-"]:before {
 .si-r:before {
     content: "\f111";
 }
-.si-refresh:before {
+.si-s:before {
     content: "\f112";
 }
-.si-s:before {
+.si-Shooting-Star--Streamline-Phosphor:before {
     content: "\f113";
 }
-.si-Shooting-Star--Streamline-Phosphor:before {
+.si-t:before {
     content: "\f114";
 }
-.si-t:before {
+.si-Trash--Streamline-Phosphor:before {
     content: "\f115";
 }
-.si-Trash--Streamline-Phosphor:before {
+.si-Trash-Bold--Streamline-Phosphor:before {
     content: "\f116";
 }
-.si-Trash-Bold--Streamline-Phosphor:before {
+.si-truck:before {
     content: "\f117";
 }
-.si-truck:before {
+.si-u:before {
     content: "\f118";
 }
-.si-u:before {
+.si-User-List--Streamline-Phosphor:before {
     content: "\f119";
 }
-.si-User-List--Streamline-Phosphor:before {
+.si-x:before {
     content: "\f11a";
 }
-.si-x:before {
-    content: "\f11b";
-}
 .si-z:before {
-    content: "\f11c";
+    content: "\f11b";
 }
