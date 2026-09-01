@@ -1,0 +1,79 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<script>
+window.SCOOP = { nonce:'x', metaData:{}, routes:{}, refreshScope:{}, user:{name:'gus',roles:['administrator']} };
+</script>
+</head><body>
+<div id="host" class="scoop-grid Debt" data-grid-type="Debt"></div>
+<script type="module">
+import Grid from './assets/ui/grid.js';
+import DebtGridModel from './assets/models/debt-grid-model.js';
+
+const FOH=1863, BOH=1877;
+const domain = {
+  flavor: [{id:600,_title:'Vanilla'},{id:700,_title:'Chocolate'},{id:800,_title:'Strawberry'},{id:900,_title:'Pistachio'}],
+  location: [{id:1010,_title:'Alderwood'},{id:1020,_title:'Bothell'},{id:1030,_title:'Cedar Park'},{id:1040,_title:'Darrington'}],
+  use: [{id:FOH,_title:'Front of House'},{id:BOH,_title:'Back of House'}],
+  slot: [
+    {id:'s1',location:1010,current_flavor:600},{id:'s2',location:1010,immediate_flavor:600},
+    {id:'s3',location:1010,current_flavor:700},{id:'s4',location:1020,current_flavor:600},
+    {id:'s10',location:1020,current_flavor:900},{id:'s9',location:1030,current_flavor:800},
+    {id:'s7',location:1040,current_flavor:700},
+  ],
+  tub: [
+    {id:'t1',flavor:600,use:FOH,state:'Opened',amount:1,location:1010,moving_to:0},
+    {id:'t2',flavor:600,use:FOH,state:'Fresh',amount:1,location:1030,moving_to:1020},
+    {id:'t3',flavor:600,use:FOH,state:'Fresh',amount:1,location:1030,moving_to:0},
+    {id:'t6',flavor:700,use:BOH,state:'Fresh',amount:1,location:1030,moving_to:0},
+    {id:'t7',flavor:700,use:FOH,state:'Fresh',amount:0.7,location:1030,moving_to:0},
+    {id:'t10',flavor:800,use:FOH,state:'Fresh',amount:1,location:1030,moving_to:0},
+    {id:'t11',flavor:900,use:FOH,state:'Fresh',amount:1,location:1020,moving_to:0},
+  ],
+};
+const deep = () => JSON.parse(JSON.stringify(domain));
+
+const host = document.getElementById('host');
+const api = { getDomainSnapshot: () => deep(), _controlId: (el) => el?.dataset?.gridType ?? 'Debt', baseUrl: 'http://localhost/', Meta: { forGrid: () => null } };
+
+const model = new DebtGridModel('Debt', deep());
+// Force the full-rebuild-eligible condition the filter / CabinetWorkflow grids carry:
+model.getServerFilterParams = () => ({});
+model.rebuildOnRefresh = true;
+
+const grid = new Grid(host, 'Debt', { api, modelInstance: model, formCodec: null, columns: model.columns });
+grid.setDomain(deep());
+
+let rebuilds = 0, patches = 0;
+const origRebuild = grid._rebuildBodies.bind(grid);
+grid._rebuildBodies = (s) => { rebuilds++; return origRebuild(s); };
+const origPatch = grid._patchBodies.bind(grid);
+grid._patchBodies = (s) => { patches++; return origPatch(s); };
+
+let removedRows = 0;
+const obs = new MutationObserver(muts => {
+  for (const m of muts) for (const n of m.removedNodes) if (n.nodeType === 1 && (n.matches?.('.row') || n.querySelector?.('.row'))) removedRows += n.matches?.('.row') ? 1 : n.querySelectorAll('.row').length;
+});
+obs.observe(grid.FRAME, { childList: true, subtree: true });
+
+async function drive(label, detail, n) {
+  rebuilds = 0; patches = 0; removedRows = 0;
+  const before = new Set([...grid.FRAME.querySelectorAll('.row')]);
+  for (let i = 0; i < n; i++) {
+    document.dispatchEvent(new CustomEvent('ts:domain:updated', { detail }));
+    await new Promise(r => setTimeout(r, 30));
+  }
+  const after = [...grid.FRAME.querySelectorAll('.row')];
+  const stable = before.size === after.length && [...before].every(x => after.includes(x));
+  return { label, rebuilds, patches, removedRows, stable };
+}
+
+const results = [];
+// background refresh, rebuild-eligible grid
+results.push(await drive('background (rebuild-eligible)', { types:['Debt'], demandRepaint:false, info:'background poll' }, 5));
+// own action (info === name) — SHOULD rebuild
+results.push(await drive('own action (info=Debt)', { types:['Debt'], demandRepaint:false, info:'Debt' }, 1));
+
+window.__HARNESS = results;
+document.title = 'done';
+</script>
+</body></html>

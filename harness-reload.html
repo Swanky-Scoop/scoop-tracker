@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8">
+<script>window.SCOOP = { nonce:'x', metaData:{}, routes:{}, refreshScope:{}, user:{name:'gus',roles:['administrator']} };</script>
+</head><body>
+<script type="module">
+import ScoopAPI from './assets/data/scoop-api.js';
+const api = new ScoopAPI({ nonce:'x', base:'http://localhost:8123/', routes:{ Version:'http://localhost:8123/version' }, metaData:{} });
+// Simulate a /version response whose app.js mtime DIFFERS from the baseline captured at load:
+api.getJson = async () => ({ version: 999999, cache_version: 7 });
+api.hasUnsavedEdits = () => false;
+api.refreshPageDomain = async () => {};
+api.watchForDataChanges({ staleVersionBaseline: 123 });
+// If the stale-JS ride-along fires, it sets location.href and this page navigates away.
+window.__BOOT = 'poll-started';
+</script>
+</body></html>
