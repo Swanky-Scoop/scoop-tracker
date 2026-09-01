@@ -140,8 +140,8 @@ function scoop_routes_config(string $batch_key = ''): array {
     // same shape as ItemPivot above: no route of its own, read purely
     // through /bundle.
     'Debt' => [
-      'display_title' => 'Debt',
-      'icon'         => 'if:d',
+      'display_title' => 'Transit',
+      'icon'         => 'if:Truck--Streamline-Phosphor', // assets/icon-font/svg/Truck--Streamline-Phosphor.svg
     ],
     // "What got emptied, by day" log — see assets/models/emptied-log-grid-model.js.
     // No path/methods/mode/envelope_key here (same as ItemPivot above): it's
