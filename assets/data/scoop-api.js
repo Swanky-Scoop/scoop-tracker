@@ -37,6 +37,14 @@ import HashState                from "./hash-state.js";
 // matters pre-history; PageStatus.beginLoadTiming() prefers real history
 // the moment any exists.
 const ETA_DEFAULT_BUST_MS = 15000;
+// A single-type fetch (the reopen/demand-repaint path always passes exactly
+// [this.name] — see Dockable._refreshOnReopen) is a much smaller query than
+// a full-page union load, and in practice usually lands on a warm transient
+// cache. Reusing the full-page 15s default as its starting guess — before
+// this key has any real history of its own — made every not-yet-reopened
+// control's first sync look far slower than it actually runs; see
+// _defaultBustMsForPage below.
+const ETA_SCOPED_DEFAULT_BUST_MS = 3000;
 const ETA_TYPE_DEFAULT_BUST_MS = {
   DateActivity: 25000,
   BatchHistory: 25000,
@@ -388,8 +396,13 @@ export default class ScoopAPI {
   }
 
   _defaultBustMsForPage(types = this._pageTypes) {
-    let ms = ETA_DEFAULT_BUST_MS;
-    for (const type of types ?? []) {
+    const list = types ?? [];
+    // Scoped to exactly one type (a reopen, or any other single-type demand
+    // fetch) — start from the smaller baseline; a real multi-type page load
+    // still gets the larger one. A per-type override below can still raise
+    // it for a type known to run a genuinely heavy query even alone.
+    let ms = list.length === 1 ? ETA_SCOPED_DEFAULT_BUST_MS : ETA_DEFAULT_BUST_MS;
+    for (const type of list) {
       if (ETA_TYPE_DEFAULT_BUST_MS[type] != null) {
         ms = Math.max(ms, ETA_TYPE_DEFAULT_BUST_MS[type]);
       }
@@ -625,10 +638,15 @@ export default class ScoopAPI {
     const quietChrome = !demandRepaint && !isInitialLoad;
 
     if (!quietChrome) {
+      // "Syncing" for a re-open/explicit demand-repaint fetch — it reads as
+      // catching this one control up, not the generic first-load "fetching"
+      // (see PageStatus.setState's label param). The initial page load keeps
+      // the plain word since there's nothing to "sync" yet.
+      const fetchingLabel = isInitialLoad ? undefined : { label: 'Syncing' };
       this._bundleGrids.forEach(g => {
         if (!g.pageStatusId || !fetchSet.has(g.name)) return;
         if (!isInitialLoad && g.reactsToScopedRefresh === false) return;
-        PageStatus.setState(g.pageStatusId, 'fetching');
+        PageStatus.setState(g.pageStatusId, 'fetching', fetchingLabel);
       });
       PageStatus.setTrigger(info?.name ?? 'page load');
       this.beginLoadTiming(fetchTypes);

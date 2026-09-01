@@ -137,7 +137,12 @@ export default class PageStatus {
     return LI;
   }
 
-  static setState(id, state) {
+  // `label`: optional override for this one call — e.g. a re-opened
+  // control's own catch-up fetch reads better as "Syncing" than the
+  // generic "fetching" a first-ever load uses (see ScoopAPI._startDomainFetch,
+  // which passes this only for an explicit non-initial demandRepaint fetch).
+  // Falls back to labelFor(state) — the plain per-state word — otherwise.
+  static setState(id, state, { label } = {}) {
     const LI = PageStatus._items.get(id);
     if (!LI) return;
 
@@ -153,7 +158,7 @@ export default class PageStatus {
     LI.dataset.stateIndex = String(index);
 
     const EM = LI.querySelector('em');
-    if (EM) EM.textContent = labelFor(state);
+    if (EM) EM.textContent = label ?? labelFor(state);
 
     PageStatus._recomputeOverallState();
     PageStatus._recomputeEditingState();
