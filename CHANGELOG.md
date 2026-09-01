@@ -2,6 +2,14 @@
 
 Curated, reverse-chronological log of notable changes — what changed and why. For commit-level detail see `git log`.
 
+## 2026-08-31
+
+### Fix: FindIt and FindInList select their entire text when focused
+
+**What:** Both Find-based text inputs — `FindIt` (the in-cell type-to-complete control) and `FindInList` (the list-wide filter box) — now select their entire contents whenever they gain focus, via a shared `Find.selectOnFocus()` helper in [assets/ui/_find.js](assets/ui/_find.js). Applies to focus by click, Tab, and programmatic `.focus()` (which covers the post-save `_list.js` refocus-to-filter path). A focus-gaining click that drags out a sub-range keeps the user's range instead, and a click on an already-focused input keeps its editing gestures (caret placement, double-click word selection) untouched.
+
+**Why:** Typing into either control previously inserted at the caret, so "replace this flavor" meant click, Ctrl/Cmd-A, type (or hand-deleting the old value first). Select-all-on-focus makes the common "click it, type over it" flow a straight replace. The naive implementation doesn't survive contact with the browser: a focus-gaining click runs mousedown → focus → mouseup, and the default mouseup caret placement collapses a selection made at focus time — and a `select()` issued while a drag gesture is still in progress makes Chromium abandon the drag's own selection entirely. The helper therefore defers the mouse path to `mouseup`, which arbitrates between "plain click → select all" and "drag → user's range wins" (each carve-out proven headless against the unassisted-input baseline in real Chromium).
+
 ## 2026-08-30
 
 ### Chore: remove stale `schema.sql` / `dump.txt` from the repo root
