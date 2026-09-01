@@ -627,20 +627,28 @@ export default class ScoopAPI {
     // whole page's overall PageStatus (_recomputeOverallState picks the
     // worst state across every registered item, unconditionally) forever,
     // since nothing ever calls their setDomain() again to clear it.
-    this._bundleGrids.forEach(g => {
-      if (!g.pageStatusId || !fetchSet.has(g.name)) return;
-      if (!isInitialLoad && g.reactsToScopedRefresh === false) return;
-      PageStatus.setState(g.pageStatusId, 'fetching');
-    });
-    PageStatus.setTrigger(info?.name ?? 'page load');
+    //
+    // QUIET CHROME (steady-screen contract, per Gus 2026-09-01): a
+    // background fetch that isn't an explicit user request and isn't the
+    // initial load touches NO page chrome — no 'fetching' pill flips, no
+    // trigger-label rewrite, no ETA countdown. The fetch itself still runs
+    // and merges its data; whether anything then REPAINTS is decided
+    // per-grid by the content gate in _onDomainUpdated. Before this, the
+    // chrome churned on every poll-driven fetch even when every grid
+    // diffed to "no change" — the screen was never actually steady. A
+    // grid whose data DID change still settles its pill via the gate
+    // (fresh after repaint, 'stale' here if the fetch itself failed).
+    const quietChrome = !demandRepaint && !isInitialLoad;
 
-    // ETA/countdown for this fetch specifically — called here (not just once
-    // from mountAllGrids) so it shows up for every real bundle fetch: the
-    // initial load, a Save submit, autosave's background refresh, or a
-    // filter change. Keyed on fetchTypes (not always the page-wide
-    // typesKey) so a scoped fetch's naturally-faster duration tracks its
-    // own history bucket instead of corrupting the full-page one.
-    this.beginLoadTiming(fetchTypes);
+    if (!quietChrome) {
+      this._bundleGrids.forEach(g => {
+        if (!g.pageStatusId || !fetchSet.has(g.name)) return;
+        if (!isInitialLoad && g.reactsToScopedRefresh === false) return;
+        PageStatus.setState(g.pageStatusId, 'fetching');
+      });
+      PageStatus.setTrigger(info?.name ?? 'page load');
+      this.beginLoadTiming(fetchTypes);
+    }
 
     this._domainInflight = (async () => {
       try {
@@ -669,6 +677,13 @@ export default class ScoopAPI {
             // demandRepaint:false and each grid decides via its own
             // content signature whether anything it SHOWS actually changed.
             demandRepaint: demandRepaint === true,
+            // Attributed trigger (info.name) so a grid can tell its OWN
+            // actions (its filter change, its save — both pass its name)
+            // from anyone else's: server-filter grids keep the destructive
+            // rebuild for their own filter changes but must patch in place
+            // for background refreshes (steady-screen contract — a
+            // background refresh never rips rows off the screen).
+            info: info?.name ?? null,
           }
         }));
         /*
