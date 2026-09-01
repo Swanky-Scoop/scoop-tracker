@@ -19,6 +19,14 @@ name: Unit tests
 # >= 21.3); on node 20 they fail with a CJS named-export error before any
 # flag matters (see tests/unit/README.md). Do not trust the runner's default
 # node.
+#
+# The second job below (behavior-tests) drives the REAL client components in
+# headless Chromium — tests/visual's browser-BEHAVIOR specs (selection state,
+# no screenshots, no fonts needed, hence plain ubuntu-latest rather than the
+# digest-pinned Playwright image the screenshot specs require). Selected by
+# the @behavior tag so the screenshot specs stay in visual-tests.yml where
+# their image pin lives. Same reason this workflow has no path filter: an
+# assets/ui/ regression is invisible to visual-tests.yml's css.css filter.
 
 on:
   push:
@@ -57,3 +65,38 @@ jobs:
         run: |
           php --version
           node tests/unit/run-all.mjs
+
+  # Browser-behavior gate: the visual suite's behavior specs, which assert
+  # component STATE in real Chromium (not pixels), so they don't need the
+  # digest-pinned font-deterministic image that the screenshot specs need —
+  # a plain runner with `npx playwright install chromium` is enough. Grep is
+  # the selector (a spec tags itself @behavior in a describe title) because
+  # @playwright/test has no per-spec include-tags at this version; --list
+  # first proves the selector matches ≥1 spec, so a tag typo can never
+  # degrade this job into a green run that ran nothing.
+  behavior-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tests/visual
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run behavior specs
+        run: |
+          npx playwright test --list -g "@behavior" | tee /tmp/list.out
+          count=$(grep -c '^\s*\[' /tmp/list.out || true)
+          echo "behavior specs matched: $count"
+          if [ "$count" -lt 1 ]; then echo "::error::@behavior selector matched no specs"; exit 1; fi
+          npx playwright test -g "@behavior"
