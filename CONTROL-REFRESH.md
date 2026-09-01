@@ -1,10 +1,12 @@
 # Localized control refresh — version-gated polling + on-demand refresh
 
-**Status:** PLANNING — no code written. This doc is the agreed plan, published on
-branch `control-refresh-plan` for comparison against the parallel plan
-(`DOCK-CONTROL-REFRESH.md` on `origin/dock-refresh`); implementation starts only
-after Gus signs off. See the Appendix for the comparison and the two points
-conceded to the parallel plan.
+**Status:** IMPLEMENTED on branch `dock-refresh` (poll + reopen refresh,
+validated in-box; awaiting Gus's merge decision). Original planning
+conversation 2026-09-01; implementation rides the merge of this plan with the
+parallel `DOCK-CONTROL-REFRESH.md` — see the Appendix for the comparison and
+the two points conceded to it. **Update:** the manual refresh buttons
+(§5 — per-control and dock-wide) were removed after landing; the 1s poll +
+repaint gate made them redundant. §5 is kept below for history only.
 
 **Companion docs:** [PARTIAL-REFRESH.md](PARTIAL-REFRESH.md) (the repaint machinery
 this rides on), [websockets-migration.md](websockets-migration.md) (why not
@@ -146,6 +148,35 @@ Behavior per tick:
    no unsaved edits → cache-busting reload). Its 20-min cadence becomes "check
    every tick, it's one integer comparison we're already doing."
 
+### The repaint gate — fetch ≠ repaint (added after the 2026-09-01 feel-test)
+
+The plan separated "check" from "fetch" but not "fetch" from "repaint":
+invalidation is global (one `scoop_cache_version` for the whole site), and
+`_startDomainFetch` dispatched `ts:domain:updated` unconditionally — so any
+write, anywhere, by anyone, repainted every control on every open tab even
+when nothing a grid displayed had changed. The contract now enforced:
+**a control repaints only if (a) the data it shows actually changed,
+(b) the user explicitly asked (per-control refresh, dock Refresh-all,
+click-open — these carry `demandRepaint: true`), or (c) it was minimized
+and re-opened (also demandRepaint).**
+
+Mechanics: `refreshPageDomain()` threads `demandRepaint` into the
+`ts:domain:updated` detail; `List._onDomainUpdated` compares the model's
+post-`setDomain` render input (`rows`/`rowGroups` — plain data, no DOM) to
+the last-painted signature and skips the repaint (settling its PageStatus
+pill to 'fresh' instead of flashing 'fetching') when they match and the
+refresh wasn't demanded. Zero-rows models (CabinetWorkflow's tiles, which
+derive straight from the domain) fall back to a whole-domain comparison.
+The signature updates on every post-init pass, so a demanded repaint can't
+poison the next comparison. This also neutralizes the global-invalidation
+cost *as seen by the user* — an unrelated save's fetch diff-equals to "no
+change" on every unaffected grid. (Scoped *server* fetches — not refetching
+unchanged entities at all — remain the documented follow-up; the client
+gate deliberately doesn't depend on it.) Known bounded churn: a
+`relativeTimeFields` column's rendered "N hours ago" coarsens with wall
+time, so such a grid (FlavorTub) may repaint up to once a minute boundary
+with unchanged data — data-visible, and far rarer than the old behavior.
+
 ## 4. Refetch-on-reopen (requirement 2)
 
 Dock open/close is `Dockable._setToggled()` (`assets/ui/_dockable.js`), reached
@@ -193,11 +224,15 @@ Escape-close then re-click counts as re-open — it's the same click path.
 
 **Per-control refresh button.** Built alongside the dock toggle so every dockable
 view gets it in one place: `Dockable._bindDockToggle()` builds and appends a
-`this.REFRESH` button next to the existing `this.TOGGLE` (same `_buildToggleButton`
-conventions: `displayTitle`-independent icon via the `if:` icon-font marker, one
-new `si-` glyph generated through the documented icon-font pipeline). Docked
-controls only (`closest('.in-dock')` — the requirement is about dock controls;
-undocked inline pages keep browser-refresh). Action: the same
+`this.REFRESH` button next to the existing `this.TOGGLE`. **Revised per Gus's
+2026-09-01 feel-test:** the per-control button does NOT ride the shared
+`.toolbar` — it stays attached to its own `.scoop-grid` host, visible only when
+the control is docked AND open (top-right corner of the control, with the same
+fetching ring the toolbar buttons have), while the toolbar keeps exactly ONE
+refresh button: the dock chrome's Refresh-all below. Views with no server data
+at all (IframePanel — ProductionPlan/esr/`[scoop_iframe]`; an iframe is its own
+freshest source, there is nothing to fetch) declare
+`this.dockRefreshEligible = false` and get no button. Action: the same
 `_refreshOnReopen()`-shaped scoped forced refresh, `info: { name: 'refresh button' }`.
 
 **Dock-level refresh button.** One button in the dock chrome itself

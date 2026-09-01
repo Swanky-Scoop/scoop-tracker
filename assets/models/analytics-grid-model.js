@@ -199,8 +199,36 @@ export default class AnalyticsGridModel extends BaseGridModel {
       headers["X-WP-Nonce"] = this.nonce;
     }
 
-    const res  = await fetch( url, { credentials: "include", headers } );
-    const json = await res.json();
+    // The server-side computation this hits (scoop_analytics_handler) does
+    // four full tub-table scans with per-row Pods relationship resolution
+    // on a cache miss — occasionally slow enough on a loaded host that a
+    // plain fetch() with no timeout just hangs, leaving this grid's
+    // PageStatus stuck 'fetching' forever (mountAllGrids awaits this
+    // promise directly — nothing else ever un-sticks it). 20s is generous
+    // for even a cold, uncached compute; past that, fail visibly instead of
+    // hanging silently.
+    const controller = new AbortController();
+    const timeoutId  = setTimeout( () => controller.abort(), 20000 );
+
+    let res, json;
+    try {
+      res  = await fetch( url, { credentials: "include", headers, signal: controller.signal } );
+      json = await res.json();
+    } catch ( err ) {
+      const timedOut = err?.name === "AbortError";
+      console.error(
+        timedOut
+          ? "AnalyticsGridModel: request timed out after 20s"
+          : "AnalyticsGridModel: fetch failed",
+        err
+      );
+      this.lastCacheStatus = null;
+      this.raw  = { ok: false, error: timedOut ? "timeout" : String( err?.message ?? err ) };
+      this.rows = [];
+      return this;
+    } finally {
+      clearTimeout( timeoutId );
+    }
 
     // 'hit'|'miss' from the server's transient cache (see analytics.php) —
     // read by ScoopAPI.mountAllGrids to bucket the page-load ETA (see

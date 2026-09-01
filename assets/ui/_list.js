@@ -1963,6 +1963,60 @@ export default class List extends Dockable{
             this.modelInstance.setDomain(freshDomain);
           }
 
+          // Repaint gate (CONTROL-REFRESH.md's repaint contract, per Gus
+          // 2026-09-01): repaint only when the data this grid SHOWS actually
+          // changed, or the refresh was an explicit user request
+          // (detail.demandRepaint — per-control button, dock Refresh-all,
+          // click-open). Invalidations are global (one scoop_cache_version
+          // for the whole site), so before this gate ANY save by ANYONE
+          // repainted EVERY control on EVERY open tab even when nothing a
+          // grid displays had changed — routine under the 1s background
+          // poll, and pure churn at steady state. The signature is the
+          // model's own post-setDomain render input (rows + rowGroups —
+          // plain data, no DOM), so "changed" means "what's painted would
+          // differ", not merely "some pod somewhere moved". Datetime cells
+          // are compared by their stable epoch `value`, NOT their rendered
+          // `display` — a relativeTimeFields label ("2 hours ago") coarsens
+          // with wall time while the underlying data is unchanged, which
+          // made the first cut of this gate repaint FlavorTub on every
+          // fetch. Zero-rows models (CabinetWorkflow — no columns, tiles
+          // derive straight from the domain) fall back to comparing the
+          // domain itself. The signature is tracked on EVERY post-init pass
+          // (not only repaints) so a demandRepaint pass can't poison the
+          // next comparison.
+          if (this._isInit) {
+            const normCell = (c) => (c && typeof c === 'object' && (c.type ?? c.dataType) === 'datetime')
+              ? { ...c, display: c.value ?? null } // epoch-stable, wall-clock labels excluded
+              : c;
+            const normRow = (r) => {
+              const o = {};
+              for (const k in r) o[k] = (r[k] && typeof r[k] === 'object') ? normCell(r[k]) : r[k];
+              return o;
+            };
+            const rows = this.modelInstance?.rows;
+            const groups = this.modelInstance?.rowGroups;
+            const hasRenderRows = (Array.isArray(rows) && rows.length)
+              || (Array.isArray(groups) && groups.length);
+            const sig = hasRenderRows
+              ? JSON.stringify({ rows: Array.isArray(rows) ? rows.map(normRow) : rows ?? null, groups: groups ?? null })
+              : JSON.stringify(freshDomain);
+            const changed = sig !== this._lastRepaintSig;
+            this._lastRepaintSig = sig;
+            if (!changed && e?.detail?.demandRepaint !== true) {
+              // Nothing this grid shows has changed — no repaint. Its data
+              // IS as fresh as this fetch, so the status pill settles to
+              // 'fresh' rather than flashing 'fetching' for nothing. Any
+              // pending save-confirmation markers still flush IN PLACE
+              // (classes on existing cells, via _flashResolvedMarks — the
+              // only DOM touch a no-change refresh ever makes).
+              const settledKeys = [...this.awaitingRefreshSet];
+              this.awaitingRefreshSet.clear();
+              if (settledKeys.length) this._flashResolvedMarks(settledKeys);
+              if (this.pageStatusId) PageStatus.setState(this.pageStatusId, 'fresh');
+              return;
+            }
+          }
+
           // Refresh with updated model
           if (this._isInit) {
             // Whatever's still pending here is about to be genuinely
@@ -1989,8 +2043,24 @@ export default class List extends Dockable{
             // teardown/rebuild there can reorder, regroup, or drop rows out
             // from under someone who's just looking at this grid, not
             // editing it. See _patchRefresh/_patchBodies above.
-            const needsFullRebuild = typeof this.modelInstance?.getServerFilterParams === 'function'
-              || this.modelInstance?.rebuildOnRefresh === true;
+            //
+            // Steady-screen contract (Gus 2026-09-01): a BACKGROUND refresh
+            // (not this grid's own action, not an explicit refresh request)
+            // must never take the destructive path — a rebuild tears rows
+            // off the screen. So a server-filter grid whose data DID change
+            // in a background refresh patches additively like everyone else
+            // (out-of-range rows linger until its own filter change or an
+            // explicit refresh — the additive trade-off, applied
+            // uniformly). The destructive path is reserved for: this
+            // grid's own filter change / save (info === this.name), or an
+            // explicit demandRepaint request, or the initial load (no info
+            // at all — nothing to protect yet).
+            const ownAction = e?.detail?.info != null
+              ? e.detail.info === this.name
+              : true; // initial load: no trigger to attribute, keep old behavior
+            const needsFullRebuild = ownAction
+              && (typeof this.modelInstance?.getServerFilterParams === 'function'
+                || this.modelInstance?.rebuildOnRefresh === true);
             if (needsFullRebuild) {
               await this.refresh(this.modelInstance);
             } else {

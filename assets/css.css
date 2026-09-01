@@ -917,6 +917,7 @@ html > body.TS_GRID-UPDATING .scoop-grid {
   transform: translateY(0) scale(1);
 }
 
+/* see css.md#in-dock-toolbar-gridtoggle */
 .in-dock > .toolbar > .gridToggle {
   display: flex;
   flex-direction: column;
@@ -984,7 +985,7 @@ html > body.TS_GRID-UPDATING .scoop-grid {
     content: "";
     position: absolute;
     left: 50%;
-    top: -1px];
+    top: -1px;
     width: 2rem;
     height: 2rem;
     transform: translateX(-50%);

@@ -46,6 +46,30 @@ function scoop_entity_cache_bust( string $entity_key ): void {
   update_option( "scoop_ecv_{$entity_key}", scoop_entity_cache_version( $entity_key ) + 1, false );
 }
 
+// /analytics recomputes from tub/batch/flavor data only (see analytics.php's
+// per-stage helpers) — nothing else it reads can change its numbers. Keying
+// its cache on the same global scoop_cache_version() every OTHER write also
+// bumps meant a slot confirm_state write, a Debt claim edit, a cabinet save
+// — anything anywhere on the site — invalidated the single most expensive
+// endpoint in the plugin (four full tub-table scans with per-row Pods
+// relationship resolution, unbounded by any of the stage-skipping that
+// helps Popular/Flavors). In a busy shop (or this dev box, where a single
+// CabinetWorkflow reconcile pass alone bumps the version once per slot),
+// that meant analytics almost never got to reuse its own cache — every load
+// paid the full N+1 cost. This narrow version is bumped only by the post
+// types that actually feed those computations.
+function scoop_analytics_relevant_post_types(): array {
+  return [ 'tub', 'batch', 'flavor' ];
+}
+
+function scoop_analytics_cache_version(): int {
+  return (int) get_option( 'scoop_analytics_cache_version', 1 );
+}
+
+function scoop_analytics_cache_bust(): void {
+  update_option( 'scoop_analytics_cache_version', scoop_analytics_cache_version() + 1, false );
+}
+
 // Every post type any grid's bundle actually reads (the union of every
 // scoop_bundle_specs() 'needs' list), plus 'closeout' — a write-only CPT
 // (shift-end tub closeout, see includes/hooks/closeout.php) that never
@@ -90,6 +114,10 @@ function scoop_cache_bust(?int $post_id = null, array $ctx = []): void {
     if ( $post_type && in_array( $post_type, scoop_slow_changing_entity_types(), true ) ) {
       scoop_entity_cache_bust( $post_type );
     }
+
+    if ( $post_type && in_array( $post_type, scoop_analytics_relevant_post_types(), true ) ) {
+      scoop_analytics_cache_bust();
+    }
   }
 
   // autoload=false: this option changes frequently, no need to load on every page
@@ -100,7 +128,9 @@ function scoop_analytics_cache_key( \WP_REST_Request $req ): string {
   $days = max( 1, (int) ( $req->get_param( 'days' ) ?? 30 ) );
   $loc  = (int) ( $req->get_param( 'location' )  ?? 0 );
   $grid = (string) ( $req->get_param( 'grid_type' ) ?? '' );
-  $v    = scoop_cache_version();
+  // Analytics' own narrow version (tub/batch/flavor writes only), not the
+  // site-wide scoop_cache_version() — see scoop_analytics_relevant_post_types().
+  $v    = scoop_analytics_cache_version();
 
   return 'scoop_a_' . md5( $v . '|' . $days . '|' . $loc . '|' . $grid );
 }

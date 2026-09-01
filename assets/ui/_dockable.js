@@ -129,10 +129,51 @@ export default class Dockable extends El {
     this.TOGGLE.addEventListener("click", (e) => {
       const isOpen = !this.target.classList.contains("toggled");
       this._setToggled(isOpen);
+      if (isOpen) this._refreshOnReopen("control re-open");
       this._syncDockHash();
 
       e.stopPropagation();
     }, true);
+  }
+
+  // A click-open on a docked control pulls fresh data for THAT control and
+  // repaints it — the reopen half of CONTROL-REFRESH.md §4 (the manual
+  // refresh buttons this used to also serve were removed once the
+  // background poll made them redundant). Scoped to this control's own
+  // entry in scoop_bundle_specs() (`types: [this.name]`), NOT
+  // scopedRefreshTypes(): that helper is write-oriented (SCOOP.refreshScope's
+  // writesPods) and falls back to the full page union for any read-only
+  // trigger, which is backwards for "refresh THIS view" — a control's own
+  // bundle spec is both minimal and authoritative for what it displays.
+  //
+  // The 1s version poll (ScoopAPI.watchForDataChanges) usually means this
+  // confirms already-fresh data cheaply (warm cache between saves); its real
+  // job is guaranteeing freshness when the tab was hidden (poll skipped) or
+  // the poll is in backoff. Failures already toast via refreshPageDomain's
+  // own catch, so the rethrow is swallowed here.
+  //
+  // `cause` feeds PageStatus.setTrigger() via info.name, so the status pill
+  // says the fetch came from a re-open.
+  _refreshOnReopen(cause = "control re-open") {
+    // Dock controls only — an undocked page keeps plain browser-refresh.
+    if (!this.target.closest(".in-dock")) return;
+    if (!this.api) return;
+
+    // Mount-time guard: dockToggle()'s hash-restore path calls _setToggled
+    // during mountAllGrids() BEFORE any data has loaded — a fetch there
+    // would race and duplicate the initial load (and forced calls arriving
+    // mid-flight chain serially: N restored controls → N+1 cold fetches on
+    // every page open). The restore path reaches _setToggled directly and
+    // never calls this method, so this line is belt-and-suspenders only —
+    // but a fetch before the initial domain exists is meaningless anyway.
+    if (this.api._domain === null) return;
+
+    this.api.refreshPageDomain({
+      force: true,
+      types: [this.name],
+      info: { name: cause },
+      demandRepaint: true, // explicit user request — bypasses the per-grid diff gate
+    }).catch(() => {});
   }
 
   // Shared TOGGLE button for Grid/Tile's buildCoreDom() and any bespoke
@@ -149,7 +190,11 @@ export default class Dockable extends El {
   //   anything else         -> literal text/unicode glyph.
   _buildToggleButton() {
     const icon  = this.modelInstance?.icon ?? (this.name ? String(this.name).charAt(0) : '?');
-    const title = this.modelInstance?.displayTitle ?? this.name ?? '';
+    // Guard against a literal "undefined" string riding in from metadata —
+    // it would render verbatim as the dock label (seen on a real dock page
+    // 2026-09-01); the view's logical name is the honest fallback.
+    const rawTitle = this.modelInstance?.displayTitle ?? this.name ?? '';
+    const title = rawTitle && rawTitle !== 'undefined' ? rawTitle : (this.name ?? '');
 
     const BTN = this.el('button', {
       classes: ['gridToggle'],

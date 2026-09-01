@@ -30,7 +30,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   // that method's header comment in assets/data/scoop-api.js.
   const grids = await api.mountAllGrids(SCOOP.metaData);
   Details.refresh();
-  api.watchForStaleVersion(SCOOP.version);
+  // One watcher, one timer: 1s version-gated background refresh
+  // (CONTROL-REFRESH.md §3) with watchForStaleVersion's app.js-mtime
+  // reload folded in as a ride-along comparison on the same poll.
+  api.watchForDataChanges({ staleVersionBaseline: SCOOP.version });
   api.watchForIdleTimeout();
   api.watchForInventoryChangeFlush();
 

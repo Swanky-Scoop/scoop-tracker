@@ -137,7 +137,12 @@ export default class PageStatus {
     return LI;
   }
 
-  static setState(id, state) {
+  // `label`: optional override for this one call — e.g. a re-opened
+  // control's own catch-up fetch reads better as "Syncing" than the
+  // generic "fetching" a first-ever load uses (see ScoopAPI._startDomainFetch,
+  // which passes this only for an explicit non-initial demandRepaint fetch).
+  // Falls back to labelFor(state) — the plain per-state word — otherwise.
+  static setState(id, state, { label } = {}) {
     const LI = PageStatus._items.get(id);
     if (!LI) return;
 
@@ -153,7 +158,7 @@ export default class PageStatus {
     LI.dataset.stateIndex = String(index);
 
     const EM = LI.querySelector('em');
-    if (EM) EM.textContent = labelFor(state);
+    if (EM) EM.textContent = label ?? labelFor(state);
 
     PageStatus._recomputeOverallState();
     PageStatus._recomputeEditingState();
@@ -345,6 +350,11 @@ export default class PageStatus {
   // has no 'miss' history yet — callers with domain knowledge of which grid
   // types tend to run slow cold queries (e.g. ScoopAPI, for DateActivity/
   // BatchHistory) can pass a larger one than the generic ETA_DEFAULT_MS.
+  // Returns the internal load record it just created — pass this back into
+  // completeLoadTiming() as `expectedLoad` so a completion event can tell
+  // whether it's still completing THIS load, or a stale one a newer
+  // beginLoadTiming() for the same key has already superseded (see
+  // completeLoadTiming's own comment for why that distinction matters).
   static beginLoadTiming(key, defaultMs = ETA_DEFAULT_MS, ids = []) {
     // Same key beginning again before its prior load finished (e.g. a
     // delete's own pre-emptive countdown — see ScoopAPI.beginLoadTiming's
@@ -353,12 +363,13 @@ export default class PageStatus {
     const existing = PageStatus._loads.get(key);
     if (existing?.timer != null) clearInterval(existing.timer);
 
-    PageStatus._loads.set(key, {
+    const load = {
       loadStart: performance.now(),
       ids: new Set(ids),
       timer: null,
       pendingCacheStatus: undefined,
-    });
+    };
+    PageStatus._loads.set(key, load);
     PageStatus._displayKey = key;
 
     const LI = PageStatus._ensureEtaLi();
@@ -379,6 +390,8 @@ export default class PageStatus {
     // stops the countdown well before it reaches zero.
     BUST.dataset.etaSource = (missAvg != null) ? 'history' : 'default';
     PageStatus._startCountdown(key, missAvg != null ? missAvg : defaultMs);
+
+    return load;
   }
 
   // Runs this key's own interval independently of any other in-flight
@@ -456,9 +469,25 @@ export default class PageStatus {
   // _tryFinishLoadTiming(), which actually stops this key's countdown once
   // none of ITS ids are still reporting 'fetching' — re-checked every time
   // any grid's state changes (see setState()).
-  static completeLoadTiming(key, cacheStatus) {
+  //
+  // `expectedLoad`: the record beginLoadTiming(key, ...) returned when THIS
+  // caller started its own fetch. Two overlapping fetches for the SAME key
+  // (e.g. a control reopened again before its first reopen's fetch had
+  // resolved) each begin their own load record — beginLoadTiming() replaces
+  // the map entry, so the second start supersedes the first. Without this
+  // check, the FIRST fetch's eventual (now-stale) completion would still
+  // find something at _loads.get(key) — now the SECOND fetch's own,
+  // genuinely still-running record — and could finalize/delete it
+  // prematurely, orphaning the second fetch's own real completion (which
+  // then finds nothing left to finish) and freezing the ETA display on
+  // whatever mid-countdown text happened to be showing. Passing it is
+  // optional only for callers that can't have overlapping starts for the
+  // same key; every current caller (ScoopAPI, mountAllGrids' analytics
+  // loop) always has it and always passes it.
+  static completeLoadTiming(key, cacheStatus, expectedLoad) {
     const load = PageStatus._loads.get(key);
     if (!load) return;
+    if (expectedLoad !== undefined && load !== expectedLoad) return; // superseded by a newer start
     load.pendingCacheStatus = cacheStatus;
     PageStatus._tryFinishLoadTiming(key);
   }
@@ -537,8 +566,22 @@ export default class PageStatus {
     delete BUST.dataset.etaRemainingMs;
 
     const seconds = `${(elapsedMs / 1000).toFixed(1)}s`;
-    if (bucket === 'hit') CACHED.textContent = `cached ${seconds}`;
-    else if (bucket === 'miss') BUST.textContent = seconds;
+    if (bucket === 'hit') {
+      CACHED.textContent = `cached ${seconds}`;
+      // .cached is permanently hidden (see css.css — the hit side is boring/
+      // instant, only a cache-bust is worth watching live), but BUST is the
+      // one element actually on screen. A hit never writes to it, so
+      // whatever number its countdown last ticked to (a plain decimal, no
+      // 's' suffix — the live format, not this finalized one) stayed
+      // visible forever, looking exactly like a stuck timer sitting next to
+      // an otherwise-correct 'Fresh' status. Clear it — a hit has nothing
+      // live to show.
+      BUST.textContent = '';
+    } else if (bucket === 'miss') {
+      BUST.textContent = seconds;
+    } else {
+      BUST.textContent = ''; // unknown outcome — don't leave a stale countdown number either
+    }
   }
 
   static remove(id) {

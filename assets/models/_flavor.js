@@ -77,14 +77,16 @@ export default class Flavor {
 
 
   getFlavorBadgeSpecs() {
+    // Deliberately just the one badge (Gus, 2026-09-01): a second
+    // "available elsewhere" figure (remoteByFlavor) sat right next to this
+    // one with no visible label distinguishing them (the `title` above only
+    // shows on hover) and read as a single miscomputed count rather than
+    // two intentional ones. If "available elsewhere" is wanted again later,
+    // it needs an on-screen label, not just a tooltip.
     return [
       { key:"loc", title:"Available here", hideZero:true,
         count:(flavorId, flvModel) => flvModel.notEmptyByFlavor.get(Number(flavorId))?.length ?? 0,
         format:n => `${n}` },
-
-      { key:"rmt", title:"Available elsewhere", hideZero:true,
-        count:(flavorId, flvModel) => flvModel.remoteByFlavor.get(Number(flavorId))?.length ?? 0,
-        format:n => `${n}` },      
     ];
   }
 }

@@ -37,6 +37,14 @@ import HashState                from "./hash-state.js";
 // matters pre-history; PageStatus.beginLoadTiming() prefers real history
 // the moment any exists.
 const ETA_DEFAULT_BUST_MS = 15000;
+// A single-type fetch (the reopen/demand-repaint path always passes exactly
+// [this.name] — see Dockable._refreshOnReopen) is a much smaller query than
+// a full-page union load, and in practice usually lands on a warm transient
+// cache. Reusing the full-page 15s default as its starting guess — before
+// this key has any real history of its own — made every not-yet-reopened
+// control's first sync look far slower than it actually runs; see
+// _defaultBustMsForPage below.
+const ETA_SCOPED_DEFAULT_BUST_MS = 3000;
 const ETA_TYPE_DEFAULT_BUST_MS = {
   DateActivity: 25000,
   BatchHistory: 25000,
@@ -353,18 +361,22 @@ export default class ScoopAPI {
   // when THIS load specifically is done, not any other one that happens to
   // be in flight at the same time (see _list.js's _bindPageStatusToggle,
   // which relies on this to paint the right grid's own loading ring).
+  // Returns the load handle PageStatus.beginLoadTiming() created — pass it
+  // to completeLoadTiming() below so a stale, superseded completion can be
+  // told apart from the current one (see that method's own comment).
   beginLoadTiming(types = this._pageTypes) {
     const ids = this._idsForTypes(types);
-    PageStatus.beginLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, this._defaultBustMsForPage(types), ids);
+    return PageStatus.beginLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, this._defaultBustMsForPage(types), ids);
   }
 
   // Counterpart to beginLoadTiming() above — rebuilds the identical key
   // string from the SAME types list rather than stashing it on the
   // instance, since a scoped fetch's types don't change between its own
   // begin/complete pair. Callers must pass the same `types` they began
-  // with (see _startDomainFetch).
-  completeLoadTiming(types = this._pageTypes, cacheStatus) {
-    PageStatus.completeLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, cacheStatus);
+  // with (see _startDomainFetch), plus the handle beginLoadTiming() gave
+  // them.
+  completeLoadTiming(types = this._pageTypes, cacheStatus, loadHandle) {
+    PageStatus.completeLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, cacheStatus, loadHandle);
   }
 
   // pageStatusIds for every bundle grid whose type is in `types` — shared by
@@ -388,8 +400,13 @@ export default class ScoopAPI {
   }
 
   _defaultBustMsForPage(types = this._pageTypes) {
-    let ms = ETA_DEFAULT_BUST_MS;
-    for (const type of types ?? []) {
+    const list = types ?? [];
+    // Scoped to exactly one type (a reopen, or any other single-type demand
+    // fetch) — start from the smaller baseline; a real multi-type page load
+    // still gets the larger one. A per-type override below can still raise
+    // it for a type known to run a genuinely heavy query even alone.
+    let ms = list.length === 1 ? ETA_SCOPED_DEFAULT_BUST_MS : ETA_DEFAULT_BUST_MS;
+    for (const type of list) {
       if (ETA_TYPE_DEFAULT_BUST_MS[type] != null) {
         ms = Math.max(ms, ETA_TYPE_DEFAULT_BUST_MS[type]);
       }
@@ -547,7 +564,7 @@ export default class ScoopAPI {
   // full page union (see scopedRefreshTypes) — omit it (or pass null/[]) to
   // get today's full-page-union behavior, which is what the initial mount
   // and any not-yet-scoped caller still does.
-  async refreshPageDomain({ force = false, toast = null, info = null, types = null } = {}) {
+  async refreshPageDomain({ force = false, toast = null, info = null, types = null, demandRepaint = false } = {}) {
 
     if (!this.gridTypes) throw new Error("refreshPageDomain: page types not set");
     if (!force && this._domain) return this._domain;
@@ -568,17 +585,17 @@ export default class ScoopAPI {
       // (already reported via its own Toast) — one bad fetch shouldn't
       // block the next.
       if (!force) return this._domainInflight;
-      this._domainInflight = this._domainInflight.catch(() => {}).then(() => this._startDomainFetch(info, types));
+      this._domainInflight = this._domainInflight.catch(() => {}).then(() => this._startDomainFetch(info, types, demandRepaint));
       return this._domainInflight;
     }
 
-    return this._startDomainFetch(info, types);
+    return this._startDomainFetch(info, types, demandRepaint);
   }
 
   // The actual fetch — factored out of refreshPageDomain() so a forced call
   // arriving mid-flight (see above) can chain a real second run of this
   // instead of reusing the first one's promise.
-  _startDomainFetch(info, types = null) {
+  _startDomainFetch(info, types = null, demandRepaint = false) {
     // An empty/omitted types list means "full page union" — the initial
     // mount's call and any caller not yet scoped to a specific trigger.
     const fetchTypes = (Array.isArray(types) && types.length) ? types : this._pageTypes;
@@ -611,20 +628,42 @@ export default class ScoopAPI {
     // whole page's overall PageStatus (_recomputeOverallState picks the
     // worst state across every registered item, unconditionally) forever,
     // since nothing ever calls their setDomain() again to clear it.
-    this._bundleGrids.forEach(g => {
-      if (!g.pageStatusId || !fetchSet.has(g.name)) return;
-      if (!isInitialLoad && g.reactsToScopedRefresh === false) return;
-      PageStatus.setState(g.pageStatusId, 'fetching');
-    });
-    PageStatus.setTrigger(info?.name ?? 'page load');
+    //
+    // QUIET CHROME (steady-screen contract, per Gus 2026-09-01): a
+    // background fetch that isn't an explicit user request and isn't the
+    // initial load touches NO page chrome — no 'fetching' pill flips, no
+    // trigger-label rewrite, no ETA countdown. The fetch itself still runs
+    // and merges its data; whether anything then REPAINTS is decided
+    // per-grid by the content gate in _onDomainUpdated. Before this, the
+    // chrome churned on every poll-driven fetch even when every grid
+    // diffed to "no change" — the screen was never actually steady. A
+    // grid whose data DID change still settles its pill via the gate
+    // (fresh after repaint, 'stale' here if the fetch itself failed).
+    const quietChrome = !demandRepaint && !isInitialLoad;
 
-    // ETA/countdown for this fetch specifically — called here (not just once
-    // from mountAllGrids) so it shows up for every real bundle fetch: the
-    // initial load, a Save submit, autosave's background refresh, or a
-    // filter change. Keyed on fetchTypes (not always the page-wide
-    // typesKey) so a scoped fetch's naturally-faster duration tracks its
-    // own history bucket instead of corrupting the full-page one.
-    this.beginLoadTiming(fetchTypes);
+    // Handle for THIS call's own load record (see PageStatus.beginLoadTiming/
+    // completeLoadTiming) — a second overlapping fetch for the same
+    // (path, types) key (e.g. a control reopened again before its first
+    // reopen's fetch resolved) begins its own record and supersedes this
+    // one; passing this handle back into completeLoadTiming() below lets it
+    // recognize a stale completion instead of finalizing whichever load
+    // happens to currently occupy that key.
+    let loadHandle;
+
+    if (!quietChrome) {
+      // "Syncing" for a re-open/explicit demand-repaint fetch — it reads as
+      // catching this one control up, not the generic first-load "fetching"
+      // (see PageStatus.setState's label param). The initial page load keeps
+      // the plain word since there's nothing to "sync" yet.
+      const fetchingLabel = isInitialLoad ? undefined : { label: 'Syncing' };
+      this._bundleGrids.forEach(g => {
+        if (!g.pageStatusId || !fetchSet.has(g.name)) return;
+        if (!isInitialLoad && g.reactsToScopedRefresh === false) return;
+        PageStatus.setState(g.pageStatusId, 'fetching', fetchingLabel);
+      });
+      PageStatus.setTrigger(info?.name ?? 'page load');
+      loadHandle = this.beginLoadTiming(fetchTypes);
+    }
 
     this._domainInflight = (async () => {
       try {
@@ -638,10 +677,29 @@ export default class ScoopAPI {
         // location/use/batch/closeout/inventory_change exactly as they were.
         this._domain = { ...(this._domain ?? {}), ...incoming };
         this._lastBundleCacheStatus = bundle?._cache ?? null;
-        this.completeLoadTiming(fetchTypes, this._lastBundleCacheStatus);
+        this.completeLoadTiming(fetchTypes, this._lastBundleCacheStatus, loadHandle);
 
         document.dispatchEvent(new CustomEvent("ts:domain:updated", {
-          detail: { types: fetchTypes, ts: Date.now() }
+          detail: {
+            types: fetchTypes,
+            ts: Date.now(),
+            // CONTROL-REFRESH.md's repaint contract (Gus, 2026-09-01): a
+            // refresh whose data doesn't differ from what's already painted
+            // must not repaint anything. `demandRepaint` marks the explicit
+            // request paths (per-control button, dock Refresh-all,
+            // click-open) which bypass the per-grid diff gate; every other
+            // refresh — including the background poll's — arrives
+            // demandRepaint:false and each grid decides via its own
+            // content signature whether anything it SHOWS actually changed.
+            demandRepaint: demandRepaint === true,
+            // Attributed trigger (info.name) so a grid can tell its OWN
+            // actions (its filter change, its save — both pass its name)
+            // from anyone else's: server-filter grids keep the destructive
+            // rebuild for their own filter changes but must patch in place
+            // for background refreshes (steady-screen contract — a
+            // background refresh never rips rows off the screen).
+            info: info?.name ?? null,
+          }
         }));
         /*
         if(toast) toast.update(toast, {
@@ -685,6 +743,169 @@ export default class ScoopAPI {
   // force-reload out from under a mid-edit field.
   hasUnsavedEdits() {
     return this._bundleGrids.some(g => g.dirtySet?.size || g._autosaving);
+  }
+
+  // ── Background data-freshness poll (CONTROL-REFRESH.md §3) ────────────────
+  //
+  // The client historically fetched only on mount and after its own writes —
+  // a tab showed edits from another staff member/another tab only after a
+  // manual reload. This watcher closes that gap with a version-gated poll:
+  // every tick hits the cheap /version endpoint and compares the server's
+  // global bundle-cache version (scoop_cache_version, includes/_cache.php)
+  // against the last value seen; only when it actually MOVED — and has since
+  // SETTLED, so a burst of related saves costs one refetch, not one per save —
+  // does it force a page-wide refreshPageDomain() through the existing
+  // ts:domain:updated → _onDomainUpdated repaint path (per-grid dirty/
+  // focused-cell guards already protect in-progress edits; see §3 step 5 of
+  // the plan for why the gate is per-grid, not a global hasUnsavedEdits()
+  // hold, which would let one idle dirty cell stall page-wide freshness).
+  //
+  // Cost model: a visible tab costs one few-hundred-byte GET per tick;
+  // hidden tabs (document.hidden) cost nothing at all — they skip polling
+  // and catch up on the next visibilitychange (or on a control re-open /
+  // refresh-button press, which fetch regardless). Failing polls back off
+  // exponentially so this watcher is never the load that tips a struggling
+  // host over; a success (or the tab becoming visible) resets immediately.
+  //
+  // Also folds in watchForStaleVersion's job (see that method): same
+  // endpoint, so its app.js-mtime comparison rides the same per-tick
+  // response instead of keeping a second 20-minute timer alive.
+  watchForDataChanges({
+    pollMs = 1000,
+    settleMs = 2500,
+    backoffCapMs = 30000,
+    staleVersionBaseline = null,
+  } = {}) {
+    this._dataVersion = null;        // last cache_version seen; null = never
+    this._dataVersionPending = null;      // version currently settling
+    this._dataVersionPendingSince = null; // when that version was first seen
+    this._pollBackoffN = 0;
+    this._staleVersionBaseline = staleVersionBaseline;
+
+    const tick = async () => {
+      // Hidden tab: no traffic at all. Catch-up happens via the
+      // visibilitychange listener below when she comes back.
+      if (document.hidden) return;
+
+      let r;
+      try {
+        r = await this.getJson(this.route("Version"));
+      } catch (err) {
+        // Exponential backoff: 1s→2s→4s… capped. Silent by design (console
+        // only) — the freshness system must never be the thing that makes
+        // a struggling host worse, and everything here works manually
+        // regardless.
+        this._pollBackoffN = Math.min(this._pollBackoffN + 1, backoffCapMs / pollMs);
+        console.error("watchForDataChanges: poll failed", err);
+        return;
+      }
+
+      this._pollBackoffN = 0; // success resets backoff immediately
+
+      // Ride-along: the stale-JS check's app.js-mtime comparison (semantics
+      // unchanged from the standalone watcher this consolidates — reload is
+      // still gated on no unsaved edits and still cache-busts the URL).
+      //
+      // String(...) on both sides: SCOOP.version (the baseline, set once at
+      // module load from app.js's inline SCOOP object) arrives as a STRING —
+      // wp_localize_script() (includes/enqueue.php) stringifies it — while
+      // this REST response's `version` field is a genuine JSON number. A
+      // bare !== compared a string to a number on every tick, which is
+      // ALWAYS true even when the file hasn't changed, so this eventually
+      // fired a reload every cycle once hasUnsavedEdits() stopped blocking
+      // it. Pre-existing bug (the original standalone watchForStaleVersion()
+      // below has the identical `current === baseline` mismatch) — invisible
+      // at that method's 20-minute check interval, but this poll's ~1s
+      // cadence turned it into a reload roughly every 20-24s in practice.
+      const currentAppVersion = r?.version;
+      if (
+        this._staleVersionBaseline
+        && currentAppVersion
+        && String(currentAppVersion) !== String(this._staleVersionBaseline)
+        && !this.hasUnsavedEdits()
+      ) {
+        const url = new URL(location.href);
+        url.searchParams.set('_ts', String(Date.now()));
+        location.href = url.toString();
+        return;
+      }
+
+      const current = r?.cache_version;
+      if (!current || typeof current !== "number") return;
+
+      // First successful observation: establish the baseline, fetch nothing.
+      // (The initial bundle has already loaded by now; a save landing inside
+      // this first second just produces one extra catch-up refetch below —
+      // correct, not harmful.)
+      if (this._dataVersion === null) {
+        this._dataVersion = current;
+        return;
+      }
+
+      if (current === this._dataVersion) {
+        // Settled back / nothing changed.
+        this._dataVersionPending = null;
+        this._dataVersionPendingSince = null;
+        return;
+      }
+
+      // Version moved. Wait for it to SETTLE — staff save in bursts (moving
+      // three tubs in a row = three cache busts), so the pending window
+      // RE-ARMS on every new value: the refetch fires settleMs after the
+      // LAST save of a burst, not the first. One burst → one cold bundle
+      // fetch per tab of the final state, at settleMs of added latency.
+      const now = Date.now();
+      if (current !== this._dataVersionPending) {
+        this._dataVersionPending = current;
+        this._dataVersionPendingSince = now;
+      }
+      if (now - this._dataVersionPendingSince < settleMs) return; // still settling
+
+      // Settled: refresh page-wide. NOT gated on a global hasUnsavedEdits()
+      // — one long-idle dirty cell shouldn't stall freshness everywhere; the
+      // per-grid guards inside _onDomainUpdated (dirtySet cells keep their
+      // values, focused groups defer their patch, FindIt skips dirty/open/
+      // focused cells) protect exactly the edit itself. refreshPageDomain's
+      // in-flight chaining (PARTIAL-REFRESH.md §6) guarantees this never
+      // overlaps a fetch already running.
+      this._dataVersion = current;
+      this._dataVersionPending = null;
+      this._dataVersionPendingSince = null;
+      this.refreshPageDomain({
+        force: true,
+        info: { name: "background poll" },
+      }).catch(() => {}); // its own catch already toasts; never let it reject this timer
+    };
+
+    // Self-scheduling setTimeout loop, not setInterval, so failing polls
+    // back off for real: delay = pollMs * 2^n capped at backoffCapMs; every
+    // success resets n to 0 (see tick's catch). The loop always re-arms,
+    // even if a tick throws something unexpected — a dead poll loop must
+    // never be a silent failure mode.
+    const schedule = () => {
+      const delay = Math.min(pollMs * (2 ** this._pollBackoffN), backoffCapMs);
+      setTimeout(async () => {
+        try {
+          await tick();
+        } catch (err) {
+          console.error("watchForDataChanges: tick error", err);
+        }
+        schedule();
+      }, delay);
+    };
+    schedule();
+
+    // When the tab comes back into view, check immediately rather than
+    // waiting out the current backoff delay — that's the catch-up path for
+    // the hidden-tab savings above (and the browser's own intensive
+    // throttling of hidden timers makes the immediate check the only
+    // reliable one). Also resets backoff: waking usually coincides with the
+    // network being back.
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) return;
+      this._pollBackoffN = 0;
+      tick();
+    });
   }
 
   // A tab left open across a deploy keeps running the old app.js forever —
@@ -1177,9 +1398,9 @@ export default class ScoopAPI {
     const analyticsFetches = analyticsEntries.map(async ({ dom, type, model, grid }) => {
       const key = `${window.location.pathname}::${type}`;
       PageStatus.setState(dom.id, 'fetching');
-      PageStatus.beginLoadTiming(key, undefined, [dom.id]);
+      const loadHandle = PageStatus.beginLoadTiming(key, undefined, [dom.id]);
       await model.fetch();
-      PageStatus.completeLoadTiming(key, model.lastCacheStatus);
+      PageStatus.completeLoadTiming(key, model.lastCacheStatus, loadHandle);
 
       grid.init(model);
 
