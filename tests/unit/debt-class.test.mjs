@@ -2,9 +2,21 @@
 ///////////////////////////////////
 // tests/unit/debt-class.test.mjs — unit tests for the DebtGridModel CLASS
 // (assets/models/debt-grid-model.js): column shape, cell objects, grouping/
-// ordering, badges, and both client-side filters. Ported from the in-box
-// node harness that proved the Debt view when it shipped
-// (worktree-tub-moving). Run: node tests/unit/debt-class.test.mjs
+// ordering, badges, and the one remaining client-side filter (location).
+// Run: node tests/unit/debt-class.test.mjs
+//
+// Rewritten 2026-08-31 for the 1-to-1-with-a-flavor_request redesign: the
+// domain fixture now carries `flavor_request` posts (what actually drives
+// rows) instead of `slot` designations (which drove rows before — slots
+// still exist server-side, but only to sync flavor_request.wanted; this
+// class no longer reads this.domain.slot at all). `demand`/Wanted values
+// below are chosen to match what the OLD slot fixture implied, so this
+// file's story ("Alderwood wants Vanilla x2", etc.) reads the same as
+// before — only the wiring underneath changed.
+//
+// Also rewritten same day to drop the "Hide covered" checkbox filter
+// (removed from the model — usage pattern still unclear, may come back):
+// every destination's every row shows now, no filtering besides location.
 //
 // Zero-dependency node ESM. The stub block below MUST run before the model
 // import: BaseGridModel reads window.SCOOP (detail-link gating, canPost),
@@ -30,7 +42,9 @@ import { eq, section, finish } from './helpers.mjs';
 
 const FOH = 1863, BOH = 1877;
 
-// Fixture world — one row per status, one group per badge shape:
+// Fixture world — one row per status, one group per badge shape. Same
+// story as before the redesign, but demand now comes from flavor_request
+// posts (wanted) instead of a slot scan:
 //   Alderwood  Vanilla   fillable  (Opened tub on hand, Cedar Park fresh tub sendable)
 //   Alderwood  Chocolate unfillable (Chocolate exists only as BOH + sub-whole tubs elsewhere)
 //   Bothell    Vanilla   pending   (nothing local; Cedar Park tub earmarked to it)
@@ -55,14 +69,13 @@ const domain = {
     { id: FOH, _title: 'Front of House' },
     { id: BOH, _title: 'Back of House' },
   ],
-  slot: [
-    { id: 's1', location: 1010, current_flavor: 600 },    // Alderwood wants Vanilla x2
-    { id: 's2', location: 1010, immediate_flavor: 600 },  // (current + immediate)
-    { id: 's3', location: 1010, current_flavor: 700 },    // ...and Chocolate
-    { id: 's4', location: 1020, current_flavor: 600 },    // Bothell wants Vanilla
-    { id: 's10', location: 1020, current_flavor: 900 },   // ...and Pistachio
-    { id: 's9', location: 1030, current_flavor: 800 },    // Cedar Park wants Strawberry
-    { id: 's7', location: 1040, current_flavor: 700 },    // Darrington wants Chocolate
+  flavor_request: [
+    { id: 1, location: 1010, flavor: 600, wanted: 2 }, // Alderwood wants Vanilla x2 (was current+immediate)
+    { id: 2, location: 1010, flavor: 700, wanted: 1 }, // ...and Chocolate
+    { id: 3, location: 1020, flavor: 600, wanted: 1 }, // Bothell wants Vanilla
+    { id: 4, location: 1020, flavor: 900, wanted: 1 }, // ...and Pistachio
+    { id: 5, location: 1030, flavor: 800, wanted: 1 }, // Cedar Park wants Strawberry
+    { id: 6, location: 1040, flavor: 700, wanted: 1 }, // Darrington wants Chocolate
   ],
   tub: [
     { id: 't1', flavor: 600, use: FOH, state: 'Opened',  amount: 1,   location: 1010, moving_to: 0 },    // on hand @1010 (Opened counts)
@@ -115,12 +128,10 @@ section('construction & columns');
 // ---- row shape: numeric ids, flavor cells, demand cells ---------------------
 section('row shape');
 {
-  const m = fresh();
-  m.setFilterValue('hide_covered', 'false');
-  m.buildRows(); // see ALL six pairs (covered included) for the shape checks
+  const m = fresh(); // no filter left besides location — all six pairs show by default
 
   const byDest = rowsByDest(m);
-  eq(m.rows.length, 6, 'six demanded pairs (one per slot designation)');
+  eq(m.rows.length, 6, 'six flavor_request posts = six rows');
   const r600 = byDest.get(1010).find(r => r.flavor.id === 600);
   eq(r600.id, debtRowId(1010, 600), 'row id is the synthetic numeric pair id');
   eq(Number.isInteger(r600.id), true, 'row id is an INTEGER (List Number()s ids — a string key would NaN-drop the edit)');
@@ -134,13 +145,14 @@ section('row shape');
   eq(r600.demand, {
     id: r600.id, rowId: r600.id, colKey: 'demand',
     display: '2', value: 2, write: true, type: 'number', min: 0, max: 99, step: 1,
-  }, 'Wanted cell is a full TextIt object — colKey REQUIRED (autosave input name), min/max/step 0..99 by 1');
+  }, 'Wanted cell is a full TextIt object — colKey REQUIRED (autosave input name), min/max/step 0..99 by 1, value straight from the request\'s wanted field');
 
   eq(r600.on_hand, 1, 'on_hand: Opened tub at destination counts');
   eq(r600.inbound, 0, 'inbound: none for Alderwood');
-  eq(r600.gap, 1, 'gap = demand 2 - on_hand 1');
+  eq(r600.claimed, 0, 'no tub\'s flavor_request field claims this request — the fixture never sets one');
+  eq(r600.gap, 2, 'Owed = wanted 2 - claimed 0 (on_hand/inbound do NOT factor into Owed anymore)');
   eq(r600.available, 1, 'available: Cedar Park\'s fresh FOH Vanilla is sendable (Opened/earmarked/dead excluded)');
-  eq(r600.status, 'fillable', 'gap > 0 with stock elsewhere -> fillable');
+  eq(r600.status, 'fillable', 'status still reads the legacy on_hand/inbound gap vs available -> fillable');
 
   const a700 = byDest.get(1010).find(r => r.flavor.id === 700);
   eq(a700.available, 0, 'BOH + sub-whole Chocolate tubs are NOT available');
@@ -179,15 +191,23 @@ section('Wanted writeability vs server metadata');
 // ---- grouping: owed desc, then label ---------------------------------------
 section('group order & badges');
 {
-  const m = fresh(); // default hide_covered=on
-  eq(m.rowGroups.map(g => g.label), ['Alderwood', 'Darrington', 'Bothell'],
-    'groups ordered by total owed desc (2 / 1 / 0); Cedar Park (only covered rows) hidden');
-  eq(m.rowGroups.map(g => g.groupId), [1010, 1040, 1020], 'group ids are the destinations');
+  // No "Hide covered" filter anymore (removed 2026-08-31 — usage pattern
+  // still unclear; may come back) — every destination's every row always
+  // shows, including fully-covered ones. Owed no longer factors in
+  // on_hand/inbound either, and since no test tub claims any request here,
+  // Owed == Wanted for every row: Alderwood 2+1=3, Bothell 1+1=2 (Vanilla
+  // pending + Pistachio covered, both unclaimed), Cedar Park 1, Darrington
+  // 1. Cedar Park/Darrington's tie at 1 breaks alphabetically.
+  const m = fresh();
+  eq(m.rowGroups.map(g => g.label), ['Alderwood', 'Bothell', 'Cedar Park', 'Darrington'],
+    'groups ordered by total owed desc (3 / 2 / 1 / 1, tie broken by label) — all four destinations visible, none hidden');
+  eq(m.rowGroups.map(g => g.groupId), [1010, 1020, 1030, 1040], 'group ids are the destinations');
   eq(m.rowGroups[0].detailEntity, 'location', 'group headers detail-link to their location');
   eq(m.rowGroups[0].groupType, 'location', 'groupType location');
 
-  eq(m.rowGroups[0].badges, [{ key: 'debt', text: '2 owed · 1 fillable · 1 need churning' }], 'Alderwood badge: owed + fillable + churn queue');
-  eq(m.rowGroups.find(g => g.groupId === 1020).badges, [{ key: 'debt', text: '1 inbound' }], 'Bothell badge: inbound (owed 0)');
+  eq(m.rowGroups[0].badges, [{ key: 'debt', text: '3 owed · 1 fillable · 1 need churning' }], 'Alderwood badge: owed (2 Vanilla + 1 Chocolate, neither claimed) + fillable + churn queue');
+  eq(m.rowGroups.find(g => g.groupId === 1020).badges, [{ key: 'debt', text: '2 owed' }], 'Bothell badge: both rows unclaimed (Vanilla pending, Pistachio covered) — neither fillable nor unfillable, so just "2 owed"');
+  eq(m.rowGroups.find(g => g.groupId === 1030).badges, [{ key: 'debt', text: '1 owed' }], 'Cedar Park badge: Strawberry is covered by on-hand stock but still shows Owed 1 (unclaimed) — the two numbers are independent now');
   eq(m.rowGroups.find(g => g.groupId === 1040).badges, [{ key: 'debt', text: '1 owed · 1 need churning' }], 'Darrington badge: unfillable only');
 }
 
@@ -199,44 +219,23 @@ section('row order within a group');
 
   eq(groups.get(1010).map(r => r.status), ['fillable', 'unfillable'], 'Alderwood: fillable before unfillable (work queue order)');
   eq(groups.get(1040).map(r => r.status), ['unfillable'], 'Darrington: single unfillable row');
-  eq(groups.get(1020).map(r => r.status), ['pending'], 'Bothell (default view): pending only');
+  eq(groups.get(1020).map(r => r.status), ['pending', 'covered'], 'Bothell: pending before covered (status rank order, both rows visible now)');
+  eq(groups.get(1030).map(r => r.status), ['covered'], 'Cedar Park: single covered row, visible without a filter to hide it');
 
   // Break the rank tie by demand desc: give Alderwood two stockless flavors —
   // Chocolate x2 (demand 2) and Mint x1 (demand 1) — both unfillable (neither
   // has any sendable tub anywhere), so Chocolate (owed 2) sorts first.
   const m2 = new DebtGridModel('Debt', {
     ...domain,
-    slot: [
-      ...domain.slot.filter(s => s.location !== 1010),
-      { id: 's3', location: 1010, current_flavor: 700 },
-      { id: 's8', location: 1010, immediate_flavor: 700 },
-      { id: 's11', location: 1010, current_flavor: 950 },
+    flavor_request: [
+      ...domain.flavor_request.filter(r => r.location !== 1010),
+      { id: 101, location: 1010, flavor: 700, wanted: 2 },
+      { id: 102, location: 1010, flavor: 950, wanted: 1 },
     ],
   });
   const g2 = rowsByDest(m2).get(1010);
   eq(g2.map(r => r.status), ['unfillable', 'unfillable'], 'both Alderwood rows unfillable (no sendable Chocolate OR Mint anywhere)');
   eq(g2.map(r => r.flavor.display), ['Chocolate', 'Mint'], 'status rank tie broken by demand desc (Chocolate owes 2, Mint 1)');
-}
-
-// ---- hide_covered filter ------------------------------------------------------
-section('hide_covered filter');
-{
-  const m = fresh();
-  eq(m.getFilterValue('hide_covered'), 'true', 'hide_covered defaults ON');
-  eq(m.rows.some(r => r.status === 'covered'), false, 'covered rows hidden by default');
-  eq(m.rowGroups.map(g => g.label), ['Alderwood', 'Darrington', 'Bothell'], 'Cedar Park group (only covered rows) absent while hidden');
-
-  m.setFilterValue('hide_covered', 'false');
-  eq(m.getFilterValue('hide_covered'), 'false', 'setFilterValue stores the new value');
-  m.buildRows(); // the GUI re-queries rows after a filter change; the model does not self-rebuild
-  eq(m.rows.length, 6, 'covered rows shown when the filter is off');
-  eq(m.rowGroups.map(g => g.label), ['Alderwood', 'Darrington', 'Bothell', 'Cedar Park'], 'Cedar Park appears (owed 0, label tiebreak after Bothell)');
-  eq(m.rowGroups[3].badges, [{ key: 'debt', text: 'covered' }], 'Cedar Park badge: "covered"');
-  eq(rowsByDest(m).get(1020).map(r => r.status), ['pending', 'covered'], 'Bothell: pending before covered (status rank extends to the tail)');
-
-  m.setFilterValue('hide_covered', 'true');
-  m.buildRows();
-  eq(m.rows.some(r => r.status === 'covered'), false, 'filter back on hides covered again');
 }
 
 // ---- location filter (base-class persistence via HashState) -----------------
@@ -246,7 +245,7 @@ section('location filter narrows destinations, 0 = all');
 
   const m = fresh();
   eq(m.getFilterValue('location'), 0, 'location filter value starts at 0 = all');
-  eq(m.rowGroups.length, 3, 'three destinations with visible rows at 0 (Cedar Park covered-hidden)');
+  eq(m.rowGroups.length, 4, 'all four destinations visible at 0 (no covered-hiding anymore)');
 
   m.setFilterValue('location', 1010);
   eq(m.location, 1010, 'setFilterValue(location) rides the base class');
@@ -261,7 +260,7 @@ section('location filter narrows destinations, 0 = all');
 
   m.setFilterValue('location', 0);
   m.buildRows();
-  eq(m.rowGroups.length, 3, 'back to 0 = all destinations');
+  eq(m.rowGroups.length, 4, 'back to 0 = all destinations');
   const cleared = fresh();
   eq(cleared.location, 0, '0 persists too (hash stored, value 0 = all)');
 

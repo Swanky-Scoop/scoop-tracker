@@ -5,57 +5,54 @@
 //   Moving  = supply-side claim list. Rows are tubs that HAVE a moving_to
 //             earmark (only tubs that exist can appear — a plan with zero
 //             tubs is invisible there by construction).
-//   Debt    = demand-side arithmetic. Rows are (destination, flavor) pairs
-//             derived from SLOT designations — current_flavor/immediate_flavor
-//             at a location imply that location's plan wants tubs of that
-//             flavor, whether or not any such tub exists yet. This is what
-//             makes "flavor debt" visible: Woodinville is where every flavor
-//             is created, so a Mountlake Terrace slot scheduled for a flavor
-//             with no Mountlake Terrace tub is a tub owed to Mountlake
-//             Terrace — even when the tub count anywhere is zero.
+//   Debt    = demand-side board. Rows are now 1-to-1 with a real,
+//             PERSISTED flavor_request post (2026-08-31 redesign) — no
+//             longer independently re-derived from a slot scan on every
+//             render. Server-side (scoop_sync_flavor_request(),
+//             includes/hooks/cabinet-slot.php) auto-creates a
+//             flavor_request the moment a slot names a flavor
+//             (current_flavor/immediate_flavor) with no local stock, keeps
+//             its 'wanted' count synced to slot demand, and tops up its
+//             claimed tubs from Woodinville front-of-house/Freezing stock —
+//             this file only reads the result, it doesn't compute demand
+//             or run the claim search itself anymore.
 //
-// Purely derived — reads slot/tub/use/location straight off the bundle, has
-// no write route of its own and nothing to persist (see the planning
-// conversation: a persisted move-request schema was compared against this
-// and parked; the slot designation IS the plan, moving_to is only a claim
-// against it). Every number here recomputes from live data on every
-// buildRows(), so it can never go stale — the flip side is it can only see
-// demand the slots actually express.
-//
-// The arithmetic, per (destination, flavor):
-//   demand   — how many designations at this destination name this flavor
-//              (each slot's current_flavor or immediate_flavor = 1 tub
-//              wanted; next_flavor deliberately excluded, see the planning
-//              conversation — the column is rarely used and the auto-earmark
-//              hook already excludes it).
+// The arithmetic, per row (a flavor_request post):
+//   demand   — req.wanted, straight off the persisted field. No slot-scan
+//              or override-merge here anymore — that reconciliation
+//              (slots are the floor, a human's Wanted edit can only raise
+//              it) now happens server-side, once, at write time.
+//   claimed  — count of tubs whose OWN forward `flavor_request` field
+//              points at this request's real post id. Deliberately reads
+//              tub.flavor_request, never flavor_request.tubs' reverse
+//              list — same "trust the forward field" rule slot.tub/tub.slot
+//              taught the hard way (see change-tub.md).
+//   gap      — max(0, demand - claimed): the "Owed" column. This is a
+//              genuinely different number from on_hand/inbound below — it
+//              answers "how many tubs are formally committed to this
+//              request," not "is stock physically here or moving."
 //   on_hand  — FOH whole tubs (amount >= WHOLE_TUB_THRESHOLD, same 0.8 as
 //              scoop_find_whole_tubs() in includes/hooks/closeout.php and
 //              CabinetWorkflowGridModel's WHOLE_TUB_THRESHOLD) physically AT
 //              the destination, state not Emptied/!Lost. Opened counts as
-//              on hand — it is physically there and in service; the moment
-//              it's emptied, gap re-opens on the next recompute (derived
-//              views self-correct, that's the point). This is a deliberate
-//              divergence from remainingSummary()'s pipeline-only reading —
-//              that answers "can I promote a FRESH tub into a slot from
-//              stock", this answers "does the location have enough of the
-//              flavor for its plan".
+//              on hand — it is physically there and in service.
 //   inbound  — whole tubs with moving_to = destination (state not
-//              Emptied/!Lost): claims already made against this debt, from
-//              any source location.
-//   gap      — max(0, demand - on_hand - inbound): still-owed tubs.
+//              Emptied/!Lost) — a broader signal than "claimed by this
+//              request" (moving_to can be set by the older, wider
+//              scoop_mark_tub_moving_if_needed() pool too).
 //   available — FOH whole PIPELINE tubs of the flavor located anywhere ELSE,
 //              not already earmarked elsewhere (moving_to falsy): the pool
 //              that could actually be sent. Opened excluded — an open tub
 //              is in service where it sits. This is CabinetWorkflowGridModel
 //              promotablePool()'s eligibility, aggregated across locations
 //              instead of per-slot.
-//   status   — fillable (gap > 0, available > 0): sendable now.
-//              unfillable (gap > 0, available = 0): the churn queue —
-//              Woodinville needs to make this flavor before any tub can move.
-//              pending (gap = 0, inbound > 0): covered by tubs already
-//              earmarked/arriving.
-//              covered (gap = 0, no inbound): the plan is satisfied by local
-//              stock alone.
+//   status   — still driven by on_hand/inbound vs available (UNCHANGED
+//              formula, kept deliberately separate from the new Owed
+//              number — see gap's own note above): fillable (on_hand+inbound
+//              short, but stock exists elsewhere), unfillable (short, and
+//              nothing sendable — the churn queue), pending (covered on
+//              paper by an inbound tub), covered (satisfied by local stock
+//              alone).
 //
 // "Front of House" is resolved id-first (FRONT_OF_HOUSE_USE_ID, matching
 // CabinetWorkflowGridModel's constant and the PHP hook's
@@ -117,45 +114,27 @@ export function isFrontOfHouseUse(useId, useTitle) {
   return !id || normalized === 'front of house';
 }
 
-// Pure (destination, flavor) arithmetic — exported so it can be exercised
-// directly (same-box node harness) without instantiating the grid model or
-// its BaseGridModel/DOM dependencies. Input rows are raw bundle rows:
-// slots need location/current_flavor/immediate_flavor; tubs need
-// flavor/state/use/amount/location/moving_to.
-export function computeDebtRows({ slots = [], tubs = [], requests = [], useTitleOf = () => '' } = {}) {
-  // 1) Demand: every current/immediate designation names a (location, flavor)
-  //    pair that wants a tub.
-  const demand = new Map(); // "locId:flavorId" -> count
-  for (const slot of Array.isArray(slots) ? slots : []) {
-    const loc = Number(slot?.location ?? 0);
-    if (!loc) continue;
-    for (const f of ['current_flavor', 'immediate_flavor']) {
-      const flavorId = Number(slot?.[f] ?? 0);
-      if (!flavorId) continue;
-      const key = `${loc}:${flavorId}`;
-      demand.set(key, (demand.get(key) ?? 0) + 1);
-    }
-  }
-
-  // 1b) Persisted demand overrides (flavor_request, written by this grid's
-  //     editable Wanted column through /debt-requests): a request STATES how
-  //     many are wanted outright — replaces, never adds to, the slot-implied
-  //     count for its pair, so planning can ask for more tubs than slots
-  //     currently imply without double-counting the slots it already
-  //     reflects. Slots remain the floor: effective = max(slot-implied,
-  //     requested).
-  for (const req of Array.isArray(requests) ? requests : []) {
-    const loc = Number(req?.location ?? 0);
-    const fid = Number(req?.flavor ?? 0);
-    const wanted = Number(req?.wanted ?? 0);
-    if (!loc || !fid) continue;
-    const key = `${loc}:${fid}`;
-    demand.set(key, Math.max(demand.get(key) ?? 0, wanted));
+// Pure per-request arithmetic — exported so it can be exercised directly
+// (same-box node harness) without instantiating the grid model or its
+// BaseGridModel/DOM dependencies. Input rows are raw bundle rows: requests
+// need id/location/flavor/wanted; tubs need
+// flavor/state/use/amount/location/moving_to/flavor_request.
+export function computeDebtRows({ tubs = [], requests = [], useTitleOf = () => '' } = {}) {
+  // 1) Claims: how many tubs' own forward flavor_request field names each
+  //    request. See this file's header note on why the forward field, not
+  //    flavor_request.tubs' reverse list.
+  const claimed = new Map(); // requestId -> count
+  for (const tub of Array.isArray(tubs) ? tubs : []) {
+    const reqId = Number(tub?.flavor_request ?? 0);
+    if (!reqId) continue;
+    claimed.set(reqId, (claimed.get(reqId) ?? 0) + 1);
   }
 
   // 2) Supply: bucket every non-dead tub once — on-hand (at dest, any
   //    non-dead state), inbound (moving_to = dest), available (elsewhere,
-  //    pipeline, unearmarked). One pass, then join against demand.
+  //    pipeline, unearmarked). Unchanged from before this redesign; still
+  //    joined per (destination, flavor) below, independent of the claim
+  //    count above.
   const onHand  = new Map(); // "locId:flavorId" -> count
   const inbound = new Map(); // "locId:flavorId" -> count
   const avail   = new Map(); // "flavorId" -> count (source-agnostic pool)
@@ -196,33 +175,45 @@ export function computeDebtRows({ slots = [], tubs = [], requests = [], useTitle
     }
   }
 
-  // 3) Join: one row per demanded (destination, flavor) — demand is the
-  //    driver; a pair with demand but zero tubs anywhere STILL gets a row
-  //    (the flavor-debt case MovingGridModel structurally cannot show).
+  // 3) One row per flavor_request post — row EXISTENCE is 1-to-1 with a
+  //    real, persisted request now (server auto-creates one; see this
+  //    file's header note), not re-derived from a slot scan here.
   const rows = [];
-  for (const [key, dem] of demand.entries()) {
-    const [locStr, flavorStr] = key.split(':');
-    const destId = Number(locStr), flavorId = Number(flavorStr);
+  for (const req of Array.isArray(requests) ? requests : []) {
+    const reqId    = Number(req?.id ?? 0);
+    const destId   = Number(req?.location ?? 0);
+    const flavorId = Number(req?.flavor ?? 0);
+    if (!reqId || !destId || !flavorId) continue;
+
+    const key      = `${destId}:${flavorId}`;
+    const demand   = Number(req?.wanted ?? 0);
+    const claimedN = claimed.get(reqId) ?? 0;
+    const gap      = Math.max(0, demand - claimedN);
 
     const onHandN  = onHand.get(key)  ?? 0;
     const inboundN = inbound.get(key) ?? 0;
-    const gap      = Math.max(0, dem - onHandN - inboundN);
 
     const perLoc  = availAt.get(flavorId) ?? new Map();
     const availN  = [...perLoc.entries()]
       .filter(([src]) => Number(src) !== destId)
       .reduce((sum, [, n]) => sum + n, 0);
 
+    // Status deliberately still reads the on_hand/inbound-derived gap, NOT
+    // the new claim-based Owed number above — see this file's header note
+    // on why the two are kept independent.
+    const legacyGap = Math.max(0, demand - onHandN - inboundN);
     let status;
-    if (gap > 0)      status = availN > 0 ? 'fillable' : 'unfillable';
+    if (legacyGap > 0)     status = availN > 0 ? 'fillable' : 'unfillable';
     else if (inboundN > 0) status = 'pending';
     else                   status = 'covered';
 
     rows.push({
       id: debtRowId(destId, flavorId),
+      requestId: reqId,
       destination: destId,
       flavor: flavorId,
-      demand: dem,
+      demand,
+      claimed: claimedN,
       on_hand: onHandN,
       inbound: inboundN,
       gap,
@@ -267,11 +258,6 @@ export default class DebtGridModel extends BaseGridModel {
     // in scoop_routes_config() so it has no config path of its own.
     this.writeRoute = 'DebtRequests';
 
-    // Non-location filter values (see setFilterValue/getFilterValue below —
-    // location itself rides the base class's this.location + HashState
-    // persistence, same as every location-scoped model).
-    this.filterValues = { hide_covered: 'true' };
-
     this._build();
     if (domain) this.setDomain(domain);
   }
@@ -279,12 +265,14 @@ export default class DebtGridModel extends BaseGridModel {
   buildCols() {
     this.columns = [
       { key: 'flavor',    label: 'Flavor',        type: 'string', titleMap: 'flavor' },
-      // Editable demand override — the ONE writeable cell on this board.
-      // Writes upsert a flavor_request row via /debt-requests (see the
-      // route comment in includes/_routes.php): a positive number replaces
-      // the pair's slot-implied demand (max wins), 0 deletes the override
-      // so slots rule again. TextIt control, same hand-authored convention
-      // as any model-authored number column.
+      // The ONE writeable cell on this board. Writes upsert the request's
+      // 'wanted' field via /debt-requests (see the route comment in
+      // includes/_routes.php) and top up its claimed tubs to match
+      // (scoop_topup_flavor_request_claims(), includes/rest.php). Slots are
+      // still the floor server-side — a later slot save re-raises 'wanted'
+      // back up to slot-implied demand even after a human lowers it — but
+      // that reconciliation happens in PHP now, not here. TextIt control,
+      // same hand-authored convention as any model-authored number column.
       { key: 'demand',    label: 'Wanted',        type: 'number', control: 'text', write: true },
       { key: 'on_hand',   label: 'On hand',       type: 'number' },
       { key: 'inbound',   label: 'Inbound',       type: 'number' },
@@ -298,35 +286,13 @@ export default class DebtGridModel extends BaseGridModel {
   }
 
   // Narrow the board to one destination (client-side — the bundle already
-  // carries every location's slots/tubs). 0 = all destinations.
+  // carries every location's slots/tubs). 0 = all destinations. No other
+  // filter right now — a "Hide covered" checkbox lived here before
+  // 2026-08-31 but was removed (usage pattern still unclear; may come back
+  // once it is) — getFilterValue/setFilterValue need no override for just
+  // this one filter, the base class already handles 'location' on its own.
   getFilterDefs() {
-    return [
-      this._locationFilterDef('Destination'),
-      {
-        key: 'hide_covered',
-        label: 'Hide covered',
-        type: 'checkbox',
-        mode: 'client',
-        default: 'true',
-        group: 'columns',
-        groupLabel: 'Rows',
-      },
-    ];
-  }
-
-  // Location rides the base class (this.location via getFilterValue —
-  // 0 = all destinations, HashState-persisted per grid name, same as every
-  // location-scoped model). Everything else rides this.filterValues, the
-  // ItemPivot pattern.
-  getFilterValue(key) {
-    if (key === 'location') return super.getFilterValue(key);
-    return this.filterValues?.[key] ?? 'true';
-  }
-
-  setFilterValue(key, value) {
-    if (key === 'location') return super.setFilterValue(key, value);
-    if (!key) return;
-    this.filterValues[key] = String(value ?? 'all');
+    return [this._locationFilterDef('Destination')];
   }
 
   buildRows() {
@@ -336,7 +302,6 @@ export default class DebtGridModel extends BaseGridModel {
     const useTitleById = new Map(useRows.map(u => [Number(u.id), u._title || u.title?.rendered || '']));
 
     let items = computeDebtRows({
-      slots: Array.isArray(this.domain.slot) ? this.domain.slot : [],
       tubs:  Array.isArray(this.domain.tub)  ? this.domain.tub  : [],
       requests: Array.isArray(this.domain.flavor_request) ? this.domain.flavor_request : [],
       useTitleOf: (id) => useTitleById.get(Number(id)) ?? '',
@@ -346,9 +311,6 @@ export default class DebtGridModel extends BaseGridModel {
     // slots/tubs, so nothing here changes what gets fetched.
     if (Number(this.location) > 0) {
       items = items.filter(item => Number(item.destination) === Number(this.location));
-    }
-    if (this.getFilterValue('hide_covered') === 'true') {
-      items = items.filter(item => item.status !== 'covered');
     }
 
     // Group by destination; sort groups by total owed desc, then label —
@@ -418,9 +380,11 @@ export default class DebtGridModel extends BaseGridModel {
         };
         row.on_hand   = item.on_hand;
         row.inbound   = item.inbound;
+        row.claimed   = item.claimed;
         row.gap       = item.gap;
         row.available = item.available;
         row.status    = item.status;
+        row.requestId = item.requestId;
       },
       collapsed: false,
       groupType: 'location',

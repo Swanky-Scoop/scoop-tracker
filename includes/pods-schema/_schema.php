@@ -1583,6 +1583,58 @@ Other',
         'required_help_boolean' => '0',
         'unique' => '0',
       ),
+      // Additive alongside moving_to (2026-08-31 design conversation) —
+      // not a replacement yet. tubs[0] is the committed tub for this
+      // (location, flavor) demand: the one that goes into whichever slot
+      // caused the demand, and the same one moving_to earmarks if it has
+      // to relocate first. Reverse side of tub.flavor_request — like
+      // slot.tub/tub.slot before it, the bidirectional pairing must be
+      // configured by hand in Pods Admin per environment (Schema Sync
+      // strips sister_id by design, see the top-of-file note above). Server
+      // code only ever WRITES the forward tub.flavor_request field
+      // (scoop_mark_tub_moving_if_needed(), includes/hooks/cabinet-slot.php)
+      // and never reads this list directly, so the claim stays correct
+      // even before that pairing is set up — same lesson learned the hard
+      // way from slot.tub returning stale/zero on one environment (see
+      // change-tub.md's "row.openTub stopped trusting slot.tub" section).
+      'tubs' =>
+      array (
+        'object_type' => 'field',
+        'object_storage_type' => 'post_type',
+        'name' => 'tubs',
+        'group' => ['name' => 'more_fields', 'pod' => 'flavor_request'],
+        'label' => 'Claimed tubs',
+        'description' => 'The specific tub(s) committed to fulfilling this demand, oldest/next-up first. Populated by scoop_mark_tub_moving_if_needed() alongside moving_to. Reverse side of tub.flavor_request — do not trust this list directly in new code; read tub.flavor_request instead (see field description there).',
+        'type' => 'pick',
+        'pick_object' => 'post_type',
+        'pick_val' => 'tub',
+        'pick_format_type' => 'multi',
+        'pick_format_single' => 'dropdown',
+        'pick_format_multi' => 'autocomplete',
+        'pick_display_format_multi' => 'custom',
+        'pick_display_format_separator' => ', ',
+        'pick_allow_add_new' => '0',
+        'pick_taggable' => '0',
+        'pick_show_icon' => '1',
+        'pick_show_edit_link' => '1',
+        'pick_show_view_link' => '1',
+        'pick_limit' => '0',
+        'pick_user_role' => 'Administrator',
+        'pick_sync_taxonomy' => '0',
+        'pick_sync_taxonomy_hide_taxonomy_ui' => '0',
+        'pick_post_status' => 'publish',
+        'pick_post_author' => '0',
+        'default_evaluate_tags' => '0',
+        'default_empty_fields' => '0',
+        'roles_allowed' => 'administrator',
+        'enable_conditional_logic' => '0',
+        'conditional_logic_save_value' => '0',
+        'rest_pick_response' => 'array',
+        'rest_pick_depth' => '1',
+        'required' => '0',
+        'required_help_boolean' => '0',
+        'unique' => '0',
+      ),
     ),
   ),
   'tub' =>
@@ -1600,6 +1652,49 @@ Other',
         'type' => 'pick',
         'pick_object' => 'post_type',
         'pick_val' => 'location',
+        'pick_format_type' => 'single',
+        'pick_format_single' => 'dropdown',
+        'pick_format_multi' => 'autocomplete',
+        'pick_display_format_multi' => 'custom',
+        'pick_display_format_separator' => ', ',
+        'pick_allow_add_new' => '0',
+        'pick_taggable' => '0',
+        'pick_show_icon' => '1',
+        'pick_show_edit_link' => '1',
+        'pick_show_view_link' => '1',
+        'pick_limit' => '0',
+        'pick_user_role' => 'Administrator',
+        'pick_sync_taxonomy' => '0',
+        'pick_sync_taxonomy_hide_taxonomy_ui' => '0',
+        'pick_post_status' => 'publish',
+        'pick_post_author' => '0',
+        'default_evaluate_tags' => '0',
+        'default_empty_fields' => '0',
+        'roles_allowed' => 'administrator',
+        'enable_conditional_logic' => '0',
+        'conditional_logic_save_value' => '0',
+        'rest_pick_response' => 'array',
+        'rest_pick_depth' => '1',
+        'required' => '0',
+        'required_help_boolean' => '0',
+        'unique' => '0',
+      ),
+      // Forward side of the flavor_request.tubs bidirectional pair (see
+      // that field's own description for the sister-pairing caveat). Set
+      // alongside moving_to by scoop_mark_tub_moving_if_needed()
+      // (includes/hooks/cabinet-slot.php) — this is the field to read for
+      // "which demand claimed this tub," never flavor_request.tubs.
+      'flavor_request' =>
+      array (
+        'object_type' => 'field',
+        'object_storage_type' => 'post_type',
+        'name' => 'flavor_request',
+        'group' => ['name' => 'more_fields', 'pod' => 'tub'],
+        'label' => 'Flavor request',
+        'description' => 'The (location, flavor) demand this tub is claimed against, if any. Forward side of flavor_request.tubs — always read this field (never flavor_request.tubs) for "which request claimed this tub."',
+        'type' => 'pick',
+        'pick_object' => 'post_type',
+        'pick_val' => 'flavor_request',
         'pick_format_type' => 'single',
         'pick_format_single' => 'dropdown',
         'pick_format_multi' => 'autocomplete',

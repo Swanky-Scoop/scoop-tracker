@@ -141,10 +141,7 @@ function scoop_routes_config(string $batch_key = ''): array {
     // through /bundle.
     'Debt' => [
       'display_title' => 'Transit',
-      // Truck icon deliberately not wired up yet — adding it to the
-      // compiled font broke every other glyph's rendering (units-per-em
-      // collapsed 256->30); backed out pending a real fix. Falls back to
-      // the default first-letter icon ('D', the internal type key) for now.
+      'icon'         => 'if:truck',
     ],
     // "What got emptied, by day" log — see assets/models/emptied-log-grid-model.js.
     // No path/methods/mode/envelope_key here (same as ItemPivot above): it's

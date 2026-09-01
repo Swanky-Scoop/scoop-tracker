@@ -308,6 +308,17 @@ function scoop_create_tubs_for_new_batch($pieces, $is_new_item, $id) {
     // once now so bundle/analytics caches invalidate cleanly.
     scoop_cache_bust();
 
+    // scoop_create_batch_tubs_direct() writes tub rows straight to SQL,
+    // deliberately bypassing pods_api()->save_pod_item() for performance —
+    // which means it also bypasses pods_api_post_save_pod_item_tub, so the
+    // tub-moving reconciliation hook (includes/hooks/cabinet-slot.php) never
+    // sees these new tubs on its own. Call it explicitly here so a flavor
+    // already wanted (with no donor) elsewhere gets earmarked the moment its
+    // first batch lands, regardless of which tub-creation path ran.
+    if (function_exists('scoop_reconcile_moving_for_flavor')) {
+      scoop_reconcile_moving_for_flavor($flavor_id);
+    }
+
     if (function_exists('pods_api') && is_object(pods_api())) {
       $lap_start = microtime(true);
       pods_api()->save_pod_item([
