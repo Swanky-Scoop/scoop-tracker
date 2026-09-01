@@ -3,7 +3,14 @@ import BaseGridModel from "./_base-grid-model.js";
 export default class CabinetGridModel extends BaseGridModel{
   constructor(name = 'Cabinet', domain, attrs = {})
   {
-    super(name, domain, attrs );
+    // No own-title link on a slot row, so BaseGridModel's
+    // _ensureRowDetailAccess() would otherwise prepend a pencil "Details"
+    // icon column by default — suppressed per Gus (2026-09-01): a slot's
+    // own row doesn't need a details-view affordance. Must go through the
+    // constructor's options (read by BaseGridModel before it builds
+    // columns), not a this.* assignment after super() — by then the
+    // column-build the flag is meant to affect has already run.
+    super(name, domain, { ...attrs, suppressRowEditIcon: true });
     // Save each change immediately, no save button, no full page reload.
     this.autosave = true;
   }

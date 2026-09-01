@@ -35,6 +35,13 @@ export default class BaseGridModel {
       this.metaData = options?.metaData ?? null;
       this.location = options?.location ?? 935;
 
+      // Opt-out for _ensureRowDetailAccess()'s auto-injected pencil "Details"
+      // column — must be read from options and set here, before the
+      // _buildColumns() call below, since a subclass setting this.* after
+      // its own super() call would already be too late (this constructor
+      // builds columns synchronously when metaData is present).
+      this.suppressRowEditIcon = options?.suppressRowEditIcon ?? false;
+
       // Dock icon-strip identity (see DOCKING.md). Constructor option wins,
       // then server-fed metaData (scoop_client_metadata() in enqueue.php),
       // then a bare fallback off the type's own logical name — so every
@@ -187,10 +194,18 @@ export default class BaseGridModel {
   // link to. Skipped entirely when the row's own type isn't linkable at all
   // (isDetailLinkEnabled(primary) false) — an icon promising a details view
   // that's been explicitly turned off for this model would be pointless.
+  //
+  // Also skipped when constructed with `suppressRowEditIcon: true` (see the
+  // constructor, which reads it into this.suppressRowEditIcon before
+  // columns are ever built) — an explicit opt-out for a model that would
+  // otherwise qualify for this fallback but doesn't want it (e.g.
+  // CabinetGridModel: a slot row reads fine without a details-view
+  // affordance). Off (fallback still applies) by default.
   _ensureRowDetailAccess() {
     const primary = this.metaData?.primary;
     if (!primary || !Array.isArray(this._allColumns)) return;
     if (!this.isDetailLinkEnabled(primary)) return;
+    if (this.suppressRowEditIcon) return;
 
     const hasOwnTitleLink = this._allColumns.some(c => c.detailEntity === primary);
     if (hasOwnTitleLink) return;
