@@ -17,6 +17,13 @@ name: Cleanup retired artifacts
 
 on:
   workflow_dispatch:
+  # Agent-runnable trigger: the GitHub App integration token lacks
+  # actions:write (workflow_dispatch → HTTP 403) but has contents:write,
+  # so it can raise a repository_dispatch event. Ops jobs below still
+  # carry their `environment: ops` required-reviewer gate, so production
+  # purges stay human-approved regardless of who fires the event.
+  repository_dispatch:
+    types: [retired-artifacts-cleanup]
 
 env:
   REMOTE_HOST: swankyscoop.net
