@@ -252,12 +252,6 @@ add_shortcode('scoop_dock', function ($raw_atts, $content = null) {
     <div class="in-dock"<?php if (!empty($atts['location'])) : ?> data-default-location="<?php echo esc_attr($atts['location']); ?>"<?php endif; ?>>
       <div class="action-target"></div>
       <div class="toolbar">
-        <?php // Full page-union refresh — everything on the page at once
-        // (CONTROL-REFRESH.md §5). Event-delegated: ScoopAPI listens for
-        // ts:page:refresh-requested on document, so this static markup needs
-        // no JS wiring of its own (same decoupling as bindEscapeToClose). ?>
-        <button type="button" class="gridRefresh dockRefresh"
-                title="Refresh everything — fetch current data for all controls"><i class="dockIcon si-refresh"></i><span class="dockTitle">Refresh all</span></button>
         <?php if (current_user_can('manage_options')) : ?>
         <a href="/wp-admin/post.php?post=14126&action=edit" class="gridToggle wp"><i class="ab-icon"></i><span class="dockTitle">WP Admin</span></a>
         <?php endif; ?>

@@ -134,33 +134,12 @@ export default class Dockable extends El {
 
       e.stopPropagation();
     }, true);
-
-    // Per-control refresh button (CONTROL-REFRESH.md §5) — built as TOGGLE's
-    // direct sibling so it lands wherever TOGGLE lives... EXCEPT it never
-    // rides the shared .toolbar: per Gus's feel-test (2026-09-01), the
-    // toolbar holds exactly ONE refresh button (dock chrome's Refresh-all),
-    // and each control's own button stays attached to its .scoop-grid host
-    // (dockToggle() deliberately does NOT move this one — see there).
-    // Data-less views (IframePanel) opt out entirely via dockRefreshEligible=false.
-    this.REFRESH = null;
-    if (this.dockRefreshEligible !== false) {
-      this.REFRESH = this._buildRefreshButton();
-      if (this.TOGGLE.parentElement) {
-        this.TOGGLE.parentElement.insertBefore(this.REFRESH, this.TOGGLE);
-      } else {
-        this.target.append(this.REFRESH);
-      }
-
-      this.REFRESH.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this._refreshOnReopen("refresh button");
-      }, true);
-    }
   }
 
-  // A click-open (or refresh-button press) on a docked control pulls fresh
-  // data for THAT control and repaints it — the on-demand half of
-  // CONTROL-REFRESH.md (§4 reopen, §5 buttons). Scoped to this control's own
+  // A click-open on a docked control pulls fresh data for THAT control and
+  // repaints it — the reopen half of CONTROL-REFRESH.md §4 (the manual
+  // refresh buttons this used to also serve were removed once the
+  // background poll made them redundant). Scoped to this control's own
   // entry in scoop_bundle_specs() (`types: [this.name]`), NOT
   // scopedRefreshTypes(): that helper is write-oriented (SCOOP.refreshScope's
   // writesPods) and falls back to the full page union for any read-only
@@ -174,11 +153,9 @@ export default class Dockable extends El {
   // own catch, so the rethrow is swallowed here.
   //
   // `cause` feeds PageStatus.setTrigger() via info.name, so the status pill
-  // says whether a fetch came from a re-open or the button.
+  // says the fetch came from a re-open.
   _refreshOnReopen(cause = "control re-open") {
-    // Dock controls only — the requirement (and the buttons) are about dock
-    // chrome; an undocked page keeps plain browser-refresh. (The buttons
-    // only render usefully docked anyway — see _buildRefreshButton.)
+    // Dock controls only — an undocked page keeps plain browser-refresh.
     if (!this.target.closest(".in-dock")) return;
     if (!this.api) return;
 
@@ -197,39 +174,6 @@ export default class Dockable extends El {
       info: { name: cause },
       demandRepaint: true, // explicit user request — bypasses the per-grid diff gate
     }).catch(() => {});
-  }
-
-  // Companion to _buildToggleButton() — same shell conventions (icon-font
-  // glyph via the ICON_FONT_MARKER shape, class-prefixed by
-  // ICON_FONT_CSS_PREFIX; see the icon-font pipeline in DOCKING.md for how
-  // the 'refresh' glyph is generated/committed).
-  //
-  // Per Gus (2026-09-01 feel-test): the per-control refresh button does NOT
-  // ride the shared .toolbar — it stays attached to this control's own host
-  // (.scoop-grid), and the toolbar keeps exactly ONE refresh button (the
-  // dock chrome's Refresh-all, includes/shortcode.php). Views with no
-  // server data at all (IframePanel — ProductionPlan/esr/[scoop_iframe];
-  // there is nothing to refresh) declare dockRefreshEligible = false and
-  // get no button.
-  _buildRefreshButton() {
-    const { ICON_FONT_CSS_PREFIX, ICON_FONT_MARKER } = Dockable;
-    const raw = this.modelInstance?.displayTitle ?? this.name ?? "";
-    // Guard the label: a control whose metadata carried a literal
-    // "undefined" string (or nothing) must never render that into the DOM —
-    // fall back to the view's logical name instead of trusting the chain.
-    const title = `Refresh ${raw && raw !== "undefined" ? raw : this.name || "control"} — fetch current data`;
-
-    const BTN = this.el("button", {
-      classes: ["gridRefresh"],
-      attrs: { type: "button", title },
-    });
-
-    const ICON = this.el("i", {
-      classes: ["dockIcon", `${ICON_FONT_CSS_PREFIX}refresh`],
-    });
-
-    BTN.append(ICON);
-    return BTN;
   }
 
   // Shared TOGGLE button for Grid/Tile's buildCoreDom() and any bespoke
@@ -440,22 +384,14 @@ export default class Dockable extends El {
     const id = this.pageStatusId ?? this.target?.id;
     if (!id || !this.TOGGLE) return;
 
-    // Both toolbar buttons reflect THIS control's load state (see
-    // CONTROL-REFRESH.md §5) — TOGGLE has always shown the fetching ring;
-    // REFRESH joins the same treatment so whichever button the user's eye
-    // is on shows that a fetch is running and how far along it is.
-    const statusBtns = () => [this.TOGGLE, this.REFRESH].filter(Boolean);
-
     const apply = (state) => {
-      for (const btn of statusBtns()) {
-        btn.classList.toggle('loading', state === 'unknown');
-        btn.classList.toggle('fetching', state === 'fetching');
-        // Leaving 'fetching' mid-countdown (fresh/stale landing) — clear the
-        // ring rather than leave it stuck at whatever % it last reached.
-        if (state !== 'fetching') {
-          btn.style.removeProperty('--eta-progress');
-          btn.classList.remove('overtime');
-        }
+      this.TOGGLE.classList.toggle('loading', state === 'unknown');
+      this.TOGGLE.classList.toggle('fetching', state === 'fetching');
+      // Leaving 'fetching' mid-countdown (fresh/stale landing) — clear the
+      // ring rather than leave it stuck at whatever % it last reached.
+      if (state !== 'fetching') {
+        this.TOGGLE.style.removeProperty('--eta-progress');
+        this.TOGGLE.classList.remove('overtime');
       }
     };
     apply(PageStatus.getState(id));
@@ -476,10 +412,8 @@ export default class Dockable extends El {
     // with the wrong grid's progress.
     this._onPageStatusProgress = (e) => {
       if (!e.detail.ids.includes(id)) return;
-      for (const btn of statusBtns()) {
-        btn.style.setProperty('--eta-progress', e.detail.progressPct.toFixed(2));
-        btn.classList.toggle('overtime', e.detail.overtime);
-      }
+      this.TOGGLE.style.setProperty('--eta-progress', e.detail.progressPct.toFixed(2));
+      this.TOGGLE.classList.toggle('overtime', e.detail.overtime);
     };
     document.addEventListener('ts:page-status:progress', this._onPageStatusProgress);
   }

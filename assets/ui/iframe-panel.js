@@ -38,13 +38,6 @@ export default class IframePanel {
   constructor(target, name = "Iframe", config = {}) {
     this.target = target;
     this.name = name;
-    // No refresh button, ever (CONTROL-REFRESH.md §5, per Gus's 2026-09-01
-    // feel-test): this view has no server data dependency at all — an
-    // iframe (or an external window) is its own freshest source — so there
-    // is nothing for a refresh action to fetch. Instance flag (not static:
-    // Dockable._bindDockToggle() reads it off `this`), checked before the
-    // per-control button is built.
-    this.dockRefreshEligible = false;
     this.api = config.api ?? null;
 
     // window.SCOOP.metaData[name] — see scoop_client_metadata()'s

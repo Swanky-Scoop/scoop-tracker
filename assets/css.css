@@ -611,65 +611,6 @@ html body {
   &.Batch > .gridToggle {
     display: block;
   }
-
-  /* Per-control refresh button (CONTROL-REFRESH.md §5, revised per Gus's
-     2026-09-01 feel-test): attached to THIS .scoop-grid host, NOT the
-     shared .toolbar — the toolbar keeps exactly ONE refresh button (the
-     dock chrome's Refresh-all). Hidden by default; visible only on a
-     docked AND open control (a minimized control is just its toolbar icon,
-     and an undocked page keeps plain browser-refresh). */
-  & > .gridRefresh {
-    display: none;
-  }
-
-  &.docked.toggled > .gridRefresh {
-    display: grid;
-    place-items: center;
-    position: absolute;
-    top: 0.25rem;
-    right: 0.25rem;
-    width: 1.5rem;
-    height: 1.5rem;
-    min-width: 0;
-    padding: 0;
-    font-size: 0.75rem;
-    line-height: 1;
-    cursor: pointer;
-    background: var(--color-bg-cell);
-    border: 1px solid var(--color-border-main);
-    border-radius: 50%;
-    z-index: 10;
-
-    /* Fetching ring — same conic-gradient treatment the toolbar buttons
-       get (css.md#gridtoggle-fetching-progress-ring), so the host-attached
-       button shows live fetch progress when ITS control's data is loading
-       (_bindPageStatusToggle drives .fetching/--eta-progress on both
-       buttons; see _dockable.js). */
-    &.fetching::before,
-    &.fetching::after {
-      content: "";
-      position: absolute;
-      inset: -3px;
-      border-radius: 50%;
-      pointer-events: none;
-      -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 1px), #000 calc(100% - 1px));
-      mask: radial-gradient(farthest-side, transparent calc(100% - 1px), #000 calc(100% - 1px));
-    }
-
-    &.fetching::after {
-      background: currentColor;
-      opacity: 0.2;
-    }
-
-    &.fetching::before {
-      background: conic-gradient(currentColor calc(var(--eta-progress, 0) * 1%), transparent 0);
-      transition: background 0.1s linear;
-    }
-
-    &.fetching.overtime {
-      color: orange;
-    }
-  }
 }
 
 html > body.TS_GRID-UPDATING .scoop-grid {
@@ -977,12 +918,7 @@ html > body.TS_GRID-UPDATING .scoop-grid {
 }
 
 /* see css.md#in-dock-toolbar-gridtoggle */
-/* see css.md#in-dock-toolbar-gridtoggle */
-/* .gridRefresh in this toolbar is ONLY the dock chrome's Refresh-all button
-   (includes/shortcode.php) — per-control refresh buttons stay attached to
-   their own .scoop-grid host (per Gus's 2026-09-01 feel-test), so they can
-   never match a .toolbar-child selector. */
-.in-dock > .toolbar > :is(.gridToggle, .gridRefresh) {
+.in-dock > .toolbar > .gridToggle {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1340,7 +1276,7 @@ body.dock-resizing {
       }
 
     }
-    & :is(.gridToggle, .gridRefresh){
+    & .gridToggle{
       display: inline-grid;
       place-items: center;
       color: rgba(255, 255, 255, 0.5);
@@ -1367,14 +1303,6 @@ body.dock-resizing {
           line-height: 1rem;
 
         }
-      }
-
-      /* Dock chrome's Refresh-all — the ONE toolbar refresh button (the
-         per-control buttons live on their own .scoop-grid hosts). Sits
-         left of PAGE-STATUS/.wp, same slot logic as the order rules
-         above. */
-      &.dockRefresh {
-        order: 98;
       }
 
       /* Rightmost even of .wp (order: 99 above) — same reasoning as the

@@ -82,22 +82,6 @@ export default class ScoopAPI {
     return HashState.has('bust');
   }
 
-  // Dock chrome's "Refresh all" button (includes/shortcode.php) — decoupled
-  // wiring, same pattern as Dockable.bindEscapeToClose(): the static button
-  // dispatches a document-level event, ScoopAPI (the one instance that owns
-  // refreshPageDomain) listens. Full page union, no types scoping — the
-  // page-wide counterpart to the per-control buttons (CONTROL-REFRESH.md §5).
-  // PageStatus attribution rides info.name like every other trigger.
-  bindDockRefreshButton() {
-    document.addEventListener("ts:page:refresh-requested", () => {
-      this.refreshPageDomain({
-        force: true,
-        info: { name: "dock refresh button" },
-        demandRepaint: true, // explicit user request
-      }).catch(() => {});
-    });
-  }
-
   // Stable per-host identity for the location hash's per-control tier
   // (#loc.<id>=...) — data-grid-type alone collides when the same type
   // appears twice on one page (see DOCKING.md's "State model"); an author

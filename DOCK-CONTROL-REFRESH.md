@@ -1,5 +1,13 @@
 # Dock control freshness: refresh button + repaint-on-reopen
 
+**Update (2026-09-01):** the manual refresh buttons (per-control and the
+dock-wide "Refresh all") described below were built, then removed once the
+1s background poll + repaint gate proved reliable enough on their own —
+Gus judged them redundant rather than a useful fallback. The reopen-on-open
+fetch (§ below) and the background poll both remain. Left the rest of this
+doc as-is for the history; see the removal commit on `dock-refresh` for
+what actually changed.
+
 Planning doc for the `dock-refresh` branch. No implementation yet — this
 records the agreed design so a future session (or a future you) doesn't
 have to re-derive it. Full plan, including verification steps, also lives

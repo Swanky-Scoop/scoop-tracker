@@ -24,7 +24,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   if( await api.userHelper(SCOOP) === false ) return;
   Details.attach(api);
-  api.bindDockRefreshButton();
   // Each control docks its own toggle button (see List.dockToggle(), called
   // from within mountAllGrids itself) the moment it's constructed, in
   // shortcode/document order and before any of its data has loaded — see
