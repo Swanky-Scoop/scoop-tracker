@@ -361,18 +361,22 @@ export default class ScoopAPI {
   // when THIS load specifically is done, not any other one that happens to
   // be in flight at the same time (see _list.js's _bindPageStatusToggle,
   // which relies on this to paint the right grid's own loading ring).
+  // Returns the load handle PageStatus.beginLoadTiming() created — pass it
+  // to completeLoadTiming() below so a stale, superseded completion can be
+  // told apart from the current one (see that method's own comment).
   beginLoadTiming(types = this._pageTypes) {
     const ids = this._idsForTypes(types);
-    PageStatus.beginLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, this._defaultBustMsForPage(types), ids);
+    return PageStatus.beginLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, this._defaultBustMsForPage(types), ids);
   }
 
   // Counterpart to beginLoadTiming() above — rebuilds the identical key
   // string from the SAME types list rather than stashing it on the
   // instance, since a scoped fetch's types don't change between its own
   // begin/complete pair. Callers must pass the same `types` they began
-  // with (see _startDomainFetch).
-  completeLoadTiming(types = this._pageTypes, cacheStatus) {
-    PageStatus.completeLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, cacheStatus);
+  // with (see _startDomainFetch), plus the handle beginLoadTiming() gave
+  // them.
+  completeLoadTiming(types = this._pageTypes, cacheStatus, loadHandle) {
+    PageStatus.completeLoadTiming(`${window.location.pathname}::${this._typesKey(types)}`, cacheStatus, loadHandle);
   }
 
   // pageStatusIds for every bundle grid whose type is in `types` — shared by
@@ -637,6 +641,15 @@ export default class ScoopAPI {
     // (fresh after repaint, 'stale' here if the fetch itself failed).
     const quietChrome = !demandRepaint && !isInitialLoad;
 
+    // Handle for THIS call's own load record (see PageStatus.beginLoadTiming/
+    // completeLoadTiming) — a second overlapping fetch for the same
+    // (path, types) key (e.g. a control reopened again before its first
+    // reopen's fetch resolved) begins its own record and supersedes this
+    // one; passing this handle back into completeLoadTiming() below lets it
+    // recognize a stale completion instead of finalizing whichever load
+    // happens to currently occupy that key.
+    let loadHandle;
+
     if (!quietChrome) {
       // "Syncing" for a re-open/explicit demand-repaint fetch — it reads as
       // catching this one control up, not the generic first-load "fetching"
@@ -649,7 +662,7 @@ export default class ScoopAPI {
         PageStatus.setState(g.pageStatusId, 'fetching', fetchingLabel);
       });
       PageStatus.setTrigger(info?.name ?? 'page load');
-      this.beginLoadTiming(fetchTypes);
+      loadHandle = this.beginLoadTiming(fetchTypes);
     }
 
     this._domainInflight = (async () => {
@@ -664,7 +677,7 @@ export default class ScoopAPI {
         // location/use/batch/closeout/inventory_change exactly as they were.
         this._domain = { ...(this._domain ?? {}), ...incoming };
         this._lastBundleCacheStatus = bundle?._cache ?? null;
-        this.completeLoadTiming(fetchTypes, this._lastBundleCacheStatus);
+        this.completeLoadTiming(fetchTypes, this._lastBundleCacheStatus, loadHandle);
 
         document.dispatchEvent(new CustomEvent("ts:domain:updated", {
           detail: {
@@ -1385,9 +1398,9 @@ export default class ScoopAPI {
     const analyticsFetches = analyticsEntries.map(async ({ dom, type, model, grid }) => {
       const key = `${window.location.pathname}::${type}`;
       PageStatus.setState(dom.id, 'fetching');
-      PageStatus.beginLoadTiming(key, undefined, [dom.id]);
+      const loadHandle = PageStatus.beginLoadTiming(key, undefined, [dom.id]);
       await model.fetch();
-      PageStatus.completeLoadTiming(key, model.lastCacheStatus);
+      PageStatus.completeLoadTiming(key, model.lastCacheStatus, loadHandle);
 
       grid.init(model);
 
