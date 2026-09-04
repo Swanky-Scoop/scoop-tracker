@@ -36,6 +36,7 @@ function scoop_render_schema_sync_page(): void {
   $gc_result = null;
   $export_text = null;
   $save_result = null;
+  $validate_result = null;
 
   if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['scoop_schema_action'])) {
     $action = sanitize_key($_POST['scoop_schema_action']);
@@ -53,6 +54,7 @@ function scoop_render_schema_sync_page(): void {
         $pre_diff = scoop_schema_diff($schema);
         $apply_result = scoop_schema_apply_additive($schema, $pre_diff);
         $diff = scoop_schema_diff($schema);
+        $apply_result['validation'] = scoop_schema_validate_after_apply($schema);
       }
 
     } elseif ($action === 'gc') {
@@ -74,6 +76,10 @@ function scoop_render_schema_sync_page(): void {
       check_admin_referer('scoop_schema_export');
       $export_text = scoop_schema_export_live_php_source();
 
+    } elseif ($action === 'validate') {
+      check_admin_referer('scoop_schema_validate');
+      $validate_result = scoop_schema_validate_after_apply($schema);
+
     } elseif ($action === 'export_save') {
       check_admin_referer('scoop_schema_export_save');
       $save_result = scoop_schema_export_save_to_file();
@@ -89,6 +95,14 @@ function scoop_render_schema_sync_page(): void {
   }
 
   scoop_schema_render_check_form();
+
+  if (!empty($schema)) {
+    scoop_schema_render_validate_form();
+  }
+
+  if ($validate_result !== null) {
+    scoop_schema_render_validate_card($validate_result);
+  }
 
   if ($diff !== null) {
     if (!empty($diff['error'])) {
@@ -271,6 +285,8 @@ function scoop_schema_render_apply_result(array $r): void {
     </div>
   <?php endif; ?>
   <?php
+  $validation = $r['validation'] ?? null;
+  if (is_array($validation)) scoop_schema_render_validate_card($validation);
 }
 
 function scoop_schema_render_gc_form(array $diff): void {
@@ -299,6 +315,79 @@ function scoop_schema_render_gc_form(array $diff): void {
       </label>
     </p>
     <?php submit_button('Delete checked fields', 'delete', 'submit', false); ?>
+  </form>
+  <?php
+}
+
+/**
+ * Validation card — the pass/fail assertion rendered after apply (and after
+ * an on-demand Validate). Structure mirrors scoop_schema_render_apply_result():
+ * a green notice when clean, a scoop-rcc-errors card when anything failed.
+ *
+ * The message text comes pre-built from the validator (it knows each
+ * failure's kind/pod/field/attr), but it is still run through esc_html()
+ * here — the renderer never trusts upstream text.
+ */
+function scoop_schema_render_validate_card(array $r): void {
+  $failures = $r['failures'] ?? [];
+  if (empty($failures)) {
+    ?>
+    <div class="notice notice-success inline">
+      <p>
+        <strong>Post-apply validation passed.</strong>
+        Checked <?php echo (int) ($r['checked_pods'] ?? 0); ?> pod(s),
+        <?php echo (int) ($r['checked_fields'] ?? 0); ?> field(s) — every declared field exists with the declared type and pick config.
+      </p>
+    </div>
+    <?php
+    return;
+  }
+  ?>
+  <div class="notice notice-error inline">
+    <p>
+      <strong>Post-apply validation FAILED (<?php echo (int) count($failures); ?> problem<?php echo count($failures) === 1 ? '' : 's'; ?>).</strong><br>
+      The apply did not produce the schema this page enforces. Fix the items below (correct the schema file, or fix this environment by hand), then Check &rarr; Apply &rarr; Validate again. Nothing self-heals on its own.
+    </p>
+  </div>
+  <div class="scoop-rcc-card">
+    <h2>Validation failures (<?php echo (int) count($failures); ?>)</h2>
+    <table class="widefat striped">
+      <thead>
+        <tr><th>Kind</th><th>Field</th><th>Attr</th><th>Expected (schema)</th><th>Actual (live)</th></tr>
+      </thead>
+      <tbody>
+        <?php foreach ($failures as $f): ?>
+          <tr>
+            <td><span class="scoop-rcc-pill scoop-rcc-pill-warn"><?php echo esc_html((string) ($f['kind'] ?? '?')); ?></span></td>
+            <td><code><?php echo esc_html(trim(((string) ($f['pod'] ?? '')) . '.' . ((string) ($f['field'] ?? '')), '.')) ?: '&mdash;'; ?></code></td>
+            <td><code><?php echo ((string) ($f['attr'] ?? '')) !== '' ? esc_html((string) $f['attr']) : '&mdash;'; ?></code></td>
+            <td><?php echo esc_html(scoop_schema_display_val($f['expected'] ?? null)); ?></td>
+            <td><?php echo esc_html(scoop_schema_display_val($f['actual'] ?? null)); ?></td>
+          </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+    <p class="description">
+      <?php foreach ($failures as $f): ?>
+        <strong><?php echo esc_html((string) ($f['kind'] ?? '?')); ?></strong> — <?php echo esc_html((string) ($f['message'] ?? '')); ?><br>
+      <?php endforeach; ?>
+    </p>
+  </div>
+  <?php
+}
+
+function scoop_schema_render_validate_form(): void {
+  ?>
+  <form method="post" class="scoop-rcc-card">
+    <?php wp_nonce_field('scoop_schema_validate'); ?>
+    <input type="hidden" name="scoop_schema_action" value="validate">
+    <h2>Validate now</h2>
+    <p class="description">
+      Read-only. Re-checks this environment against the schema — every declared field present, with the declared
+      type and pick config, and no pick field pointing at a pod that doesn&rsquo;t exist. Runs automatically after
+      every Apply; use this to re-run it any time (e.g. after a hand repair).
+    </p>
+    <?php submit_button('Validate now', 'secondary', 'submit', false); ?>
   </form>
   <?php
 }

@@ -91,6 +91,7 @@ scoop_require('includes/pods-schema/diff.php');
 scoop_require('includes/pods-schema/apply.php');
 scoop_require('includes/pods-schema/gc.php');
 scoop_require('includes/pods-schema/export.php');
+scoop_require('includes/pods-schema/validate.php');
 scoop_require('includes/pods-schema/ui.php');
 
 scoop_require('includes/admin-menu.php');
