@@ -3,22 +3,18 @@ name: Error-log collector (diagnostics)
 # TEMPORARY, READ-ONLY diagnostics workflow — staged for ONE manual run, to
 # be removed from its branch (never merged) as soon as it has collected.
 #
-# WHY IT EXISTS: the tub-swap flow is throwing production 500s
-# (CabinetWorkflow Confirm Swap / /tubs or /Cabinet POST) and the running
-# hypothesis (cabinet-slot.php post_save hook chain: mark_tub_moving /
-# flavor_request topup / dedupe_other_slots) needs ONE real stack trace to
-# confirm or kill. The error logs live on the cPanel hosts, reachable only
-# via the same SSH keys the deploy workflow uses — so this workflow reuses
-# EXACTLY that credential plane (secrets.OPS_INK, host swanky.ink:21098) to
-# run a fixed set of READ-ONLY commands (ls / find / grep / tail). It writes
-# nothing anywhere: no remote mutation, no artifact upload (logs stay in the
-# job summary/log only).
+# WHY: production 500s on the tub-swap flow (CabinetWorkflow Confirm Swap /
+# /tubs or /Cabinet POST). One real stack trace confirms or kills the ranked
+# hypothesis (cabinet-slot.php post_save chain: mark_tub_moving /
+# flavor_request topup / dedupe_other_slots). Logs live on the cPanel host,
+# reachable only via the deploy SSH keys — this reuses EXACTLY that
+# credential plane (secrets.OPS_INK, swanky.ink:21098) for a fixed set of
+# READ-ONLY commands (find / stat / grep / tail / wc). No writes, no
+# deletes, no artifact upload — output stays in the job log.
 #
-# NOTE: must be triggered by a PUSH of a branch carrying this file (the bot
-# token lacks actions:write → no workflow_dispatch). `on: push` runs the
-# workflow FILE FROM THE PUSHED BRANCH; deploy.yml is push-filtered to main
-# so a diagnostics branch push cannot deploy. Deleting the file in a
-# follow-up commit ends the trigger.
+# Round 2: remote logic runs as a script piped to `ssh bash -s` (no nested
+# quoting), log discovery by exact name (cPanel's dot-less `error_log`),
+# per-day activity counts, hook-name greps, and corrected JS asset paths.
 
 on:
   push:
@@ -32,13 +28,10 @@ env:
   REMOTE_HOST_INK: swanky.ink
   REMOTE_PORT_INK: "21098"
   REMOTE_USER_INK: swanqpgx
-  # cPanel document roots (same paths deploy.yml writes the plugin into)
-  OPS_DOCROOT: /home/swanqpgx/ops.swanky.ink
-  TEST_DOCROOT: /home/swanqpgx/test.swanky.ink
 
 jobs:
   collect-logs:
-    name: Tail error logs — ops.swanky.ink + test.swanky.ink (read-only)
+    name: Tail error logs — ops + test.swanky.ink (read-only)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -52,62 +45,94 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -T 10 -p "$REMOTE_PORT_INK" "$REMOTE_HOST_INK" >> ~/.ssh/known_hosts
 
-      # ------------------------------------------------------------------
-      # Helper: run one read-only remote command against one docroot and
-      # print it under a clear banner. Every command below is strictly a
-      # read: ls / find / wc / grep / tail / sed. No writes, no deletes.
-      # ------------------------------------------------------------------
-      - name: Discover log files
+      - name: Collect (read-only) — OPS production
         run: |
-          ssh() { command ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "$@"; }
-          for site in "$OPS_DOCROOT OPS.swanky.ink-production" "$TEST_DOCROOT TEST.swanky.ink"; do
-            set -- $site; root=$1; label=$2
-            echo "================ $label : error-log discovery ================"
-            ssh "find '$root' -maxdepth 2 -iname '*error*log*' -o -maxdepth 2 -iname '*.log' 2>/dev/null | head -40" || true
-            echo "---- cPanel home-level (one level above docroot) ----"
-            ssh "find '$root/..' -maxdepth 1 -iname '*error*log*' -o -maxdepth 1 -iname '*.log' 2>/dev/null | head -20" || true
-            echo "---- logs dir / wp-content / uploads ----"
-            ssh "ls -la '$root/logs' '$root/wp-content' 2>/dev/null | head -60" || true
+          cat > /tmp/collect.sh <<'COLLECT'
+          #!/usr/bin/env bash
+          # READ-ONLY collector: find/stat/grep/tail/wc only.
+          root="$1"; label="$2"
+          say() { echo; echo "================ $label :: $1 ================"; }
+
+          say "log files under docroot (maxdepth 4, non-empty, newest first)"
+          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' -o -name '*.log' -o -name 'debug.log' \) -size +0c -printf '%TY-%Tm-%Td %TH:%TM %10s  %p\n' 2>/dev/null | sort -r | head -20
+
+          say "log files one level above docroot (cPanel home)"
+          find "$root/.." -maxdepth 1 -type f \( -name 'error_log*' -o -name '*.log' \) -size +0c -printf '%TY-%Tm-%Td %TH:%TM %10s  %p\n' 2>/dev/null | head -10
+
+          say "tails of the newest error logs"
+          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' -o -name '*.log' -o -name 'debug.log' \) -size +0c 2>/dev/null | while read -r f; do
+            echo "---- $(stat -c '%y' "$f" 2>/dev/null)  $f  ($(wc -l < "$f" 2>/dev/null) lines) ----"
+            tail -n 250 "$f" 2>/dev/null
           done
 
-      - name: WP debug.log tails (both sites)
-        run: |
-          ssh() { command ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "$@"; }
-          for site in "$OPS_DOCROOT OPS.swanky.ink-production" "$TEST_DOCROOT TEST.swanky.ink"; do
-            set -- $site; root=$1; label=$2
-            echo "================ $label : wp-content/debug.log ================"
-            ssh "test -f '$root/wp-content/debug.log' && wc -l '$root/wp-content/debug.log' && tail -n 250 '$root/wp-content/debug.log' || echo 'no debug.log'"
-          done
+          say "error-logging config (.htaccess / .user.ini / wp-config WP_DEBUG lines only)"
+          grep -nE 'error_log|display_errors|error_reporting' "$root/.htaccess" "$root/.user.ini" 2>/dev/null
+          grep -nE 'WP_DEBUG|error_reporting' "$root/wp-config.php" 2>/dev/null
 
-      - name: Apache/LiteSpeed per-domain error logs (Aug 28 →)
-        run: |
-          ssh() { command ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "$@"; }
-          for site in "$OPS_DOCROOT OPS.swanky.ink-production" "$TEST_DOCROOT TEST.swanky.ink"; do
-            set -- $site; root=$1; label=$2
-            echo "================ $label : LiteSpeed/Apache error logs ================"
-            # Standard cPanel layouts, newest matching files first, tail 300 of each
-            ssh "find '$root' -maxdepth 4 \\( -path '*/logs/*' -o -path '*/domlogs/*' -o -path '*/access-logs/*' \\) -type f 2>/dev/null | head -30" || true
-            for f in "$(ssh "find '$root' -maxdepth 4 -type f \\( -iname '*error*log*' -o -iname 'ssl_error_log*' -o -iname 'error_log*' \\) 2>/dev/null | head -10")"; do
-              [ -n "$f" ] || continue
-              echo "---- tail -300 of $f ----"
-              ssh "tail -n 300 '$f' 2>/dev/null" || true
+          say "per-day error counts (recent days) in each log"
+          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' \) -size +0c 2>/dev/null | while read -r f; do
+            echo "---- $f ----"
+            for d in 28-Aug 29-Aug 30-Aug 31-Aug 01-Sep 02-Sep 03-Sep 04-Sep 05-Sep; do
+              n=$(grep -c "\[$d-2026" "$f" 2>/dev/null || true)
+              echo "  $d-2026: $n"
             done
           done
 
-      - name: PHP fatal/error lines mentioning swap endpoints (all logs, Aug 28 →)
-        run: |
-          ssh() { command ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "$@"; }
-          for site in "$OPS_DOCROOT OPS.swanky.ink-production" "$TEST_DOCROOT TEST.swanky.ink"; do
-            set -- $site; root=$1; label=$2
-            echo "================ $label : grep for tub/cabinet/slot fatals ================"
-            ssh "grep -rniE 'fatal|uncaught|pods|cabinet|tub' '$root' --include='*.log*' -l 2>/dev/null | head -20" || true
+          say "hook-chain / fatal grep across docroot logs (tail 200)"
+          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' -o -name '*.log' -o -name 'debug.log' \) -size +0c 2>/dev/null | while read -r f; do
+            echo "---- $f ----"
+            grep -nE 'Fatal error|Uncaught|PHP (Warning|Notice|Fatal)|Stack trace|cabinet-slot|tub-state|_write_fields|rest\.php|pods|mark_tub|reconcile|topup|dedupe|confirm' "$f" 2>/dev/null | tail -n 200
           done
 
-      - name: Confirm deployed plugin state (read-only listing)
-        run: |
-          ssh() { command ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "$@"; }
-          for site in "$OPS_DOCROOT OPS.swanky.ink-production" "$TEST_DOCROOT TEST.swanky.ink"; do
-            set -- $site; root=$1; label=$2
-            echo "================ $label : deployed scoop_rest state ================"
-            ssh "grep -n 'confirm-swap\|planTubChange\|_defaultFlavorId' '$root/wp-content/plugins/scoop_rest/assets/cabinet-workflow-grid-model.js' 2>/dev/null | head -5; echo '--- confirm modal server write shape:'; grep -n 'state.*Opened\|slot' '$root/wp-content/plugins/scoop_rest/assets/confirm-swap-modal.js' 2>/dev/null | sed -n '1,5p'"
+          say "deployed plugin state (which code is live)"
+          plug="$root/wp-content/plugins/scoop_rest"
+          stat -c '%y  %n' "$plug/scoop_rest.php" 2>/dev/null
+          for js in assets/models/cabinet-workflow-grid-model.js assets/ui/confirm-swap-modal.js; do
+            p="$plug/$js"
+            if [ -f "$p" ]; then
+              stat -c '%y  %n' "$p"
+              echo "  planTubChange hits: $(grep -c 'planTubChange' "$p" 2>/dev/null)"
+              grep -n "_defaultFlavorId" "$p" 2>/dev/null | head -3
+            else
+              echo "  MISSING: $p"
+            fi
           done
+          COLLECT
+          ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "bash -s" /home/swanqpgx/ops.swanky.ink "OPS.swanky.ink PRODUCTION" < /tmp/collect.sh
+
+      - name: Collect (read-only) — TEST
+        run: |
+          cat > /tmp/collect.sh <<'COLLECT'
+          #!/usr/bin/env bash
+          root="$1"; label="$2"
+          say() { echo; echo "================ $label :: $1 ================"; }
+
+          say "log files under docroot (maxdepth 4, non-empty, newest first)"
+          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' -o -name '*.log' -o -name 'debug.log' \) -size +0c -printf '%TY-%Tm-%Td %TH:%TM %10s  %p\n' 2>/dev/null | sort -r | head -20
+
+          say "tails of the newest error logs"
+          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' -o -name '*.log' -o -name 'debug.log' \) -size +0c 2>/dev/null | while read -r f; do
+            echo "---- $(stat -c '%y' "$f" 2>/dev/null)  $f  ($(wc -l < "$f" 2>/dev/null) lines) ----"
+            tail -n 250 "$f" 2>/dev/null
+          done
+
+          say "hook-chain / fatal grep across docroot logs (tail 200)"
+          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' -o -name '*.log' -o -name 'debug.log' \) -size +0c 2>/dev/null | while read -r f; do
+            echo "---- $f ----"
+            grep -nE 'Fatal error|Uncaught|PHP (Warning|Notice|Fatal)|Stack trace|cabinet-slot|tub-state|_write_fields|rest\.php|pods|mark_tub|reconcile|topup|dedupe|confirm' "$f" 2>/dev/null | tail -n 200
+          done
+
+          say "deployed plugin state"
+          plug="$root/wp-content/plugins/scoop_rest"
+          stat -c '%y  %n' "$plug/scoop_rest.php" 2>/dev/null
+          for js in assets/models/cabinet-workflow-grid-model.js assets/ui/confirm-swap-modal.js; do
+            p="$plug/$js"
+            if [ -f "$p" ]; then
+              stat -c '%y  %n' "$p"
+              echo "  planTubChange hits: $(grep -c 'planTubChange' "$p" 2>/dev/null)"
+            else
+              echo "  MISSING: $p"
+            fi
+          done
+          COLLECT
+          ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "bash -s" /home/swanqpgx/test.swanky.ink "TEST.swanky.ink" < /tmp/collect.sh
