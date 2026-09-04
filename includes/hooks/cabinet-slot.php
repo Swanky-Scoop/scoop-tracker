@@ -537,45 +537,64 @@ function scoop_find_or_create_flavor_request(int $location_id, int $flavor_id): 
 function scoop_topup_flavor_request_claims(int $request_id, int $flavor_id, int $destination_id, int $wanted): void {
   if (!$request_id || !$flavor_id || !$destination_id || !function_exists('pods') || !function_exists('pods_api')) return;
 
-  $claimed = pods('tub', ['where' => "flavor_request.ID = {$request_id}", 'limit' => -1]);
-  $claimed_count = $claimed ? (int) $claimed->total() : 0;
+  // Every query/write below assumes tub.flavor_request is a real Pods
+  // relationship (pick) field — the WHERE clauses traverse it as
+  // "flavor_request.ID = …", which only resolves through Pods' relationship
+  // join. That's a schema-config assumption, not a guarantee: this field is
+  // provisioned from _specs.php via gen-pods.php/fix-relations.php, and one
+  // environment (confirmed: production, 2026-09) had it as a plain number
+  // instead, which throws an uncaught Pods SQL error ("Unknown column
+  // 'flavor_request.ID'") the moment this runs — and this function is called
+  // from scoop_tub_post_save_check_demand, which runs on every tub save
+  // touching a flavor that already has a flavor_request row, so one drifted
+  // environment turned into every subsequent swap of that flavor 500ing.
+  // This whole function is best-effort bookkeeping (an index/cache of
+  // demand-to-tub claims, not the source of truth for what's physically in
+  // stock), so a schema problem here should degrade to a logged skip, never
+  // take down the write that triggered it.
+  try {
+    $claimed = pods('tub', ['where' => "flavor_request.ID = {$request_id}", 'limit' => -1]);
+    $claimed_count = $claimed ? (int) $claimed->total() : 0;
 
-  $need = $wanted - $claimed_count;
-  if ($need <= 0) return;
+    $need = $wanted - $claimed_count;
+    if ($need <= 0) return;
 
-  $woodinville_id = (int) scoop_get_default_location_id();
+    $woodinville_id = (int) scoop_get_default_location_id();
 
-  $pool = pods('tub', [
-    'where' => sprintf(
-      "flavor.ID = %d AND location.ID = %d AND state = 'Freezing'",
-      $flavor_id,
-      $woodinville_id
-    ),
-    'limit' => -1,
-  ]);
-  if (!$pool) return;
+    $pool = pods('tub', [
+      'where' => sprintf(
+        "flavor.ID = %d AND location.ID = %d AND state = 'Freezing'",
+        $flavor_id,
+        $woodinville_id
+      ),
+      'limit' => -1,
+    ]);
+    if (!$pool) return;
 
-  $candidates = [];
-  while ($pool->fetch()) {
-    $use_id   = (int) scoop_rel_id($pool->field('use'));
-    $is_front = !$use_id || $use_id === SCOOP_FRONT_OF_HOUSE_USE_ID;
-    if (!$is_front) continue;
+    $candidates = [];
+    while ($pool->fetch()) {
+      $use_id   = (int) scoop_rel_id($pool->field('use'));
+      $is_front = !$use_id || $use_id === SCOOP_FRONT_OF_HOUSE_USE_ID;
+      if (!$is_front) continue;
 
-    if ((int) scoop_rel_id($pool->field('flavor_request'))) continue; // already claimed by some request
+      if ((int) scoop_rel_id($pool->field('flavor_request'))) continue; // already claimed by some request
 
-    $candidates[] = [
-      'id'         => (int) $pool->id(),
-      'created_on' => (string) $pool->field('created_on'),
-    ];
-  }
-  if (!$candidates) return;
+      $candidates[] = [
+        'id'         => (int) $pool->id(),
+        'created_on' => (string) $pool->field('created_on'),
+      ];
+    }
+    if (!$candidates) return;
 
-  usort($candidates, fn($a, $b) => strcmp($a['created_on'], $b['created_on']));
+    usort($candidates, fn($a, $b) => strcmp($a['created_on'], $b['created_on']));
 
-  foreach (array_slice($candidates, 0, $need) as $c) {
-    $data = ['flavor_request' => $request_id];
-    if ($destination_id !== $woodinville_id) $data['moving_to'] = $destination_id;
-    pods_api()->save_pod_item(['pod' => 'tub', 'id' => $c['id'], 'data' => $data]);
+    foreach (array_slice($candidates, 0, $need) as $c) {
+      $data = ['flavor_request' => $request_id];
+      if ($destination_id !== $woodinville_id) $data['moving_to'] = $destination_id;
+      pods_api()->save_pod_item(['pod' => 'tub', 'id' => $c['id'], 'data' => $data]);
+    }
+  } catch (\Throwable $e) {
+    error_log("scoop_topup_flavor_request_claims: request {$request_id} (flavor {$flavor_id}, destination {$destination_id}) failed, skipping claim top-up: " . $e->getMessage());
   }
 }
 
