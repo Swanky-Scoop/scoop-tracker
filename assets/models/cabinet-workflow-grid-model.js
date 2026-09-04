@@ -615,24 +615,10 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
   // ConfirmSwapModal needs to preview, commit, and alert on in one place.
   // outgoingTub is row.currentTubId resolved regardless of its
   // state/validity — the slot's stale link, if any, per "any existing tub
-  // should be removed" (uniform logic — see the QA conversation) — EXCEPT
-  // the one genuine same-flavor case below: row.currentTubId can point at a
-  // tub that's already Opened but out of sync with the slot's own
-  // current_flavor (e.g. an 'impossible' slot whose recorded flavor has no
-  // stock, while a different, already-Opened tub is what's actually sitting
-  // there — see _fillSlotRow's linkedIsValid). If the flavor being selected
-  // here matches THAT tub, it isn't an outgoing tub to evict at all — it's
-  // the incoming tub, already sitting in place. Treating it as outgoing
-  // would empty a perfectly good, already-open tub of the new flavor while
-  // promoting a redundant fresh one alongside it. Adopt it in place instead
-  // (same shape as pickNextTub's own rule (a) open-unclaimed adoption).
+  // should be removed" (uniform logic, no same-flavor special case — see
+  // the QA conversation).
   planTubChange(row, flavorId, preferWhole = true) {
     const outgoingTub = row.currentTubId ? (this._tubsById.get(Number(row.currentTubId)) ?? null) : null;
-
-    if (outgoingTub && outgoingTub.state === OPEN_TUB_STATE && Number(outgoingTub.flavor) === Number(flavorId)) {
-      return { outgoingTub: null, tub: outgoingTub, rule: 'a', pool: [outgoingTub] };
-    }
-
     const { tub, rule, pool } = this.pickNextTub(flavorId, row.location, row.currentTubId, preferWhole);
     return { outgoingTub, tub, rule, pool };
   }

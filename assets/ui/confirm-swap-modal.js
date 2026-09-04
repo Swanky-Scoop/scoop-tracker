@@ -238,16 +238,9 @@ export default class ConfirmSwapModal extends El {
   // is the default target unless it has nothing left to promote, in which
   // case fall through the same immediate_flavor -> next_flavor chain
   // (their own availability isn't re-checked, only current_flavor's is).
-  // Stock is checked via pickNextTub, not promotablePool alone — promotablePool
-  // excludes Opened tubs entirely (see its own comment), which previously made
-  // this treat "nothing left but an already-Opened, unclaimed tub of this
-  // flavor" as out of stock and skip straight to immediate/next. pickNextTub
-  // already prefers that open-unclaimed tub over promoting a fresh one (rule
-  // (a) before rule (b)), so a truthy .tub here means current_flavor still has
-  // something to offer, opened tub or not.
   _defaultFlavorId(row) {
     if (row.reload === false) return row.immediateFlavorId || row.nextFlavorId || row.flavorId;
-    if (this.model.pickNextTub(row.flavorId, row.location, row.currentTubId).tub) return row.flavorId;
+    if (this.model.promotablePool(row.flavorId).length) return row.flavorId;
     return row.immediateFlavorId || row.nextFlavorId || row.flavorId;
   }
 
