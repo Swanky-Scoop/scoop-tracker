@@ -626,10 +626,21 @@ export default class CabinetWorkflowGridModel extends BaseGridModel {
   // would empty a perfectly good, already-open tub of the new flavor while
   // promoting a redundant fresh one alongside it. Adopt it in place instead
   // (same shape as pickNextTub's own rule (a) open-unclaimed adoption).
+  //
+  // Gated on !row.openTub — NOT just "is outgoingTub Opened and same
+  // flavor" — because when the link IS already valid (row.openTub truthy),
+  // outgoingTub IS row.openTub: the slot's own current, already-correct,
+  // in-service tub. That's the single most common case ConfirmSwapModal
+  // handles (an ordinary "swap this nearly-empty tub for a fresh one"
+  // click, same flavor before and after) and it must still evict-and-
+  // replace, not silently no-op by "adopting" the very tub it's supposed to
+  // be replacing. row.openTub is exactly the signal _fillSlotRow already
+  // computed for "this link is genuinely valid, not stale" — reuse it
+  // instead of re-deriving a weaker check here.
   planTubChange(row, flavorId, preferWhole = true) {
     const outgoingTub = row.currentTubId ? (this._tubsById.get(Number(row.currentTubId)) ?? null) : null;
 
-    if (outgoingTub && outgoingTub.state === OPEN_TUB_STATE && Number(outgoingTub.flavor) === Number(flavorId)) {
+    if (!row.openTub && outgoingTub && outgoingTub.state === OPEN_TUB_STATE && Number(outgoingTub.flavor) === Number(flavorId)) {
       return { outgoingTub: null, tub: outgoingTub, rule: 'a', pool: [outgoingTub] };
     }
 
