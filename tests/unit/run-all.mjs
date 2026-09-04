@@ -15,7 +15,7 @@ import path from 'node:path';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 const jsSuites = ['debt-model.test.mjs', 'debt-class.test.mjs'];
-const phpSuites = ['debt-requests.php'];
+const phpSuites = ['debt-requests.php', 'schema-validate.php'];
 
 // The .mjs suites import ESM-syntax files under assets/ (debt-grid-model.js and
 // its transitive imports), and root package.json deliberately has NO "type"

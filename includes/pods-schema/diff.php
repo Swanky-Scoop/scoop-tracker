@@ -245,6 +245,20 @@ function scoop_schema_diff(array $schema): array {
   return $result;
 }
 
+/**
+ * Human-readable form of a pod/field attribute value for reports — mirrors
+ * scoop_schema_comparable_val() above (array => JSON) but with "(none)"/
+ * "(empty)" placeholders. Lives here (not ui.php) because the validator and
+ * the failure payloads it renders are compared/tested headlessly, where
+ * ui.php's add_action side effects can't be loaded.
+ */
+function scoop_schema_display_val($val): string {
+  if ($val === null) return '(none)';
+  if (is_array($val)) return wp_json_encode($val);
+  if ($val === '') return '(empty)';
+  return (string) $val;
+}
+
 /** True if there's anything scoop_schema_apply_additive() could fix. */
 function scoop_schema_diff_has_additive_work(array $diff): bool {
   if (!empty($diff['missing_pods'])) return true;
