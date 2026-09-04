@@ -521,6 +521,18 @@
       return new \WP_REST_Response(['ok' => false, 'error' => 'Pods API not available.'], 500);
     }
 
+    // This route saves directly to the flavor_request pod (below) — the
+    // same schema dependency as scoop_sync_flavor_request() (includes/hooks/
+    // cabinet-slot.php), and this call site reaches Pods on its own, not
+    // through that function, so it needs the same guard independently. See
+    // scoop_flavor_request_schema_ready()'s own comment: on a drifted
+    // environment, letting this reach Pods doesn't throw a catchable
+    // exception, it terminates the request outright — checking first turns
+    // that into a normal, gracefully-returned REST error instead.
+    if (!function_exists('scoop_flavor_request_schema_ready') || !scoop_flavor_request_schema_ready()) {
+      return new \WP_REST_Response(['ok' => false, 'error' => 'flavor_request schema is not set up on this environment yet (see Scoop -> Schema Sync).'], 500);
+    }
+
     // One upsert per (location, flavor): find the existing row for the
     // pair, then save (update) or create. pods() with a where clause is
     // the established read here (same as the slot dedupe hook's lookup).
