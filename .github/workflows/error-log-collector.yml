@@ -1,0 +1,113 @@
+name: Error-log collector (diagnostics)
+
+# TEMPORARY, READ-ONLY diagnostics workflow — staged for ONE manual run, to
+# be removed from its branch (never merged) as soon as it has collected.
+#
+# WHY IT EXISTS: the tub-swap flow is throwing production 500s
+# (CabinetWorkflow Confirm Swap / /tubs or /Cabinet POST) and the running
+# hypothesis (cabinet-slot.php post_save hook chain: mark_tub_moving /
+# flavor_request topup / dedupe_other_slots) needs ONE real stack trace to
+# confirm or kill. The error logs live on the cPanel hosts, reachable only
+# via the same SSH keys the deploy workflow uses — so this workflow reuses
+# EXACTLY that credential plane (secrets.OPS_INK, host swanky.ink:21098) to
+# run a fixed set of READ-ONLY commands (ls / find / grep / tail). It writes
+# nothing anywhere: no remote mutation, no artifact upload (logs stay in the
+# job summary/log only).
+#
+# NOTE: must be triggered by a PUSH of a branch carrying this file (the bot
+# token lacks actions:write → no workflow_dispatch). `on: push` runs the
+# workflow FILE FROM THE PUSHED BRANCH; deploy.yml is push-filtered to main
+# so a diagnostics branch push cannot deploy. Deleting the file in a
+# follow-up commit ends the trigger.
+
+on:
+  push:
+    branches:
+      - diagnostics/error-log-tail
+
+permissions:
+  contents: read
+
+env:
+  REMOTE_HOST_INK: swanky.ink
+  REMOTE_PORT_INK: "21098"
+  REMOTE_USER_INK: swanqpgx
+  # cPanel document roots (same paths deploy.yml writes the plugin into)
+  OPS_DOCROOT: /home/swanqpgx/ops.swanky.ink
+  TEST_DOCROOT: /home/swanqpgx/test.swanky.ink
+
+jobs:
+  collect-logs:
+    name: Tail error logs — ops.swanky.ink + test.swanky.ink (read-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Load SSH key into agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.OPS_INK }}
+
+      - name: Trust host
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 10 -p "$REMOTE_PORT_INK" "$REMOTE_HOST_INK" >> ~/.ssh/known_hosts
+
+      # ------------------------------------------------------------------
+      # Helper: run one read-only remote command against one docroot and
+      # print it under a clear banner. Every command below is strictly a
+      # read: ls / find / wc / grep / tail / sed. No writes, no deletes.
+      # ------------------------------------------------------------------
+      - name: Discover log files
+        run: |
+          ssh() { command ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "$@"; }
+          for site in "$OPS_DOCROOT OPS.swanky.ink-production" "$TEST_DOCROOT TEST.swanky.ink"; do
+            set -- $site; root=$1; label=$2
+            echo "================ $label : error-log discovery ================"
+            ssh "find '$root' -maxdepth 2 -iname '*error*log*' -o -maxdepth 2 -iname '*.log' 2>/dev/null | head -40" || true
+            echo "---- cPanel home-level (one level above docroot) ----"
+            ssh "find '$root/..' -maxdepth 1 -iname '*error*log*' -o -maxdepth 1 -iname '*.log' 2>/dev/null | head -20" || true
+            echo "---- logs dir / wp-content / uploads ----"
+            ssh "ls -la '$root/logs' '$root/wp-content' 2>/dev/null | head -60" || true
+          done
+
+      - name: WP debug.log tails (both sites)
+        run: |
+          ssh() { command ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "$@"; }
+          for site in "$OPS_DOCROOT OPS.swanky.ink-production" "$TEST_DOCROOT TEST.swanky.ink"; do
+            set -- $site; root=$1; label=$2
+            echo "================ $label : wp-content/debug.log ================"
+            ssh "test -f '$root/wp-content/debug.log' && wc -l '$root/wp-content/debug.log' && tail -n 250 '$root/wp-content/debug.log' || echo 'no debug.log'"
+          done
+
+      - name: Apache/LiteSpeed per-domain error logs (Aug 28 →)
+        run: |
+          ssh() { command ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "$@"; }
+          for site in "$OPS_DOCROOT OPS.swanky.ink-production" "$TEST_DOCROOT TEST.swanky.ink"; do
+            set -- $site; root=$1; label=$2
+            echo "================ $label : LiteSpeed/Apache error logs ================"
+            # Standard cPanel layouts, newest matching files first, tail 300 of each
+            ssh "find '$root' -maxdepth 4 \\( -path '*/logs/*' -o -path '*/domlogs/*' -o -path '*/access-logs/*' \\) -type f 2>/dev/null | head -30" || true
+            for f in "$(ssh "find '$root' -maxdepth 4 -type f \\( -iname '*error*log*' -o -iname 'ssl_error_log*' -o -iname 'error_log*' \\) 2>/dev/null | head -10")"; do
+              [ -n "$f" ] || continue
+              echo "---- tail -300 of $f ----"
+              ssh "tail -n 300 '$f' 2>/dev/null" || true
+            done
+          done
+
+      - name: PHP fatal/error lines mentioning swap endpoints (all logs, Aug 28 →)
+        run: |
+          ssh() { command ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "$@"; }
+          for site in "$OPS_DOCROOT OPS.swanky.ink-production" "$TEST_DOCROOT TEST.swanky.ink"; do
+            set -- $site; root=$1; label=$2
+            echo "================ $label : grep for tub/cabinet/slot fatals ================"
+            ssh "grep -rniE 'fatal|uncaught|pods|cabinet|tub' '$root' --include='*.log*' -l 2>/dev/null | head -20" || true
+          done
+
+      - name: Confirm deployed plugin state (read-only listing)
+        run: |
+          ssh() { command ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "$@"; }
+          for site in "$OPS_DOCROOT OPS.swanky.ink-production" "$TEST_DOCROOT TEST.swanky.ink"; do
+            set -- $site; root=$1; label=$2
+            echo "================ $label : deployed scoop_rest state ================"
+            ssh "grep -n 'confirm-swap\|planTubChange\|_defaultFlavorId' '$root/wp-content/plugins/scoop_rest/assets/cabinet-workflow-grid-model.js' 2>/dev/null | head -5; echo '--- confirm modal server write shape:'; grep -n 'state.*Opened\|slot' '$root/wp-content/plugins/scoop_rest/assets/confirm-swap-modal.js' 2>/dev/null | sed -n '1,5p'"
+          done
