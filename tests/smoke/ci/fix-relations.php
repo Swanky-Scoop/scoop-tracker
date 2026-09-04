@@ -52,4 +52,27 @@ if ($tubSlot && $slotTub) {
   $api->save_field(['pod'=>'slot','id'=>$slotTub['id'],'name'=>'tub','label'=>$slotTub['label'],'type'=>'pick','pick_object'=>'post_type','pick_val'=>'tub','pick_format_type'=>'single','pick_format_single'=>'dropdown','pick_bidirectional'=>'1','sister_id'=>$tubSlot['id'],'required'=>0]);
   echo "bidirectional sisters linked\n";
 }
+
+// Bidirectional sister pair #2: tub.flavor_request <-> flavor_request.tubs
+// (see includes/pods-schema/_schema.php:1687 — the forward field MUST be a
+// pick, not the int that _specs.php's data_type suggests). The demand chain
+// (scoop_topup_flavor_request_claims, includes/hooks/cabinet-slot.php)
+// queries pods('tub', ['where' => "flavor_request.ID = <id>"]) on EVERY tub
+// save once a flavor_request row exists; with an int field Pods cannot
+// traverse flavor_request.ID and throws — an uncaught HTTP 500 that fires
+// AFTER the tub write itself has landed (reproduced 2026-09-04: swap 500,
+// row + slot link still written; see .crew/tmp/net-evidence/ROOT-CAUSE.md).
+$tubFR = $tubPod['fields']['flavor_request'] ?? null;
+$frPod = $api->load_pod(['name'=>'flavor_request']);
+$frTubs = $frPod['fields']['tubs'] ?? null;
+if ($tubFR && $frTubs) {
+  $api->save_field(['pod'=>'tub','id'=>$tubFR['id'],'name'=>'flavor_request','label'=>$tubFR['label'] ?? 'Flavor request','type'=>'pick','pick_object'=>'post_type','pick_val'=>'flavor_request','pick_format_type'=>'single','pick_format_single'=>'dropdown','pick_bidirectional'=>'1','sister_id'=>$frTubs['id'],'required'=>0]);
+  $api->save_field(['pod'=>'flavor_request','id'=>$frTubs['id'],'name'=>'tubs','label'=>$frTubs['label'] ?? 'Tubs','type'=>'pick','pick_object'=>'post_type','pick_val'=>'tub','pick_format_type'=>'multi','pick_format_multi'=>'autocomplete','pick_bidirectional'=>'1','sister_id'=>$tubFR['id'],'required'=>0]);
+  echo "flavor_request sisters linked\n";
+} elseif ($tubFR) {
+  // tubs side missing entirely — still convert the forward field; the
+  // demand-chain query only needs the relation to traverse.
+  $api->save_field(['pod'=>'tub','id'=>$tubFR['id'],'name'=>'flavor_request','label'=>$tubFR['label'] ?? 'Flavor request','type'=>'pick','pick_object'=>'post_type','pick_val'=>'flavor_request','pick_format_type'=>'single','pick_format_single'=>'dropdown','required'=>0]);
+  echo "tub.flavor_request converted to pick (no sister pair)\n";
+}
 echo "relations fixed\n";
