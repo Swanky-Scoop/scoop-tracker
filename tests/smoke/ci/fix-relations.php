@@ -3,7 +3,7 @@ $api = pods_api();
 $fix = [
   'slot' => ['cabinet'=>'cabinet','location'=>'location'],
   'cabinet' => ['location'=>'location'],
-  'tub' => ['use'=>'use','flavor'=>'flavor','location'=>'location','batch'=>'batch','closeout'=>'closeout','slot'=>'slot','moving_to'=>'location'],
+  'tub' => ['use'=>'use','flavor'=>'flavor','location'=>'location','batch'=>'batch','closeout'=>'closeout','slot'=>'slot','moving_to'=>'location','flavor_request'=>'flavor_request'],
   'batch' => ['flavor'=>'flavor','task'=>'task'],
   'flavor_request' => ['location'=>'location','flavor'=>'flavor'],
   'closeout' => ['flavor'=>'flavor','use'=>'use','location'=>'location'],

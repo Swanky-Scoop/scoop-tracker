@@ -150,7 +150,16 @@ function scoop_entity_specs(string $key = ''): array {
           // flavor) demand this tub is claimed against, if any. Written
           // only server-side by scoop_mark_tub_moving_if_needed(); no
           // client write path yet, so hidden and not in 'writeable' below.
-          'flavor_request' => ['data_type' => 'int',      'control' => 'find', 'hidden' => true],
+          // titleMap is required, not decorative: gen-pods.php's field
+          // generator (tests/smoke/ci/gen-pods.php) only emits a relationship
+          // (pick) field for an 'int' data_type when a titleMap is present —
+          // without one it silently provisions a plain number field instead.
+          // That drift is exactly what caused scoop_topup_flavor_request_claims()'s
+          // pods('tub', ['where' => "flavor_request.ID = …"]) (includes/hooks/
+          // cabinet-slot.php) to throw "Unknown column 'flavor_request.ID'"
+          // in production — that WHERE-clause syntax only resolves through
+          // Pods' relationship join, which a plain number field can't provide.
+          'flavor_request' => ['data_type' => 'int',      'control' => 'find', 'titleMap' => 'flavor_request', 'hidden' => true],
         ],
         'post_fields' => [
           'editor_name'   => 'string',

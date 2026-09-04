@@ -482,6 +482,53 @@ function scoop_flavor_present_at_location(int $flavor_id, int $location_id): boo
   return false;
 }
 
+/**
+ * Whether this environment's schema actually supports the flavor_request
+ * machinery below — checked once per request and cached (this is reachable
+ * from a loop over every slot wanting a flavor, e.g.
+ * scoop_reconcile_moving_for_flavor(), so repeat calls need to be cheap).
+ *
+ * This exists because try/catch cannot protect against the actual failure
+ * mode here. Confirmed live against a copy of production data (2026-09):
+ * the flavor_request pod does not exist there at all — 9d545dd added this
+ * machinery but nothing ever created it on that environment. Inside a real
+ * REST request, Pods' own pods_error() does not throw a catchable PHP
+ * exception for "operate on a pod/field that doesn't exist" — pods_doing_json()
+ * sees the REST_REQUEST constant, resolves error_mode to 'json', and calls
+ * wp_send_json(['message' => $error], 500) followed by die(): a clean HTTP
+ * 500 response, then a hard process termination no try/catch anywhere can
+ * intercept (confirmed directly: overriding the wp_die_handler filter never
+ * fires either — this bypasses wp_die() too). The only real fix is never
+ * calling into Pods for this pod/field unless this check says it's safe to.
+ *
+ * Checks both possible drift shapes: the whole pod missing (what production
+ * actually has), and tub.flavor_request present but not a proper single
+ * pick field (what a gen-pods.php-provisioned environment would have,
+ * before the _specs.php fix — see that file's own comment on this field).
+ */
+function scoop_flavor_request_schema_ready(): bool {
+  static $ready = null;
+  if ($ready !== null) return $ready;
+
+  $ready = false;
+  if (function_exists('pods_api')) {
+    try {
+      $fr_pod = pods_api()->load_pod(['name' => 'flavor_request']);
+      $tub_pod = pods_api()->load_pod(['name' => 'tub']);
+      $tub_field = is_array($tub_pod['fields'] ?? null) ? ($tub_pod['fields']['flavor_request'] ?? null) : null;
+      $ready = !empty($fr_pod) && !empty($tub_field) && ($tub_field['type'] ?? '') === 'pick';
+    } catch (\Throwable $e) {
+      $ready = false;
+    }
+  }
+
+  if (!$ready) {
+    error_log('scoop_flavor_request_schema_ready: flavor_request pod and/or tub.flavor_request field missing or misconfigured on this environment — flavor_request sync/claim machinery skipped until repaired (Scoop -> Schema Sync).');
+  }
+
+  return $ready;
+}
+
 /** Read-only lookup — does a flavor_request already exist for this pair? */
 function scoop_find_flavor_request(int $location_id, int $flavor_id): int {
   if (!$location_id || !$flavor_id || !function_exists('pods')) return 0;
@@ -502,6 +549,10 @@ function scoop_find_or_create_flavor_request(int $location_id, int $flavor_id): 
   $existing_id = scoop_find_flavor_request($location_id, $flavor_id);
   if ($existing_id) return $existing_id;
   if (!function_exists('pods_api')) return 0;
+  // See scoop_flavor_request_schema_ready()'s own comment — creating a
+  // flavor_request post when that pod doesn't exist on this environment is
+  // exactly the call that terminates the whole request uncatchably.
+  if (!scoop_flavor_request_schema_ready()) return 0;
 
   $title = sprintf(
     '%s | %s',
@@ -537,45 +588,63 @@ function scoop_find_or_create_flavor_request(int $location_id, int $flavor_id): 
 function scoop_topup_flavor_request_claims(int $request_id, int $flavor_id, int $destination_id, int $wanted): void {
   if (!$request_id || !$flavor_id || !$destination_id || !function_exists('pods') || !function_exists('pods_api')) return;
 
-  $claimed = pods('tub', ['where' => "flavor_request.ID = {$request_id}", 'limit' => -1]);
-  $claimed_count = $claimed ? (int) $claimed->total() : 0;
+  // Every query/write below assumes tub.flavor_request is a real Pods
+  // relationship (pick) field — the WHERE clauses traverse it as
+  // "flavor_request.ID = …", which only resolves through Pods' relationship
+  // join. See scoop_flavor_request_schema_ready()'s own comment for why this
+  // is checked upfront rather than relying on the try/catch below: inside a
+  // real REST request, Pods' error path for this specific failure is not a
+  // catchable exception at all (wp_send_json + die()), so the guard is the
+  // actual fix — the try/catch is only a second layer for anything else
+  // unexpected in this function. This whole function is best-effort
+  // bookkeeping (an index/cache of demand-to-tub claims, not the source of
+  // truth for what's physically in stock), so any problem here should
+  // degrade to a logged skip, never take down the write that triggered it.
+  if (!scoop_flavor_request_schema_ready()) return;
 
-  $need = $wanted - $claimed_count;
-  if ($need <= 0) return;
+  try {
+    $claimed = pods('tub', ['where' => "flavor_request.ID = {$request_id}", 'limit' => -1]);
+    $claimed_count = $claimed ? (int) $claimed->total() : 0;
 
-  $woodinville_id = (int) scoop_get_default_location_id();
+    $need = $wanted - $claimed_count;
+    if ($need <= 0) return;
 
-  $pool = pods('tub', [
-    'where' => sprintf(
-      "flavor.ID = %d AND location.ID = %d AND state = 'Freezing'",
-      $flavor_id,
-      $woodinville_id
-    ),
-    'limit' => -1,
-  ]);
-  if (!$pool) return;
+    $woodinville_id = (int) scoop_get_default_location_id();
 
-  $candidates = [];
-  while ($pool->fetch()) {
-    $use_id   = (int) scoop_rel_id($pool->field('use'));
-    $is_front = !$use_id || $use_id === SCOOP_FRONT_OF_HOUSE_USE_ID;
-    if (!$is_front) continue;
+    $pool = pods('tub', [
+      'where' => sprintf(
+        "flavor.ID = %d AND location.ID = %d AND state = 'Freezing'",
+        $flavor_id,
+        $woodinville_id
+      ),
+      'limit' => -1,
+    ]);
+    if (!$pool) return;
 
-    if ((int) scoop_rel_id($pool->field('flavor_request'))) continue; // already claimed by some request
+    $candidates = [];
+    while ($pool->fetch()) {
+      $use_id   = (int) scoop_rel_id($pool->field('use'));
+      $is_front = !$use_id || $use_id === SCOOP_FRONT_OF_HOUSE_USE_ID;
+      if (!$is_front) continue;
 
-    $candidates[] = [
-      'id'         => (int) $pool->id(),
-      'created_on' => (string) $pool->field('created_on'),
-    ];
-  }
-  if (!$candidates) return;
+      if ((int) scoop_rel_id($pool->field('flavor_request'))) continue; // already claimed by some request
 
-  usort($candidates, fn($a, $b) => strcmp($a['created_on'], $b['created_on']));
+      $candidates[] = [
+        'id'         => (int) $pool->id(),
+        'created_on' => (string) $pool->field('created_on'),
+      ];
+    }
+    if (!$candidates) return;
 
-  foreach (array_slice($candidates, 0, $need) as $c) {
-    $data = ['flavor_request' => $request_id];
-    if ($destination_id !== $woodinville_id) $data['moving_to'] = $destination_id;
-    pods_api()->save_pod_item(['pod' => 'tub', 'id' => $c['id'], 'data' => $data]);
+    usort($candidates, fn($a, $b) => strcmp($a['created_on'], $b['created_on']));
+
+    foreach (array_slice($candidates, 0, $need) as $c) {
+      $data = ['flavor_request' => $request_id];
+      if ($destination_id !== $woodinville_id) $data['moving_to'] = $destination_id;
+      pods_api()->save_pod_item(['pod' => 'tub', 'id' => $c['id'], 'data' => $data]);
+    }
+  } catch (\Throwable $e) {
+    error_log("scoop_topup_flavor_request_claims: request {$request_id} (flavor {$flavor_id}, destination {$destination_id}) failed, skipping claim top-up: " . $e->getMessage());
   }
 }
 
@@ -592,6 +661,7 @@ function scoop_topup_flavor_request_claims(int $request_id, int $flavor_id, int 
  */
 function scoop_sync_flavor_request(int $location_id, int $flavor_id): void {
   if (!$location_id || !$flavor_id || !function_exists('pods') || !function_exists('pods_api')) return;
+  if (!scoop_flavor_request_schema_ready()) return;
 
   $guard_key = "sync_flavor_request:{$location_id}:{$flavor_id}";
   if (!scoop_guard_enter($guard_key)) return;
