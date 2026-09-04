@@ -3,18 +3,16 @@ name: Error-log collector (diagnostics)
 # TEMPORARY, READ-ONLY diagnostics workflow — staged for ONE manual run, to
 # be removed from its branch (never merged) as soon as it has collected.
 #
-# WHY: production 500s on the tub-swap flow (CabinetWorkflow Confirm Swap /
-# /tubs or /Cabinet POST). One real stack trace confirms or kills the ranked
-# hypothesis (cabinet-slot.php post_save chain: mark_tub_moving /
-# flavor_request topup / dedupe_other_slots). Logs live on the cPanel host,
-# reachable only via the deploy SSH keys — this reuses EXACTLY that
-# credential plane (secrets.OPS_INK, swanky.ink:21098) for a fixed set of
-# READ-ONLY commands (find / stat / grep / tail / wc). No writes, no
-# deletes, no artifact upload — output stays in the job log.
+# WHY: production 500s on the tub-swap flow. Round 2 established the PHP
+# error_log has NO fatal/stack-trace in the Sep 3–4 window (WP_DEBUG off;
+# modern WP REST catches Throwable → 500 JSON without logging). The
+# request-level evidence must come from the cPanel ACCESS logs: exact
+# failing URI + status + second, then correlated against the plugin's
+# audit-log ("Inventory change logged") timestamps to see how far each
+# failing request got.
 #
-# Round 2: remote logic runs as a script piped to `ssh bash -s` (no nested
-# quoting), log discovery by exact name (cPanel's dot-less `error_log`),
-# per-day activity counts, hook-name greps, and corrected JS asset paths.
+# READ-ONLY: ls / find / stat / grep / awk / zcat / tail only. No writes,
+# no deletes, no artifact upload — output stays in the job log.
 
 on:
   push:
@@ -30,8 +28,8 @@ env:
   REMOTE_USER_INK: swanqpgx
 
 jobs:
-  collect-logs:
-    name: Tail error logs — ops + test.swanky.ink (read-only)
+  collect-access:
+    name: Access-log hunt — ops + test.swanky.ink (read-only)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -45,94 +43,62 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -T 10 -p "$REMOTE_PORT_INK" "$REMOTE_HOST_INK" >> ~/.ssh/known_hosts
 
-      - name: Collect (read-only) — OPS production
+      - name: Access logs + PHP-log slice — OPS production
         run: |
-          cat > /tmp/collect.sh <<'COLLECT'
+          cat > /tmp/collect3.sh <<'COLLECT'
           #!/usr/bin/env bash
-          # READ-ONLY collector: find/stat/grep/tail/wc only.
-          root="$1"; label="$2"
+          # READ-ONLY collector: ls/find/stat/grep/awk/zcat/tail only.
+          home="$1"; docroot="$2"; label="$3"
           say() { echo; echo "================ $label :: $1 ================"; }
 
-          say "log files under docroot (maxdepth 4, non-empty, newest first)"
-          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' -o -name '*.log' -o -name 'debug.log' \) -size +0c -printf '%TY-%Tm-%Td %TH:%TM %10s  %p\n' 2>/dev/null | sort -r | head -20
+          say "home layout (top level)"
+          ls -la "$home" 2>/dev/null | head -40
 
-          say "log files one level above docroot (cPanel home)"
-          find "$root/.." -maxdepth 1 -type f \( -name 'error_log*' -o -name '*.log' \) -size +0c -printf '%TY-%Tm-%Td %TH:%TM %10s  %p\n' 2>/dev/null | head -10
-
-          say "tails of the newest error logs"
-          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' -o -name '*.log' -o -name 'debug.log' \) -size +0c 2>/dev/null | while read -r f; do
-            echo "---- $(stat -c '%y' "$f" 2>/dev/null)  $f  ($(wc -l < "$f" 2>/dev/null) lines) ----"
-            tail -n 250 "$f" 2>/dev/null
+          say "candidate access-log locations"
+          for d in "$home/logs" "$home/access-logs" "$home/etc"; do
+            echo "---- $d ----"
+            find "$d" -maxdepth 2 \( -type f -o -type l \) -printf '%TY-%Tm-%Td %TH:%TM %12s  %p -> %l\n' 2>/dev/null | sort -k3 -rn | head -40
           done
 
-          say "error-logging config (.htaccess / .user.ini / wp-config WP_DEBUG lines only)"
-          grep -nE 'error_log|display_errors|error_reporting' "$root/.htaccess" "$root/.user.ini" 2>/dev/null
-          grep -nE 'WP_DEBUG|error_reporting' "$root/wp-config.php" 2>/dev/null
-
-          say "per-day error counts (recent days) in each log"
-          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' \) -size +0c 2>/dev/null | while read -r f; do
-            echo "---- $f ----"
-            for d in 28-Aug 29-Aug 30-Aug 31-Aug 01-Sep 02-Sep 03-Sep 04-Sep 05-Sep; do
-              n=$(grep -c "\[$d-2026" "$f" 2>/dev/null || true)
-              echo "  $d-2026: $n"
-            done
+          say "5xx + scoop POST lines from ops domain access logs (Sep 2-4)"
+          for L in $(find "$home/logs" "$home/access-logs" -maxdepth 2 \( -type f -o -type l \) 2>/dev/null | grep -iE 'ops\.swanky\.ink|ops\.swankyscoop' | head -8); do
+            echo "==== $L (size $(stat -c %s "$L" 2>/dev/null)) ===="
+            ( zcat -f "$L" 2>/dev/null || cat "$L" ) 2>/dev/null | awk '$9 ~ /^5/ && $0 ~ /\[0[234]\/Sep\/2026/' | tail -100
+            echo "---- (same log) POST /wp-json/scoop lines, last 80 ----"
+            ( zcat -f "$L" 2>/dev/null || cat "$L" ) 2>/dev/null | grep -E '"POST /wp-json/scoop' | tail -80
           done
 
-          say "hook-chain / fatal grep across docroot logs (tail 200)"
-          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' -o -name '*.log' -o -name 'debug.log' \) -size +0c 2>/dev/null | while read -r f; do
-            echo "---- $f ----"
-            grep -nE 'Fatal error|Uncaught|PHP (Warning|Notice|Fatal)|Stack trace|cabinet-slot|tub-state|_write_fields|rest\.php|pods|mark_tub|reconcile|topup|dedupe|confirm' "$f" 2>/dev/null | tail -n 200
-          done
+          say "PHP error_log Sep 2-4 EXCLUDING _routes.php noise (all lines)"
+          awk '/^\[(02|03|04)-Sep-2026/ && !/_routes\.php/' "$docroot/error_log" 2>/dev/null | tail -250
 
-          say "deployed plugin state (which code is live)"
-          plug="$root/wp-content/plugins/scoop_rest"
-          stat -c '%y  %n' "$plug/scoop_rest.php" 2>/dev/null
-          for js in assets/models/cabinet-workflow-grid-model.js assets/ui/confirm-swap-modal.js; do
-            p="$plug/$js"
-            if [ -f "$p" ]; then
-              stat -c '%y  %n' "$p"
-              echo "  planTubChange hits: $(grep -c 'planTubChange' "$p" 2>/dev/null)"
-              grep -n "_defaultFlavorId" "$p" 2>/dev/null | head -3
-            else
-              echo "  MISSING: $p"
-            fi
-          done
+          say "PHP error_log Sep 2-4 message-type histogram"
+          awk '/^\[(02|03|04)-Sep-2026/ && !/_routes\.php/' "$docroot/error_log" 2>/dev/null | sed -E 's/^\[[^]]+\] //; s/[0-9]+/N/g' | sort | uniq -c | sort -rn | head -20
+
+          say "wflogs / litespeed state (listing only)"
+          ls -la "$docroot/wp-content/wflogs" 2>/dev/null | head -12
+          ls -la "$docroot/wp-content/litespeed" 2>/dev/null | head -12
           COLLECT
-          ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "bash -s" /home/swanqpgx/ops.swanky.ink "OPS.swanky.ink PRODUCTION" < /tmp/collect.sh
+          ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "bash -s" /home/swanqpgx /home/swanqpgx/ops.swanky.ink "OPS.swanky.ink PRODUCTION" < /tmp/collect3.sh
 
-      - name: Collect (read-only) — TEST
+      - name: Access logs + PHP-log slice — TEST
         run: |
-          cat > /tmp/collect.sh <<'COLLECT'
+          cat > /tmp/collect3.sh <<'COLLECT'
           #!/usr/bin/env bash
-          root="$1"; label="$2"
+          home="$1"; docroot="$2"; label="$3"
           say() { echo; echo "================ $label :: $1 ================"; }
-
-          say "log files under docroot (maxdepth 4, non-empty, newest first)"
-          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' -o -name '*.log' -o -name 'debug.log' \) -size +0c -printf '%TY-%Tm-%Td %TH:%TM %10s  %p\n' 2>/dev/null | sort -r | head -20
-
-          say "tails of the newest error logs"
-          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' -o -name '*.log' -o -name 'debug.log' \) -size +0c 2>/dev/null | while read -r f; do
-            echo "---- $(stat -c '%y' "$f" 2>/dev/null)  $f  ($(wc -l < "$f" 2>/dev/null) lines) ----"
-            tail -n 250 "$f" 2>/dev/null
+          say "candidate access-log locations"
+          for d in "$home/logs" "$home/access-logs"; do
+            echo "---- $d ----"
+            find "$d" -maxdepth 2 \( -type f -o -type l \) -printf '%TY-%Tm-%Td %TH:%TM %12s  %p -> %l\n' 2>/dev/null | sort -k3 -rn | head -40
           done
-
-          say "hook-chain / fatal grep across docroot logs (tail 200)"
-          find "$root" -maxdepth 4 -type f \( -name 'error_log' -o -name 'error_log.*' -o -name '*.log' -o -name 'debug.log' \) -size +0c 2>/dev/null | while read -r f; do
-            echo "---- $f ----"
-            grep -nE 'Fatal error|Uncaught|PHP (Warning|Notice|Fatal)|Stack trace|cabinet-slot|tub-state|_write_fields|rest\.php|pods|mark_tub|reconcile|topup|dedupe|confirm' "$f" 2>/dev/null | tail -n 200
+          say "5xx + scoop POST lines from test domain access logs (Sep 2-4)"
+          for L in $(find "$home/logs" "$home/access-logs" -maxdepth 2 \( -type f -o -type l \) 2>/dev/null | grep -iE 'test\.swanky\.ink' | head -8); do
+            echo "==== $L (size $(stat -c %s "$L" 2>/dev/null)) ===="
+            ( zcat -f "$L" 2>/dev/null || cat "$L" ) 2>/dev/null | awk '$9 ~ /^5/ && $0 ~ /\[0[234]\/Sep\/2026/' | tail -100
+            echo "---- (same log) POST /wp-json/scoop lines, last 80 ----"
+            ( zcat -f "$L" 2>/dev/null || cat "$L" ) 2>/dev/null | grep -E '"POST /wp-json/scoop' | tail -80
           done
-
-          say "deployed plugin state"
-          plug="$root/wp-content/plugins/scoop_rest"
-          stat -c '%y  %n' "$plug/scoop_rest.php" 2>/dev/null
-          for js in assets/models/cabinet-workflow-grid-model.js assets/ui/confirm-swap-modal.js; do
-            p="$plug/$js"
-            if [ -f "$p" ]; then
-              stat -c '%y  %n' "$p"
-              echo "  planTubChange hits: $(grep -c 'planTubChange' "$p" 2>/dev/null)"
-            else
-              echo "  MISSING: $p"
-            fi
-          done
+          say "PHP error_log Sep 3-4 EXCLUDING _routes.php noise"
+          awk '/^\[(03|04)-Sep-2026/ && !/_routes\.php/' "$docroot/error_log" 2>/dev/null | tail -200
           COLLECT
-          ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "bash -s" /home/swanqpgx/test.swanky.ink "TEST.swanky.ink" < /tmp/collect.sh
+          ssh -p "$REMOTE_PORT_INK" "$REMOTE_USER_INK@$REMOTE_HOST_INK" "bash -s" /home/swanqpgx /home/swanqpgx/test.swanky.ink "TEST.swanky.ink" < /tmp/collect3.sh
