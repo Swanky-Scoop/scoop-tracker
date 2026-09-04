@@ -209,8 +209,111 @@ function scoop_slot_designation_fields(): array {
   return ['current_flavor', 'immediate_flavor', 'next_flavor'];
 }
 
+/* ------------------------------------------------------------
+ * Schema-readiness guards (same doctrine as scoop_flavor_request_schema_ready()
+ * below — see that function's own comment for the full failure-mode story:
+ * inside a real REST request, Pods' error path for a missing pod/field is
+ * wp_send_json(500) + die(), which no try/catch anywhere can intercept, so
+ * the only real defense is checking BEFORE calling into Pods).
+ *
+ * These guard the two remaining hook families that call Pods on fields this
+ * plugin expects to exist but that no committed provisioning step has ever
+ * guaranteed:
+ * - slot.current_flavor/immediate_flavor/next_flavor (the designation fields)
+ *   — not declared in _schema.php until this file's guards went in, so
+ *   Schema Sync could never repair them; on any environment stood up without
+ *   them (or where they were deleted), every slot save 500s the same way the
+ *   missing flavor_request pod did.
+ * - tub.moving_to — declared in _schema.php and repaired by Schema Sync, but
+ *   scoop_mark_tub_moving_if_needed()'s write predates that declaration's
+ *   arrival on every existing environment; until each one actually applies
+ *   the schema, its write is live drift exactly like flavor_request was.
+ *
+ * Both read AND write exposure is real for these: the WHERE clauses traverse
+ * them as "<field>.ID = …" (relationship-join syntax Pods can only resolve
+ * against a real pick field — against a missing field or a plain number field
+ * it's the same uncatchable 500), and the writes land through
+ * pods_api()->save_pod_item() on the same fields.
+ * ------------------------------------------------------------ */
+
+/** One shared log-skip line — deduped per check per request so a reconcile
+ * loop over many slots/flavors logs once, not once per slot. */
+function scoop_log_schema_skip(string $check, string $what): void {
+  static $logged = [];
+  if (isset($logged[$check])) return;
+  $logged[$check] = true;
+  error_log("scoop_{$check}: {$what} missing or misconfigured on this environment — dependent save-hook work skipped until repaired (Scoop -> Schema Sync).");
+}
+
+/** Which pod's fields a given schema-ready check depends on, and which of
+ * them must be real pick relations (their WHERE clauses traverse .ID).
+ * Everything else in those functions is either a pod lookup (guarded by the
+ * pod check itself) or a plain scalar. */
+function scoop_guard_field_requirements(string $check): array {
+  switch ($check) {
+    case 'slot_designation_schema_ready':
+      return ['pod' => 'slot', 'picks' => ['current_flavor', 'immediate_flavor', 'next_flavor']];
+    case 'tub_moving_schema_ready':
+      return ['pod' => 'tub', 'picks' => ['moving_to']];
+  }
+  return ['pod' => '', 'picks' => []];
+}
+
+function scoop_schema_ready_for(string $check): bool {
+  static $ready = [];
+  if (array_key_exists($check, $ready)) return $ready[$check];
+
+  $ready[$check] = false;
+  $req = scoop_guard_field_requirements($check);
+  if ($req['pod'] !== '' && function_exists('pods_api')) {
+    try {
+      $pod = pods_api()->load_pod(['name' => $req['pod']]);
+      $fields = is_array($pod['fields'] ?? null) ? $pod['fields'] : [];
+      $ok = !empty($pod);
+      foreach ($req['picks'] as $pf) {
+        if (!$ok) break;
+        $ok = (($fields[$pf]['type'] ?? '') === 'pick');
+      }
+      $ready[$check] = $ok;
+    } catch (\Throwable $e) {
+      $ready[$check] = false;
+    }
+  }
+
+  if (!$ready[$check]) {
+    scoop_log_schema_skip($check, $req['pod'] . '.' . implode('/', $req['picks']));
+  }
+  return $ready[$check];
+}
+
+/**
+ * Whether this environment's slot pod has the designation fields
+ * (current_flavor/immediate_flavor/next_flavor) as real pick relations —
+ * required by every ".ID" traversal and designation write in the slot
+ * dedupe/designation hooks above, and by the demand scans below. Memoized
+ * per request; see scoop_schema_ready_for() for the failure-mode rationale.
+ */
+function scoop_slot_designation_schema_ready(): bool {
+  return scoop_schema_ready_for('slot_designation_schema_ready');
+}
+
+/**
+ * Whether tub.moving_to exists as a real pick relation on this environment —
+ * required by scoop_mark_tub_moving_if_needed()'s earmark write and by every
+ * reader that traverses moving_to. Memoized per request; see
+ * scoop_schema_ready_for() for the failure-mode rationale.
+ */
+function scoop_tub_moving_schema_ready(): bool {
+  return scoop_schema_ready_for('tub_moving_schema_ready');
+}
+
 add_filter('pods_api_pre_save_pod_item_slot', 'scoop_slot_pre_save_dedupe_own_fields', 10, 2);
 function scoop_slot_pre_save_dedupe_own_fields($pieces, $is_new_item) {
+  // ".ID" traversals below need real pick fields; on a drifted environment
+  // this fires for every slot save, so guard rather than die (see the
+  // schema-ready guards' comment above).
+  if (!scoop_slot_designation_schema_ready()) return $pieces;
+
   $fields  = scoop_slot_designation_fields();
   $this_id = !empty($pieces['id']) ? (int) $pieces['id'] : 0;
 
@@ -264,6 +367,14 @@ function scoop_slot_post_save_dedupe_other_slots($pieces, $is_new_item, $id) {
   $slot_id = (int) $id;
   if (!$slot_id) return $pieces;
   if (!function_exists('pods_api') || !is_object(pods_api())) return $pieces;
+
+  // The designation uniqueness sweep reads the other slots' designation
+  // fields through ".ID" traversals and writes them back through
+  // save_pod_item() — both die uncatchably on a drifted environment (see
+  // the schema-ready guards' comment), so guard before touching Pods. Same
+  // class as the flavor_request guard; the pre-save half of this hook pair
+  // is guarded too.
+  if (!scoop_slot_designation_schema_ready()) return $pieces;
 
   $fields = scoop_slot_designation_fields();
   $slot   = pods('slot', $slot_id);
@@ -337,6 +448,14 @@ function scoop_slot_post_save_mark_tub_moving($pieces, $is_new_item, $id) {
   }
   if (!$incoming) return $pieces;
 
+  // Everything downstream (the slot/cabinet ".ID" reads below, then
+  // scoop_mark_tub_moving_if_needed()'s moving_to work and the flavor_request
+  // machinery) needs both field families to be real pick relations — on a
+  // drifted environment this fires on every slot save of a designated flavor,
+  // so guard before touching Pods (see the schema-ready guards' comment).
+  if (!scoop_slot_designation_schema_ready()) return $pieces;
+  if (!scoop_tub_moving_schema_ready()) return $pieces;
+
   $slot = pods('slot', $slot_id);
   if (!$slot || !$slot->exists()) return $pieces;
 
@@ -370,6 +489,14 @@ function scoop_slot_post_save_mark_tub_moving($pieces, $is_new_item, $id) {
  */
 function scoop_mark_tub_moving_if_needed(int $flavor_id, int $destination_id): void {
   if (!$flavor_id || !$destination_id || !function_exists('pods')) return;
+
+  // The flavor.ID WHERE below only resolves through Pods' relationship join
+  // and the moving_to write assumes that pick field exists — see the
+  // schema-ready guards' comment for why this is checked upfront rather than
+  // relying on a catch (the REST error path here is die(), not an exception).
+  // Reached from reconcile loops over every slot wanting a flavor, so the
+  // checks memoize and stay cheap.
+  if (!scoop_tub_moving_schema_ready()) return;
 
   $tubs = pods('tub', [
     'where' => "flavor.ID = {$flavor_id}",
@@ -596,11 +723,15 @@ function scoop_topup_flavor_request_claims(int $request_id, int $flavor_id, int 
   // real REST request, Pods' error path for this specific failure is not a
   // catchable exception at all (wp_send_json + die()), so the guard is the
   // actual fix — the try/catch is only a second layer for anything else
-  // unexpected in this function. This whole function is best-effort
+  // unexpected in this function. tub.moving_to is checked alongside it: this
+  // function WRITES that field too (claim top-up sets moving_to alongside
+  // flavor_request), and on a drifted environment that write dies the same
+  // way the flavor_request ones did. This whole function is best-effort
   // bookkeeping (an index/cache of demand-to-tub claims, not the source of
   // truth for what's physically in stock), so any problem here should
   // degrade to a logged skip, never take down the write that triggered it.
   if (!scoop_flavor_request_schema_ready()) return;
+  if (!scoop_tub_moving_schema_ready()) return;
 
   try {
     $claimed = pods('tub', ['where' => "flavor_request.ID = {$request_id}", 'limit' => -1]);
@@ -663,6 +794,10 @@ function scoop_sync_flavor_request(int $location_id, int $flavor_id): void {
   if (!$location_id || !$flavor_id || !function_exists('pods') || !function_exists('pods_api')) return;
   if (!scoop_flavor_request_schema_ready()) return;
 
+  // scoop_slot_demand_count() below traverses the slot designation fields
+  // (".ID" syntax) — same drift exposure as everywhere else in this file.
+  if (!scoop_slot_designation_schema_ready()) return;
+
   $guard_key = "sync_flavor_request:{$location_id}:{$flavor_id}";
   if (!scoop_guard_enter($guard_key)) return;
 
@@ -718,6 +853,13 @@ function scoop_sync_flavor_request(int $location_id, int $flavor_id): void {
  */
 function scoop_reconcile_moving_for_flavor(int $flavor_id): void {
   if (!$flavor_id || !function_exists('pods') || !function_exists('pods_api')) return;
+
+  // The slot scan below reads the designation fields through ".ID" traversals
+  // (and dispatches into scoop_mark_tub_moving_if_needed()/the flavor_request
+  // machinery, both of which carry their own guards). Skip the scan entirely
+  // on a drifted environment rather than dying mid-reconcile — see the
+  // schema-ready guards' comment.
+  if (!scoop_slot_designation_schema_ready()) return;
 
   $guard_key = "reconcile_moving:{$flavor_id}";
   if (!scoop_guard_enter($guard_key)) return;
