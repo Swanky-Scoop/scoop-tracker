@@ -1354,6 +1354,13 @@
   }
 
   function scoop_handle_cells_post(\WP_REST_Request $req, array $cfg, array $allowed_fields) {
+    // SCOOP-DIAG: request boundary for the cells-POST save path (the observed
+    // failing route is /tubs from CabinetWorkflow Confirm Swap).
+    scoop_diag('cells_post:enter', [ // SCOOP-DIAG
+      'pod'    => $cfg['pod_name'] ?? '?',
+      'cells'  => is_array($req->get_param($cfg['envelope_key'] ?? '')['cells'] ?? null) ? count($req->get_param($cfg['envelope_key'] ?? '')['cells']) : -1,
+    ]);
+
     $envelope_key = $cfg['envelope_key'] ?? null;
     if (!$envelope_key) {
       error_log("🔍 TRACE: ERROR - Missing envelope_key in config");
@@ -1430,6 +1437,7 @@
       }
       
       if (!empty($clean)) {
+        scoop_diag('cells_post:row', ['id' => $id, 'fields' => array_keys($clean)]); // SCOOP-DIAG
         $result = scoop_pods_api_save($pod_name, $id, $clean);
 
         if ($result !== false && !is_wp_error($result)) {
@@ -1465,12 +1473,17 @@
     // instead of being folded anonymously into the generic per-session
     // batch.
     if (!$ok) {
+      scoop_diag('audit:log_post', ['ok' => false, 'n' => count($errors)]); // SCOOP-DIAG
       scoop_log_post($req, $cfg, $updated, $errors, 0, $source_hint);
     } elseif ($source_hint !== null) {
+      scoop_diag('audit:log_post', ['ok' => true, 'n' => count($updated)]); // SCOOP-DIAG
       scoop_log_post($req, $cfg, $updated, [], 0, $source_hint);
     } elseif (scoop_should_log_inventory_change($cfg, $updated)) {
+      scoop_diag('audit:stage', ['n' => count($updated)]); // SCOOP-DIAG
       scoop_stage_inventory_change($cfg, $updated);
     }
+
+    scoop_diag('cells_post:done', ['ok' => $ok, 'updated' => count($updated), 'errors' => count($errors)]); // SCOOP-DIAG
 
     return new \WP_REST_Response([
       'ok'      => $ok,
