@@ -61,6 +61,9 @@ function scoop_rel_id( $val ) {
  * @return mixed        Result from Pods API or false on failure
  */
 function scoop_pods_api_save( string $pod_name, $id, array $data ) {
+  // SCOOP-DIAG: bracket the whole save; the result line closes the bracket, so a
+  // trail that stops between them pinpoints the dying call.
+  scoop_diag('save:enter', ['pod' => $pod_name, 'id' => $id, 'fields' => array_keys($data)]); // SCOOP-DIAG
   $pod_name = trim((string)$pod_name);
   $id = (int)$id;
 
@@ -73,11 +76,17 @@ function scoop_pods_api_save( string $pod_name, $id, array $data ) {
     $clean[$field] = scoop_coerce_value($field, $value);
   }
 
-  return pods_api()->save_pod_item([
+  $out = pods_api()->save_pod_item([
     'pod'  => $pod_name,
     'id'   => $id,
     'data' => $clean,
   ]);
+
+  scoop_diag('save:return', ['pod' => $pod_name, 'id' => $id, // SCOOP-DIAG
+    'ok' => !is_wp_error($out) && $out !== false,
+    'err' => is_wp_error($out) ? $out->get_error_message() : null]);
+
+  return $out;
 }
 
 function scoop_coerce_value(string $field, $value) {

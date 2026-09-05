@@ -322,6 +322,9 @@ if (!defined('SCOOP_FRONT_OF_HOUSE_USE_ID')) {
 
 add_filter('pods_api_post_save_pod_item_slot', 'scoop_slot_post_save_mark_tub_moving', 20, 3);
 function scoop_slot_post_save_mark_tub_moving($pieces, $is_new_item, $id) {
+  // SCOOP-DIAG
+  scoop_diag('hook:slot_post_save_mark_tub_moving:enter', ['slot' => (int) $id]);
+
   $slot_id = (int) $id;
   if (!$slot_id) return $pieces;
   if (!function_exists('pods_api') || !is_object(pods_api())) return $pieces;
@@ -351,6 +354,7 @@ function scoop_slot_post_save_mark_tub_moving($pieces, $is_new_item, $id) {
     scoop_sync_flavor_request($destination_id, $flavor_id);
   }
 
+  scoop_diag('hook:slot_post_save_mark_tub_moving:exit', ['slot' => $slot_id]); // SCOOP-DIAG
   return $pieces;
 }
 
@@ -369,6 +373,9 @@ function scoop_slot_post_save_mark_tub_moving($pieces, $is_new_item, $id) {
  * comment.
  */
 function scoop_mark_tub_moving_if_needed(int $flavor_id, int $destination_id): void {
+  // SCOOP-DIAG
+  scoop_diag('mark_tub_moving:enter', ['flavor' => $flavor_id, 'dest' => $destination_id]);
+
   if (!$flavor_id || !$destination_id || !function_exists('pods')) return;
 
   $tubs = pods('tub', [
@@ -410,7 +417,10 @@ function scoop_mark_tub_moving_if_needed(int $flavor_id, int $destination_id): v
   usort($candidates, fn($a, $b) => strcmp($a['created_on'], $b['created_on']));
   $chosen = $candidates[0];
 
+  scoop_diag('mark_tub_moving:save', ['tub' => $chosen['id'], 'moving_to' => $destination_id]); // SCOOP-DIAG
   pods_api()->save_pod_item(['pod' => 'tub', 'id' => $chosen['id'], 'data' => ['moving_to' => $destination_id]]);
+
+  scoop_diag('mark_tub_moving:done', ['tub' => $chosen['id']]); // SCOOP-DIAG
 }
 
 /* ------------------------------------------------------------
@@ -525,6 +535,7 @@ function scoop_flavor_request_schema_ready(): bool {
   if (!$ready) {
     error_log('scoop_flavor_request_schema_ready: flavor_request pod and/or tub.flavor_request field missing or misconfigured on this environment — flavor_request sync/claim machinery skipped until repaired (Scoop -> Schema Sync).');
   }
+  scoop_diag('schema_ready', ['ready' => $ready]); // SCOOP-DIAG
 
   return $ready;
 }
@@ -586,6 +597,9 @@ function scoop_find_or_create_flavor_request(int $location_id, int $flavor_id): 
  * stock.
  */
 function scoop_topup_flavor_request_claims(int $request_id, int $flavor_id, int $destination_id, int $wanted): void {
+  // SCOOP-DIAG
+  scoop_diag('topup_claims:enter', ['fr' => $request_id, 'flavor' => $flavor_id, 'dest' => $destination_id, 'wanted' => $wanted]);
+
   if (!$request_id || !$flavor_id || !$destination_id || !function_exists('pods') || !function_exists('pods_api')) return;
 
   // Every query/write below assumes tub.flavor_request is a real Pods
@@ -641,8 +655,10 @@ function scoop_topup_flavor_request_claims(int $request_id, int $flavor_id, int 
     foreach (array_slice($candidates, 0, $need) as $c) {
       $data = ['flavor_request' => $request_id];
       if ($destination_id !== $woodinville_id) $data['moving_to'] = $destination_id;
+      scoop_diag('topup_claims:save', ['tub' => $c['id'], 'fr' => $request_id, 'moving_to' => $data['moving_to'] ?? 0]); // SCOOP-DIAG
       pods_api()->save_pod_item(['pod' => 'tub', 'id' => $c['id'], 'data' => $data]);
     }
+    scoop_diag('topup_claims:done', ['fr' => $request_id, 'claimed' => min($need, count($candidates))]); // SCOOP-DIAG
   } catch (\Throwable $e) {
     error_log("scoop_topup_flavor_request_claims: request {$request_id} (flavor {$flavor_id}, destination {$destination_id}) failed, skipping claim top-up: " . $e->getMessage());
   }
@@ -660,6 +676,9 @@ function scoop_topup_flavor_request_claims(int $request_id, int $flavor_id, int 
  * instant.
  */
 function scoop_sync_flavor_request(int $location_id, int $flavor_id): void {
+  // SCOOP-DIAG
+  scoop_diag('sync_flavor_request:enter', ['loc' => $location_id, 'flavor' => $flavor_id]);
+
   if (!$location_id || !$flavor_id || !function_exists('pods') || !function_exists('pods_api')) return;
   if (!scoop_flavor_request_schema_ready()) return;
 
@@ -685,6 +704,7 @@ function scoop_sync_flavor_request(int $location_id, int $flavor_id): void {
     $new_wanted = max($current_wanted, $slot_demand);
 
     if ($new_wanted !== $current_wanted) {
+      scoop_diag('sync_flavor_request:save_wanted', ['fr' => $existing_id, 'wanted' => $new_wanted]); // SCOOP-DIAG
       pods_api()->save_pod_item(['pod' => 'flavor_request', 'id' => $existing_id, 'data' => ['wanted' => $new_wanted]]);
     }
 
@@ -717,6 +737,9 @@ function scoop_sync_flavor_request(int $location_id, int $flavor_id): void {
  * supply needs this same retroactive pass to get topped up.
  */
 function scoop_reconcile_moving_for_flavor(int $flavor_id): void {
+  // SCOOP-DIAG
+  scoop_diag('reconcile_moving:enter', ['flavor' => $flavor_id]);
+
   if (!$flavor_id || !function_exists('pods') || !function_exists('pods_api')) return;
 
   $guard_key = "reconcile_moving:{$flavor_id}";
@@ -744,6 +767,8 @@ function scoop_reconcile_moving_for_flavor(int $flavor_id): void {
       scoop_mark_tub_moving_if_needed($flavor_id, $destination_id);
       scoop_sync_flavor_request($destination_id, $flavor_id);
     }
+
+    scoop_diag('reconcile_moving:done', ['flavor' => $flavor_id, 'dests' => count($destinations)]); // SCOOP-DIAG
   } finally {
     scoop_guard_leave($guard_key);
   }
@@ -757,6 +782,9 @@ function scoop_reconcile_moving_for_flavor(int $flavor_id): void {
  */
 add_filter('pods_api_post_save_pod_item_tub', 'scoop_tub_post_save_check_demand', 20, 3);
 function scoop_tub_post_save_check_demand($pieces, $is_new_item, $id) {
+  // SCOOP-DIAG
+  scoop_diag('hook:tub_post_save_check_demand:enter', ['tub' => (int) $id]);
+
   $tub_id = (int) $id;
   if (!$tub_id || !function_exists('pods')) return $pieces;
 
@@ -766,5 +794,6 @@ function scoop_tub_post_save_check_demand($pieces, $is_new_item, $id) {
   $flavor_id = (int) $tub->field('flavor.ID');
   if ($flavor_id) scoop_reconcile_moving_for_flavor($flavor_id);
 
+  scoop_diag('hook:tub_post_save_check_demand:exit', ['tub' => $tub_id]); // SCOOP-DIAG
   return $pieces;
 }

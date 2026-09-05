@@ -28,6 +28,7 @@ scoop_require('includes/_write_fields.php');
  * Helpers next
  */
 scoop_require('includes/_pods_helpers.php');
+scoop_require('includes/diag.php'); // SCOOP-DIAG: /tubs save-chain breadcrumbs + shutdown capture (cabinet-500); remove file + all `// SCOOP-DIAG` calls to uninstall
 scoop_require('includes/_policy.php');
 scoop_require('includes/_auth.php');
 scoop_require('includes/_cache.php');
